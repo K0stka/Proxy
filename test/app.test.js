@@ -201,6 +201,7 @@ test('first run has no example domains, targets or services and accepts UI setup
   const f = await fixture(t, { empty: true });
   const state = await (await f.request('/api/state')).json();
   assert.deepEqual(state.settings, defaultSettings);
+  assert.equal(state.settings.certificates.staging, false);
   assert.deepEqual(state.discovery.services, []);
   const settings = settingsFromPolicy(policy());
   assert.equal((await f.request('/api/settings', { method: 'PUT', body: settings })).status, 200);

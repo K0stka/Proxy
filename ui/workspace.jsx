@@ -285,7 +285,24 @@ export default function Workspace({ onLogout, onRecovery }) {
           )}
           {edgeReady && !state.edge.inSync && (
             <div className="notice error" role="alert">
-              Configuration out of sync. Reapply from Settings.
+              Configuration out of sync.
+              <button
+                className="secondary"
+                disabled={working}
+                onClick={async () => {
+                  setWorking(true);
+                  try {
+                    await api('/reconcile', { method: 'POST' });
+                    await refresh();
+                  } catch (e) {
+                    report(e.message, true);
+                  } finally {
+                    setWorking(false);
+                  }
+                }}
+              >
+                Retry
+              </button>
             </div>
           )}
           {page === 'Routes' && (
@@ -468,23 +485,41 @@ export default function Workspace({ onLogout, onRecovery }) {
             </>
           )}
           {page === 'Files' && (
-            <Folders
-              catalog={catalog}
-              onHost={hostFolder}
-              onCreate={() => setWizard({ kind: 'folder' })}
-              onEdit={(initial) => setWizard({ kind: 'folder', initial })}
-              onSaved={async (message) => {
-                await refresh();
-                await loadFiles();
-                report(message);
-              }}
-            />
+            <>
+              <section className="settings-block">
+                <div className="section-title">
+                  <h3>Error pages</h3>
+                  <button className="secondary" onClick={() => setWizard({ kind: 'pages' })}>
+                    Edit pages
+                  </button>
+                </div>
+                {[
+                  ['404', state.pages.notFoundSite, state.pages.notFoundDocument],
+                  ['502', state.pages.badGatewaySite, state.pages.badGatewayDocument],
+                ].map(([code, site, document]) => (
+                  <div className="policy-row" key={code}>
+                    <strong>{code}</strong>
+                    <code>{site ? `/sites/${site.directory}/${document}` : 'Built-in'}</code>
+                  </div>
+                ))}
+              </section>
+              <Folders
+                catalog={catalog}
+                onHost={hostFolder}
+                onCreate={() => setWizard({ kind: 'folder' })}
+                onEdit={(initial) => setWizard({ kind: 'folder', initial })}
+                onSaved={async (message) => {
+                  await refresh();
+                  await loadFiles();
+                  report(message);
+                }}
+              />
+            </>
           )}
           {page === 'Domains' && !state.domains.length && (
             <div className="empty-state">
               <Globe size={28} />
               <h2>No domains</h2>
-              <p>Choose Manage domains to add one.</p>
             </div>
           )}
           {page === 'Domains' && (
@@ -540,12 +575,9 @@ export default function Workspace({ onLogout, onRecovery }) {
           )}
           {page === 'Settings' && (
             <Settings
-              state={state}
-              refresh={refresh}
               report={report}
               onRecovery={onRecovery}
               onLogout={onLogout}
-              onEditPages={() => setWizard({ kind: 'pages' })}
             />
           )}
         </main>

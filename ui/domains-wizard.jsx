@@ -74,7 +74,7 @@ export default function DomainsWizard({ state, onClose, onSaved }) {
           <section className="option-group">
             <h2>Certificates</h2>
             <label>
-              ACME email
+              Certificate email
               <input
                 type="email"
                 required={value.domains.length > 0}
@@ -87,6 +87,9 @@ export default function DomainsWizard({ state, onClose, onSaved }) {
                 }
               />
             </label>
+          </section>
+          <details className="route-options" open={value.certificates.staging || undefined}>
+            <summary>Certificate diagnostics</summary>
             <label className="checkbox">
               <input
                 type="checkbox"
@@ -100,7 +103,9 @@ export default function DomainsWizard({ state, onClose, onSaved }) {
               />
               Test certificates (staging)
             </label>
-            <p className="hint">Switch staging off before publishing HTTPS routes.</p>
+            {value.certificates.staging && (
+              <p className="hint">Test certificates cannot publish HTTPS routes.</p>
+            )}
             <label>
               DNS propagation (seconds)
               <input
@@ -117,7 +122,7 @@ export default function DomainsWizard({ state, onClose, onSaved }) {
                 }
               />
             </label>
-          </section>
+          </details>
         </>
       )}
       {step === 1 && (
@@ -132,11 +137,10 @@ export default function DomainsWizard({ state, onClose, onSaved }) {
               <dd>{value.certificates.staging ? 'Staging' : 'Production'}</dd>
             </div>
             <div>
-              <dt>ACME email</dt>
+              <dt>Certificate email</dt>
               <dd>{value.certificates.email || 'None'}</dd>
             </div>
           </dl>
-          <p className="review-note">Saved routes are checked before applying.</p>
         </>
       )}
     </Wizard>

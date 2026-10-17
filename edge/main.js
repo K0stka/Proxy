@@ -232,7 +232,8 @@ await apply(
   { ...snapshot, settings: settingsFromPolicy(policy) },
   { initial: true, persist: !recovery },
 );
-if (recovery) failed = 'Saved routes need updated settings. Configure and reapply from Settings.';
+if (recovery)
+  failed = 'Saved routes need updating. Check Domains and deployment environment, then retry.';
 try {
   await unlink(socket);
 } catch (e) {

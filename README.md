@@ -1,6 +1,6 @@
 # Proxy
 
-A private routing workspace for a public VPS and home services connected through Tailscale. One Komodo stack: **NGINX edge + management UI + Certbot**.
+A private routing workspace for a public VPS and home services connected through Tailscale. One Komodo stack: **NGINX edge + management UI + Certbot**, with a one-shot storage initializer when host paths are enabled.
 
 - Websites, WebSockets, streaming, custom TCP, and UDP ranges preserving destination ports.
 - Static websites from mounted folders, file filters and full-page setup wizards.
@@ -62,13 +62,11 @@ PROXY_DATA_PATH=/srv/proxy/data
 
 In Komodo's Compose file list, add **both files in this order**: `compose.yaml`, then `compose.paths.yaml`. The second file replaces persistent volume mounts with host directories; setting `PROXY_DATA_PATH` alone does not enable it.
 
-Before deploying, run from this project's checkout **on the VPS**:
+Deploy normally. Compose creates missing host directories automatically. A one-shot **storage-init** container prepares the private data subdirectories and permissions, then exits successfully before control, edge or certificates can start. No host setup command is required.
 
-```sh
-sudo sh scripts/prepare-storage.sh /srv/proxy/data /srv/proxy/sites
-```
+Use absolute, non-overlapping data/sites paths on local Linux storage. The initializer has no network, API credentials or Docker socket. It mounts only the private data directory and uses root with only the capabilities needed to set directory ownership/modes. It rejects symlinked data subdirectories, leaves existing file contents and file ownership alone, and never walks the tree recursively. Websites must be readable by UID 10002; existing sites permissions are not rewritten. SQLite uses WAL files and locking.
 
-The helper creates separate directories with the required container UIDs/GID and permissions. It changes directory ownership/modes, but never recursively changes existing files. Websites must be readable by UID 10002. Keep these directories on local Linux storage; SQLite uses WAL files and locking.
+`storage-init` exiting with code 0 is normal. If Komodo includes completed initialization jobs in its health status, add it to the stack's ignored services for health checks.
 
 ```text
 /srv/proxy/
@@ -109,7 +107,7 @@ The Serve URL must match `PROXY_ORIGIN`. Limit access to administrators with Tai
 
 Point the apex and `*` records for each domain at the VPS, initially **DNS-only**. Publish AAAA only when IPv6 is configured and protected. Cloudflare must be the authoritative DNS provider, not only the registrar. Raw TCP/UDP cannot use ordinary orange-cloud proxying.
 
-In **Domains**, confirm a successful staging check. Open **Domains → Manage**, turn off **Test certificates (staging)** and apply. The worker obtains production certificates and the edge reloads automatically. Wait for a production certificate, then use **Services → Connect → Create draft → Publish**. Staging certificates cannot be used to publish TLS routes. Keep torrent administration unpublished and access it directly through Tailscale.
+Add your domains and certificate email in **Domains → Manage domains**. New installations request production certificates automatically; the edge reloads when they are ready. Wait for a certificate, then use **Services → Connect → Create draft → Publish**. Optional staging and DNS timing controls are under **Certificate diagnostics**. Existing staging configurations stay in staging until you switch them off. Keep torrent administration unpublished and access it directly through Tailscale.
 
 Open TCP 80/443 and the published custom ingress ranges in the host and provider firewalls. The app deliberately cannot edit firewalls. Test ingress from a different network; an edge listener and a successful backend check do not verify the public path. UDP needs a real protocol-specific test.
 
@@ -134,7 +132,7 @@ Upgrading from the earlier manual setup preserves routes, domains, file rules an
 - **Certificates:** eligibility is checked twice daily with jitter; manual requests have a cooldown. Failed checks retain valid certificates. Separate staging/production lineages avoid accidentally reusing a staging certificate. The Domains screen shows failures and expiry.
 - **Another domain:** add it through Domains → Manage. Ensure the Cloudflare token can access its zone. Only a new token or token override requires updating Komodo environment variables and recreating containers.
 - **Private upstream CA:** HTTPS upstreams always verify their hostname and chain. To trust your own CA, provide an administrator-managed CA bundle containing your private CA and system roots at `/etc/ssl/certs/ca-certificates.crt` in the edge. There is no insecure verification toggle.
-- **Configuration drift:** the UI compares desired and active configuration hashes. Investigate differences before using Settings → Reapply saved configuration. A lost apply response is treated as uncertain, never as proof that no listener opened.
+- **Configuration drift:** the UI compares desired and active configuration hashes and shows **Retry** when they differ. A lost apply response is treated as uncertain, never as proof that no listener opened.
 - **Source IP:** raw TCP/UDP backends normally see the VPS. HTTP overwrites forwarding headers. Enable PROXY protocol only for a backend that supports it.
 - **BitTorrent:** forwarding inbound peer ports does not route outgoing traffic through the VPS or hide the home's public IP. An egress tunnel and kill switch are separate work.
 
@@ -154,7 +152,7 @@ In the folder wizard, use **Only expose** patterns such as `*.html`, `assets/**`
 
 Saving a folder updates every route and error page using it atomically. Changing its path updates those references; it does not move host files. Removing a folder definition is allowed only when unused and never deletes disk content. Saving rules updates every website and error page using the folder. Existing per-route filters are preserved until shared rules are saved. Edits to exposed files appear immediately. New filenames require **Sync files** on the published route (or a configuration apply/edge restart). Certificate renewal reloads preserve the existing file list. Directory listings are disabled. Missing or unreadable paths reject the update. With no exposed `index.html`, a static route still serves its approved files directly; its root URL returns the shared 404. Each site supports up to 5,000 entries and the configuration up to 10,000 exposed files. Filenames containing dollar signs, backslashes or control characters are blocked. Files must be readable by edge UID 10002; keep the mount read-only and do not put unrelated host data in it.
 
-In **Settings → Error pages**, select a configured folder for each shared 404/502 page, then choose its page document, such as `notice.htm` or `nested/error.html`. Existing selections default to `index.html`, but any exposed document can be selected. The chosen document must exist, remain included by the folder rules and be readable (maximum 1 MB); other folders need no page document. Use relative asset URLs (`./style.css`, `./app.js`, `./icons/logo.svg`), including in CSS; root-absolute URLs do not resolve into the error bundle. Relative URLs resolve from the selected document’s subdirectory. Assets are served under `/_proxy/errors/<code>/`, including on unmatched hostnames. Timeouts use the same 502 bundle while keeping HTTP status 504. Built-in pages remain available. The shared 502 page is always used for backend 502/504 responses; there is no per-route toggle. New error assets are included when applying the pages or reapplying configuration. The website mount starts empty; add your own site and error-page directories.
+In **Files → Error pages**, select a configured folder for each shared 404/502 page, then choose its page document, such as `notice.htm` or `nested/error.html`. Existing selections default to `index.html`, but any exposed document can be selected. The chosen document must exist, remain included by the folder rules and be readable (maximum 1 MB); other folders need no page document. Use relative asset URLs (`./style.css`, `./app.js`, `./icons/logo.svg`), including in CSS; root-absolute URLs do not resolve into the error bundle. Relative URLs resolve from the selected document’s subdirectory. Assets are served under `/_proxy/errors/<code>/`, including on unmatched hostnames. Timeouts use the same 502 bundle while keeping HTTP status 504. Built-in pages remain available. The shared 502 page is always used for backend 502/504 responses; there is no per-route toggle. New error assets are included when applying the pages or reapplying configuration. The website mount starts empty; add your own site and error-page directories.
 
 ## State, security and updates
 

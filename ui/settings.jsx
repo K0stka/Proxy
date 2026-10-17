@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
-import { Plus, KeyRound, Trash2, Download, RefreshCw } from 'lucide-react';
+import { Plus, KeyRound, Trash2, Download } from 'lucide-react';
 import { api, setCSRF } from './api.js';
 const when = (value) =>
   new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-export default function Settings({ state, refresh, report, onRecovery, onLogout, onEditPages }) {
+export default function Settings({ report, onRecovery, onLogout }) {
   const [keys, setKeys] = useState([]),
     [busy, setBusy] = useState(false);
   async function load() {
@@ -70,47 +70,15 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout,
             </div>
           ))}
         </section>
-        <section className="settings-block">
-          <div className="section-title">
-            <h3>Error pages</h3>
-            <button className="secondary" onClick={onEditPages}>
-              Edit pages
-            </button>
-          </div>
-          {[
-            ['404', state.pages.notFoundSite],
-            ['502', state.pages.badGatewaySite],
-          ].map(([code, site]) => (
-            <div className="policy-row" key={code}>
-              <strong>{code}</strong>
-              <code>{site ? `/sites/${site.directory}` : 'Built-in'}</code>
-            </div>
-          ))}
-        </section>
       </div>
       <div>
         <section className="settings-block">
-          <h3>Backups</h3>
+          <h3>Configuration</h3>
           <p>Configuration only. Authentication, certificates and secrets are excluded.</p>
           <a className="secondary" href="/api/export" download>
             <Download size={15} />
             Export configuration
           </a>
-          <button
-            className="secondary"
-            onClick={async () => {
-              try {
-                await api('/reconcile', { method: 'POST' });
-                await refresh();
-                report('Configuration applied');
-              } catch (e) {
-                report(e.message, true);
-              }
-            }}
-          >
-            <RefreshCw size={15} />
-            Reapply configuration
-          </button>
         </section>
       </div>
     </div>

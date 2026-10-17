@@ -50,6 +50,20 @@ const hostStorage = JSON.parse(
   ),
 );
 for (const [name, service] of Object.entries(hostStorage.services)) {
+  if (name === 'storage-init') {
+    assert.equal(service.network_mode, 'none');
+    assert.equal(service.restart, 'no');
+    assert(service.read_only);
+    assert.equal(service.volumes.length, 1);
+    assert.equal(service.volumes[0].target, '/data');
+    assert.equal(service.volumes[0].source, '/srv/proxy/data');
+    assert.deepEqual(Object.keys(service.environment).sort(), [
+      'PROXY_DATA_PATH',
+      'PROXY_SITES_PATH',
+    ]);
+    continue;
+  }
+  assert.equal(service.depends_on['storage-init'].condition, 'service_completed_successfully');
   for (const mount of service.volumes) {
     if (mount.target === '/ipc') {
       assert.equal(mount.type, 'volume');
@@ -57,7 +71,7 @@ for (const [name, service] of Object.entries(hostStorage.services)) {
     }
     assert.equal(mount.type, 'bind');
     assert.equal(mount.source.startsWith('/srv/proxy/'), true);
-    if (mount.target !== '/sites') assert.equal(mount.bind.create_host_path, false);
+    assert.notEqual(mount.bind.create_host_path, false);
     assert.equal(
       Boolean(mount.read_only),
       (name === 'edge' && ['/sites', '/tls'].includes(mount.target)) ||
@@ -75,6 +89,13 @@ const run = (args, input) =>
   });
 const smoke = ['compose', '-p', 'proxy-smoke', '-f', 'test/compose.yaml'];
 run(['compose', '-p', 'proxy', '--progress', 'quiet', 'build']);
+run(['build', '-q', '-f', 'containers/storage.Dockerfile', '-t', 'proxy-storage-init', '.']);
+const storageSmoke = ['compose', '-p', 'proxy-storage-smoke', '-f', 'test/storage-compose.yaml'];
+try {
+  run([...storageSmoke, 'up', '--abort-on-container-exit', '--exit-code-from', 'check']);
+} finally {
+  run([...storageSmoke, 'down', '--volumes']);
+}
 run([
   'run',
   '--rm',
@@ -82,14 +103,44 @@ run([
   '--network',
   'none',
   '--read-only',
+  '--cap-drop',
+  'ALL',
+  '--cap-add',
+  'CHOWN',
+  '--cap-add',
+  'FOWNER',
+  '--cap-add',
+  'DAC_OVERRIDE',
   '--tmpfs',
   '/tmp:rw,noexec,nosuid,size=8m',
   '--mount',
   `type=bind,source=${resolve('.')},target=/checks,readonly`,
-  '--entrypoint',
-  'sh',
-  'proxy-edge',
-  '/checks/test/storage.sh',
+  'proxy-storage-init',
+  'node',
+  '--test',
+  '/checks/test/storage.test.js',
+]);
+run([
+  'run',
+  '--rm',
+  '--network',
+  'none',
+  '--read-only',
+  '--cap-drop',
+  'ALL',
+  '--cap-add',
+  'CHOWN',
+  '--cap-add',
+  'FOWNER',
+  '--cap-add',
+  'DAC_OVERRIDE',
+  '--tmpfs',
+  '/data:rw,noexec,nosuid,size=8m',
+  '--env',
+  'PROXY_DATA_PATH=/srv/proxy/data',
+  '--env',
+  'PROXY_SITES_PATH=/srv/proxy/sites',
+  'proxy-storage-init',
 ]);
 run(['build', '-q', '-f', 'test/linux.Dockerfile', '-t', 'proxy-linux-test', '.']);
 run([

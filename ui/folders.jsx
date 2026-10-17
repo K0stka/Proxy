@@ -77,10 +77,7 @@ export function FolderWizard({ initial, onClose, onSaved }) {
               <dd>{check?.count}</dd>
             </div>
           </dl>
-          <p className="review-note">
-            Changes apply to every route and error page using this folder. Files on disk are not
-            moved or deleted.
-          </p>
+          <p className="review-note">Updates every route and error page using this folder.</p>
         </>
       )}
     </Wizard>
@@ -105,7 +102,7 @@ export default function Folders({ catalog, onHost, onEdit, onCreate, onSaved }) 
   return (
     <>
       <div className="section-title">
-        <span className="hint">Paths and file rules</span>
+        <h2>Folders</h2>
         <button className="primary" onClick={onCreate}>
           <Plus size={15} />
           Add folder
@@ -147,7 +144,6 @@ export default function Folders({ catalog, onHost, onEdit, onCreate, onSaved }) 
         <div className="empty-state">
           <FolderOpen size={28} />
           <h2>No folders configured</h2>
-          <p>Add a path and choose which files to expose.</p>
         </div>
       )}
     </>

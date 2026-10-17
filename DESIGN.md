@@ -11,7 +11,8 @@ Navigation: **Routes · Services · Files · Domains · Settings**.
 - **Routes:** Websites and TCP/UDP tabs; destination, exposure, status, edit/disable actions.
 - **Services:** Home/VPS groups with running state, published ports, last discovery time, and a Connect action. Unreachable and unpublished ports are clearly distinguished.
 - **Domains:** DNS readiness, apex/wildcard certificate coverage, expiry, renewal status, and last failure.
-- **Settings:** Administrator access, shared error pages and backup/export. Core connection is configured in environment; servers and published ports are discovered automatically.
+- **Files:** Folder paths, inclusion/exclusion rules and shared 404/502 pages.
+- **Settings:** Passkeys and configuration export. Core connection is configured in environment; servers and published ports are discovered automatically.
 
 Use quiet neutral surfaces, a restrained green accent and compact readable rows. Creation, editing, publishing and error-page setup use full-page step-by-step wizards with review before applying. Folder rules are edited in Files. The sidebar and wizard progress stay fixed while long content scrolls. Status always has a text label. Advanced options stay collapsed. Live edits use the same validated activation and rollback as publishing.
 
@@ -25,7 +26,7 @@ Deploy a single Compose project through Komodo on the VPS:
 | `control`      | Node API, compiled React interface, SQLite, discovery, route planning | Read-only Komodo service account; application state |
 | `certificates` | Certbot with the Cloudflare DNS plugin; renewal scheduler             | Zone-scoped DNS token; writable Certbot state       |
 
-This deliberately uses three containers within one installable stack. Separating DNS credentials from the public proxy reduces the consequences of a proxy compromise. No Redis, external database, Docker socket, privileged container, host PID namespace, or host firewall editor.
+This uses three application containers within one installable stack. The optional host-path Compose file adds a one-shot storage initializer, with no network or credentials, which creates private data subdirectories and sets their ownership before application startup. It never recursively rewrites existing files. Separating DNS credentials from the public proxy reduces the consequences of a proxy compromise. No Redis, external database, Docker socket, privileged container, host PID namespace, or host firewall editor.
 
 Tailscale stays installed on the hosts. The VPS proxy uses Linux host networking so adding a TCP/UDP listener does not require recreating the container or pre-publishing thousands of Docker ports. It binds only configured ingress addresses, never an implicit `0.0.0.0`/`[::]`. Publish the UI on VPS loopback only, then use Tailscale Serve for private HTTPS on the VPS tailnet name. NGINX public-address listeners and Serve tailnet listeners must not overlap.
 
@@ -51,7 +52,7 @@ Bind a route to a stable server/resource/service identity and a selected host en
 
 ### Website
 
-Fields: hostname/domain, service or custom destination, host port, HTTP/HTTPS upstream, optional source CIDR restriction. Show container port → host port explicitly. New routes begin as unpublished drafts and create no ingress listener until explicitly published. Default public traffic to HTTPS. Support WebSockets and streaming/SSE; put upload limits and timeouts in advanced settings. Verify upstream HTTPS certificates by default, including the configured upstream server name and private CA where needed.
+Fields: hostname/domain, service or custom destination, host port, HTTP/HTTPS upstream, optional source CIDR restriction. Show host port (container port) explicitly. New routes begin as unpublished drafts and create no ingress listener until explicitly published. Default public traffic to HTTPS. Support WebSockets and streaming/SSE; put upload limits and timeouts in advanced settings. Verify upstream HTTPS certificates by default, including the configured upstream server name and private CA where needed.
 
 Select the apex or a subdomain of any configured domain. Store canonical lower-case/IDNA hostnames and validate labels. Reject duplicate hostnames. Match only configured names; never construct an upstream or redirect hostname from an untrusted Host header.
 

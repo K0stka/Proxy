@@ -108,7 +108,7 @@ export const settingsSchema = policySchema.omit({
 });
 export const defaultSettings = {
   domains: [],
-  certificates: { email: '', staging: true, propagationSeconds: 60 },
+  certificates: { email: '', staging: false, propagationSeconds: 60 },
 };
 export function settingsFromPolicy(policy) {
   return parse(

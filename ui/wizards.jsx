@@ -310,9 +310,7 @@ export function SitePicker({
                 </button>
               )}
             </>
-          ) : (
-            <p className="hint">File rules are managed in Files.</p>
-          )}
+          ) : null}
         </>
       )}
     </div>
@@ -624,7 +622,6 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                 )}
               </>
             )}
-            {route.kind === 'udp' && <p className="hint">Destination ports stay unchanged.</p>}
           </>
         ))}
       {!publishOnly && step === 2 && (
@@ -652,14 +649,16 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
             </div>
           ) : (
             <>
-              <label>
-                Ingress IP
-                <select value={route.ingressIP} onChange={(e) => set('ingressIP', e.target.value)}>
-                  {state.policy.ingressIPs.map((ip) => (
-                    <option key={ip}>{ip}</option>
-                  ))}
-                </select>
-              </label>
+              {state.policy.ingressIPs.length > 1 && (
+                <label>
+                  Ingress IP
+                  <select value={route.ingressIP} onChange={(e) => set('ingressIP', e.target.value)}>
+                    {state.policy.ingressIPs.map((ip) => (
+                      <option key={ip}>{ip}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {route.kind === 'udp' && (
                 <div className="segmented">
                   <button type="button" aria-pressed={!udpBlock} onClick={() => setUDPBlock(false)}>
