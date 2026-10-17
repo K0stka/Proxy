@@ -12,6 +12,26 @@ export const portLabel = (port) =>
   `${port.hostPort || 'Container only'} (${port.containerPort}) / ${port.protocol.toUpperCase()}`;
 export const visibleServicePorts = (service) =>
   service.ports.filter((port) => port.hostPort > 0 && port.usable && !port.restricted);
+export function serviceProxies(routes, service, port) {
+  return routes.filter((route) => {
+    if (route.kind === 'static' || (route.kind === 'udp') !== (port.protocol === 'udp'))
+      return false;
+    if (
+      route.kind === 'udp'
+        ? port.hostPort < route.portStart || port.hostPort > route.portEnd
+        : route.targetPort !== port.hostPort
+    )
+      return false;
+    if (route.source)
+      return (
+        route.source.server === service.server &&
+        (route.source.containerId === service.containerId ||
+          route.source.container === service.name) &&
+        route.source.containerPort === port.containerPort
+      );
+    return route.targetHost === port.targetHost;
+  });
+}
 export function serviceEndpoints(services, kind) {
   const protocol = kind === 'udp' ? 'udp' : 'tcp';
   return services.flatMap((service) =>

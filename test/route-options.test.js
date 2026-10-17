@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeContainers } from '../server/komodo.js';
-import { serviceEndpoints, portLabel, visibleServicePorts } from '../ui/routes.js';
+import { serviceEndpoints, portLabel, visibleServicePorts, serviceProxies } from '../ui/routes.js';
+import { route } from './fixtures.js';
 
 test('destination picker offers normalized running services and explains unavailable matching ports', () => {
   const services = normalizeContainers(
@@ -47,4 +48,22 @@ test('protected, unsafe and remote loopback endpoints are hidden from services a
   const options = serviceEndpoints(services, 'http');
   assert.equal(options.length, 0);
   assert.match(services[2].ports[0].reason, /Bound to 127\.0\.0\.1 on the remote server/);
+});
+
+test('service proxies match saved discovery references and custom endpoints without mixing servers or protocols', () => {
+  const service = { server: 'home', containerId: 'new-id', name: 'Website' };
+  const port = { containerPort: 3000, hostPort: 8484, targetHost: '100.89.5.109', protocol: 'tcp' };
+  const source = { server: 'home', containerId: 'old-id', container: 'Website', containerPort: 3000 };
+  const saved = route({ source, targetHost: '100.89.5.108', targetPort: port.hostPort, published: true });
+  const custom = route({ targetHost: port.targetHost, targetPort: port.hostPort });
+  const routes = [saved, custom,
+    route({ source: { ...source, server: 'other' } }),
+    route({ source: { ...source, containerPort: 9000 } }),
+    route({ source, targetPort: 9000 }),
+    route({ kind: 'udp', source }),
+    route({ kind: 'static', targetHost: port.targetHost, targetPort: port.hostPort }),
+  ];
+  assert.deepEqual(serviceProxies(routes, service, port), [saved, custom]);
+  const udp = route({ kind: 'udp', targetHost: port.targetHost, portStart: 8400, portEnd: 8500 });
+  assert.deepEqual(serviceProxies([udp, custom], service, { ...port, protocol: 'udp' }), [udp]);
 });

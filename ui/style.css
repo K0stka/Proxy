@@ -301,6 +301,10 @@ a:hover {
 .discovered-service {
   min-width: 0;
 }
+.discovered-service.proxied {
+  border-color: var(--mantine-color-cyan-6);
+  background: var(--mantine-color-cyan-light);
+}
 .service-heading strong {
   overflow-wrap: anywhere;
 }

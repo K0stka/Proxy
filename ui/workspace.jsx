@@ -1,5 +1,5 @@
 import { Button } from './controls.jsx';
-import { Alert, Paper, NavLink } from '@mantine/core';
+import { Alert, Paper, NavLink, Menu } from '@mantine/core';
 import React, { useState, useEffect } from 'react';
 import {
   Waypoints,
@@ -26,6 +26,7 @@ import {
   destination,
   portLabel,
   visibleServicePorts,
+  serviceProxies,
 } from './routes.js';
 import { RouteWizard, ErrorPagesWizard } from './wizards.jsx';
 import Settings from './settings.jsx';
@@ -544,7 +545,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                         .filter((s) => s.server === server.id)
                         .map((service) => (
                           <Paper
-                            className="discovered-service"
+                            className={`discovered-service${service.ports.some((port) => serviceProxies(state.routes, service, port).length) ? ' proxied' : ''}`}
                             key={`${service.server}:${service.containerId}:${service.name}`}
                             component="article"
                             withBorder={true}
@@ -556,20 +557,45 @@ export default function Workspace({ onLogout, onRecovery }) {
                                 <span className="status-text">{service.state}</span>
                               )}
                             </div>
-                            {service.ports.map((port, i) => (
-                              <div className="port-row" key={i}>
-                                <code>{portLabel(port)}</code>
-                                {!port.usable && <span className="hint">{port.reason}</span>}
+                            {service.ports.map((port, i) => {
+                              const proxies = serviceProxies(state.routes, service, port);
+                              const edit = (route) => setWizard({ kind: 'route', initial: route });
+                              const button = (
                                 <Button
                                   className="secondary small"
-                                  disabled={!port.usable || service.state !== 'running'}
-                                  onClick={() => connect(service, port)}
+                                  disabled={!proxies.length && service.state !== 'running'}
+                                  onClick={
+                                    proxies.length > 1
+                                      ? undefined
+                                      : () =>
+                                          proxies.length ? edit(proxies[0]) : connect(service, port)
+                                  }
                                 >
-                                  Connect
+                                  {proxies.length ? 'Edit proxy' : 'Create proxy'}
                                   <ChevronRight size={14} />
                                 </Button>
-                              </div>
-                            ))}
+                              );
+                              return (
+                                <div className="port-row" key={i}>
+                                  <code>{portLabel(port)}</code>
+                                  {!port.usable && <span className="hint">{port.reason}</span>}
+                                  {proxies.length > 1 ? (
+                                    <Menu position="bottom-end" withinPortal>
+                                      <Menu.Target>{button}</Menu.Target>
+                                      <Menu.Dropdown>
+                                        {proxies.map((route) => (
+                                          <Menu.Item key={route.id} onClick={() => edit(route)}>
+                                            {route.name} · {listener(route)}
+                                          </Menu.Item>
+                                        ))}
+                                      </Menu.Dropdown>
+                                    </Menu>
+                                  ) : (
+                                    button
+                                  )}
+                                </div>
+                              );
+                            })}
                           </Paper>
                         ))}
                     </div>
