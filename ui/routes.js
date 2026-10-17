@@ -14,7 +14,7 @@ export function serviceEndpoints(services, kind) {
   const protocol = kind === 'udp' ? 'udp' : 'tcp';
   return services.flatMap((service) =>
     service.ports
-      .filter((port) => port.protocol === protocol)
+      .filter((port) => port.hostPort > 0 && port.protocol === protocol)
       .map((port) => ({
         key: JSON.stringify([
           service.server,

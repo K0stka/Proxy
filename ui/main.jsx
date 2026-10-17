@@ -230,7 +230,7 @@ function App() {
   );
 }
 const theme = createTheme({
-  primaryColor: 'indigo',
+  primaryColor: 'cyan',
   defaultRadius: 'md',
   fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   headings: {

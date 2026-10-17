@@ -14,7 +14,7 @@ Navigation: **Routes · Services · Files · Domains · Settings**.
 - **Files:** Folder paths, inclusion/exclusion rules and shared 404/502 pages.
 - **Settings:** General (public admin hostname), shared certificate preferences/email, passkeys, and configuration export. Core connection is configured in environment; servers and published ports are discovered automatically.
 
-Use Mantine components throughout, with neutral surfaces, an indigo accent, consistent form spacing and compact readable rows. File patterns and network ranges use editable chips. Creation, editing, publishing and error-page setup use full-page step-by-step wizards with review before applying. Folder rules are edited in Files. The sidebar and wizard progress stay fixed while long content scrolls. Status always has a text label. Advanced options stay collapsed. Live edits use the same validated activation and rollback as publishing. Runtime theme styles use a fresh CSP nonce per HTML response; inline scripts remain blocked.
+Use Mantine components throughout, with neutral surfaces, a cyan accent, consistent form spacing and compact readable rows. File patterns and network ranges use editable chips. Creation, editing, publishing and error-page setup use full-page step-by-step wizards with review before applying. Folder rules are edited in Files. The sidebar and wizard progress stay fixed while long content scrolls. Status always has a text label. Advanced options stay collapsed. Live edits use the same validated activation and rollback as publishing. Runtime theme styles use a fresh CSP nonce per HTML response; inline scripts remain blocked.
 
 ## Deployment
 

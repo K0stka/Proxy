@@ -210,7 +210,9 @@ export default function Workspace({ onLogout, onRecovery }) {
       />
     );
   const edgeReady = state.edge.available === true;
-  const portServices = state.discovery.services.filter((service) => service.ports.length > 0);
+  const portServices = state.discovery.services
+    .map((service) => ({ ...service, ports: service.ports.filter((port) => port.hostPort > 0) }))
+    .filter((service) => service.ports.length > 0);
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -530,44 +532,46 @@ export default function Workspace({ onLogout, onRecovery }) {
                         {server.error}
                       </Alert>
                     )}
-                    {portServices
-                      .filter((s) => s.server === server.id)
-                      .map((service) => (
-                        <Paper
-                          className="discovered-service"
-                          key={`${service.server}:${service.containerId}:${service.name}`}
-                          component="article"
-                          withBorder={true}
-                          p="lg"
-                        >
-                          <div className="service-heading">
-                            <strong>{service.name}</strong>
-                            {service.state !== 'running' && (
-                              <span className="status-text">{service.state}</span>
-                            )}
-                          </div>
-                          {service.ports.map((port, i) => (
-                            <div className="port-row" key={i}>
-                              <code>{portLabel(port)}</code>
-                              {!port.usable && <span className="hint">{port.reason}</span>}
-                              <Button
-                                className="secondary small"
-                                disabled={!port.usable || service.state !== 'running'}
-                                onClick={() => connect(service, port)}
-                              >
-                                Connect
-                                <ChevronRight size={14} />
-                              </Button>
+                    <div className="service-grid">
+                      {portServices
+                        .filter((s) => s.server === server.id)
+                        .map((service) => (
+                          <Paper
+                            className="discovered-service"
+                            key={`${service.server}:${service.containerId}:${service.name}`}
+                            component="article"
+                            withBorder={true}
+                            p="lg"
+                          >
+                            <div className="service-heading">
+                              <strong>{service.name}</strong>
+                              {service.state !== 'running' && (
+                                <span className="status-text">{service.state}</span>
+                              )}
                             </div>
-                          ))}
-                        </Paper>
-                      ))}
+                            {service.ports.map((port, i) => (
+                              <div className="port-row" key={i}>
+                                <code>{portLabel(port)}</code>
+                                {!port.usable && <span className="hint">{port.reason}</span>}
+                                <Button
+                                  className="secondary small"
+                                  disabled={!port.usable || service.state !== 'running'}
+                                  onClick={() => connect(service, port)}
+                                >
+                                  Connect
+                                  <ChevronRight size={14} />
+                                </Button>
+                              </div>
+                            ))}
+                          </Paper>
+                        ))}
+                    </div>
                   </section>
                 ))}
               {!portServices.length && !state.discovery.error && (
                 <div className="empty-state">
                   <Server size={28} />
-                  <h2>No services with ports</h2>
+                  <h2>No services with published ports</h2>
                 </div>
               )}
             </>

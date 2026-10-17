@@ -26,14 +26,13 @@ test('destination picker offers normalized running services and explains unavail
     { id: 'home', name: 'Home', address: '100.101.102.103', local: false },
   );
   const options = serviceEndpoints(services, 'http');
-  assert.equal(options.length, 3);
+  assert.equal(options.length, 2);
   assert.equal(options[0].reason, '');
   assert.equal(portLabel(options[0].port), '9000 (8080) / TCP');
-  assert.equal(options[1].reason, 'No Docker host-port mapping');
-  assert.equal(portLabel(options[1].port), 'Container only (5432) / TCP');
-  assert.equal(options[2].reason, 'Container is exited');
+  assert.ok(options.every((option) => option.port.hostPort > 0));
+  assert.equal(options[1].reason, 'Container is exited');
   const udp = serviceEndpoints(services, 'udp');
   assert.equal(udp.length, 1);
   assert.equal(portLabel(udp[0].port), '5353 (53) / UDP');
-  assert.equal(new Set([...options, ...udp].map((option) => option.key)).size, 4);
+  assert.equal(new Set([...options, ...udp].map((option) => option.key)).size, 3);
 });

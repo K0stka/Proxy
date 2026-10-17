@@ -292,8 +292,17 @@ a:hover {
   font-size: 12px;
   font-weight: 400;
 }
+.service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 20px;
+  align-items: start;
+}
 .discovered-service {
-  margin-bottom: 12px;
+  min-width: 0;
+}
+.service-heading strong {
+  overflow-wrap: anywhere;
 }
 .service-heading {
   display: flex;
@@ -304,14 +313,19 @@ a:hover {
 }
 .port-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(160px, 1.4fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
   padding: 12px 0;
   border-top: 1px solid var(--line);
 }
 .port-row > .mantine-Button-root {
-  grid-column: 3;
+  grid-column: 2;
+  grid-row: 1;
+}
+.port-row > .hint {
+  grid-column: 1 / -1;
+  grid-row: 2;
 }
 .folder-grid,
 .domain-grid,
@@ -710,15 +724,15 @@ a:hover {
     grid-template-columns: 1fr;
   }
   .port-row {
-    grid-template-columns: minmax(150px, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
   .port-row > .hint {
-    grid-column: 1;
+    grid-column: 1 / -1;
     font-size: 12px;
   }
   .port-row > .mantine-Button-root {
     grid-column: 2;
-    grid-row: 1 / span 2;
+    grid-row: 1;
   }
 }
 @media (max-width: 760px) {
