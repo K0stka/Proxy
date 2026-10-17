@@ -22,7 +22,7 @@ import { RouteWizard, ErrorPagesWizard } from './wizards.jsx';
 import Settings from './settings.jsx';
 import Modal from './dialog.jsx';
 import Folders, { FolderWizard } from './folders.jsx';
-import DomainsWizard from './domains-wizard.jsx';
+import DomainWizard from './domains-wizard.jsx';
 import { useNavigation } from './navigation.js';
 
 const when = (value) =>
@@ -163,7 +163,7 @@ export default function Workspace({ onLogout, onRecovery }) {
   if (wizard?.kind === 'pages')
     return <ErrorPagesWizard state={state} onClose={() => setWizard(null)} onSaved={saved} />;
   if (wizard?.kind === 'domains')
-    return <DomainsWizard state={state} onClose={() => setWizard(null)} onSaved={saved} />;
+    return <DomainWizard initial={wizard.initial ?? state.settings.domains.find((d) => d.name === wizard.domainName)} emailConfigured={Boolean(state.settings.certificates.email)} onClose={() => setWizard(null)} onSaved={saved} />;
   const edgeReady = state.edge.available === true;
   return (
     <div className="app-shell">
@@ -223,7 +223,7 @@ export default function Workspace({ onLogout, onRecovery }) {
             {page === 'Domains' && (
               <button className="primary" onClick={() => setWizard({ kind: 'domains' })}>
                 <Plus size={17} />
-                Manage domains
+                Add domain
               </button>
             )}
             {['Services', 'Files'].includes(page) && (
@@ -514,7 +514,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                     </span>
                   </div>
                   <h2>{d.name}</h2>
-                  <code>*.{d.name}</code>
+                  <code>{d.subdomains ? `${d.name}, *.${d.name}` : d.name}</code>
                   <div className="domain-facts">
                     <div>
                       <span>Expires</span>
@@ -526,13 +526,17 @@ export default function Workspace({ onLogout, onRecovery }) {
                     </div>
                   </div>
                   {d.staging && (
-                    <p className="hint">Test certificate. Switch staging off before publishing.</p>
+                    <p className="hint">Test certificate. Disable staging in Settings to publish.</p>
                   )}
                   {d.error && (
                     <p className="error-text" role="alert">
                       {d.error}
                     </p>
                   )}
+                  <div className="domain-actions">
+                  <button className="secondary" onClick={() => setWizard({ kind: 'domains', initial: { name: d.name, subdomains: d.subdomains } })}>
+                    <Pencil size={15} /> Edit
+                  </button>
                   <button
                     className="secondary"
                     onClick={async () => {
@@ -550,12 +554,21 @@ export default function Workspace({ onLogout, onRecovery }) {
                     <RefreshCw size={15} />
                     Check
                   </button>
+                  <button className="icon-button" aria-label={`Delete ${d.name}`} onClick={async () => {
+                    try {
+                      await api(`/domains/${encodeURIComponent(d.name)}`, { method: 'DELETE' });
+                      await refresh();
+                    } catch (e) { report(e.message, true); }
+                  }}><Trash2 size={15} /></button>
+                  </div>
                 </section>
               ))}
             </div>
           )}
           {page === 'Settings' && (
             <Settings
+              state={state}
+              refresh={refresh}
               report={report}
               onRecovery={onRecovery}
               onLogout={onLogout}

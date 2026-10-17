@@ -14,6 +14,14 @@ class CertificateTests(unittest.TestCase):
     def settings(self):
         return {"certificates": {"email": "admin@example.net", "staging": True, "propagationSeconds": 60}}
 
+    def test_apex_and_wildcard_use_distinct_names_and_requested_sans(self):
+        apex=worker.certbot_args({'name':'example.net','subdomains':False},self.settings())
+        wildcard=worker.certbot_args({'name':'example.net','subdomains':True},self.settings())
+        self.assertNotIn('*.example.net',apex)
+        self.assertIn('*.example.net',wildcard)
+        self.assertIn('proxy-example.net_apex-staging',apex)
+        self.assertNotEqual(apex[apex.index('--cert-name')+1],wildcard[wildcard.index('--cert-name')+1])
+
     def test_fixed_arguments_and_separate_staging_lineages(self):
         args = worker.certbot_args({"name": "example.net"}, self.settings())
         self.assertIn('/tmp/cloudflare/example.net.ini',args)

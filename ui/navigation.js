@@ -7,12 +7,17 @@ export function createNavigation(browser) {
   const listeners = new Set();
   const drafts = new Map();
   function read() {
-    const url = new URL(browser.location.hash.slice(1) || '/routes', 'https://proxy.invalid');
-    const [, section, kind] = url.pathname.split('/');
+    const legacy = browser.location.hash?.startsWith('#/') ? browser.location.hash.slice(1) : '';
+    const url = new URL(legacy || `${browser.location.pathname}${browser.location.search}`, 'https://proxy.invalid');
+    const [, section, action, name] = url.pathname.split('/');
+    const kind = section === 'domains' && ['new', 'edit'].includes(action) ? 'domains' : action;
+    const domainName = section === 'domains' && action === 'edit' ? name : null;
     const page = pages.find((name) => name.toLowerCase() === section) ?? 'Routes';
     const saved = browser.history.state?.proxyNavigation;
-    const matches = saved?.page === page && saved.wizard?.kind === kind;
-    const wizard = kinds.includes(kind) ? (matches ? saved.wizard : { kind }) : null;
+    const matches = saved?.page === page && saved.wizard?.kind === kind &&
+      (!domainName || (saved.wizard.initial?.name ?? saved.wizard.domainName) === domainName) &&
+      !(section === 'domains' && action === 'new' && saved.wizard?.initial);
+    const wizard = kinds.includes(kind) ? (matches ? saved.wizard : { kind, domainName }) : null;
     const id = wizard ? (matches ? saved.id : null) ?? browser.crypto.randomUUID() : null;
     const maxStep = wizard?.kind === 'route'
       ? (wizard.publishOnly ? 0 : 3)
@@ -20,6 +25,7 @@ export function createNavigation(browser) {
     const requestedStep = Math.floor(Number(url.searchParams.get('step'))) || 0;
     return {
       page, wizard, id,
+      settingsSection: page === 'Settings' && ['general', 'certificates', 'access', 'backup'].includes(kind) ? kind : 'general',
       step: wizard ? Math.min(maxStep, Math.max(0, requestedStep)) : 0,
       draft: drafts.get(id) ?? (wizard && saved?.id === id ? saved.draft : null) ?? {},
     };
@@ -28,8 +34,12 @@ export function createNavigation(browser) {
   function write(next, method = 'replaceState') {
     current = next;
     if (next.id) drafts.set(next.id, next.draft);
-    const hash = `#/${next.page.toLowerCase()}${next.wizard ? `/${next.wizard.kind}?step=${next.step}` : ''}`;
-    browser.history[method]({ ...browser.history.state, proxyNavigation: next }, '', hash);
+    const domainName = next.wizard?.initial?.name ?? next.wizard?.domainName;
+    const wizardPath = next.wizard?.kind === 'domains'
+      ? domainName ? `/edit/${domainName}` : '/new'
+      : `/${next.wizard?.kind}`;
+    const path = `/${next.page.toLowerCase()}${next.wizard ? `${wizardPath}?step=${next.step}` : next.page === 'Settings' ? `/${next.settingsSection ?? 'general'}` : ''}`;
+    browser.history[method]({ ...browser.history.state, proxyNavigation: next }, '', path);
     for (const listener of listeners) listener();
   }
   const onPop = () => write(read());
@@ -44,7 +54,7 @@ export function createNavigation(browser) {
     },
     setPage(page) {
       if (current.page === page && !current.wizard) return;
-      write({ page, wizard: null, step: 0, draft: {}, id: null }, 'pushState');
+      write({ page, wizard: null, step: 0, draft: {}, id: null, settingsSection: 'general' }, 'pushState');
     },
     setWizard(wizard) {
       write({
@@ -54,6 +64,9 @@ export function createNavigation(browser) {
     },
     setStep(step) {
       if (step !== current.step) write({ ...current, step }, 'pushState');
+    },
+    setSettingsSection(settingsSection) {
+      write({ ...current, settingsSection }, 'pushState');
     },
     setField(key, value, fallback) {
       const previous = current.draft[key] ?? fallback;
@@ -77,6 +90,7 @@ export function useNavigation() {
   return {
     ...useSyncExternalStore(source.subscribe, source.getSnapshot),
     setPage: source.setPage, setWizard: source.setWizard, setStep: source.setStep,
+    setSettingsSection: source.setSettingsSection,
   };
 }
 export function useWizardField(key, initial) {

@@ -80,19 +80,16 @@ export const staticSiteSchema = z
     exclude: z.array(filePattern).max(30).default(defaultExcludedFiles),
   })
   .strict();
+export const domainSchema = z.object({
+  name: hostname,
+  subdomains: z.boolean().default(true),
+}).strict();
 export const policySchema = z
   .object({
     origin: z.string().url(),
     ingressIPs: z.array(ip).min(1).max(8),
-    domains: z
-      .array(
-        z
-          .object({
-            name: hostname,
-          })
-          .strict(),
-      )
-      .max(50),
+    adminHostname: z.union([hostname, z.literal('')]).default(''),
+    domains: z.array(domainSchema).max(50),
     certificates: z
       .object({
         email: z.union([z.string().email(), z.literal('')]),
@@ -107,6 +104,7 @@ export const settingsSchema = policySchema.omit({
   ingressIPs: true,
 });
 export const defaultSettings = {
+  adminHostname: '',
   domains: [],
   certificates: { email: '', staging: false, propagationSeconds: 60 },
 };
@@ -238,7 +236,7 @@ export function coveredDomain(host, domains) {
   return domains.find(
     (d) =>
       host === d.name ||
-      (host.endsWith(`.${d.name}`) && host.split('.').length === d.name.split('.').length + 1),
+      (d.subdomains !== false && host.endsWith(`.${d.name}`) && host.split('.').length === d.name.split('.').length + 1),
   );
 }
 export const MAX_STREAM_PORTS = 1024;
@@ -294,7 +292,9 @@ export function validatePolicy(raw, { development = false } = {}) {
   if (new Set(p.domains.map((d) => d.name)).size !== p.domains.length)
     throw new Problem(400, 'Duplicate domains in policy');
   if (p.domains.length && !p.certificates.email)
-    throw new Problem(400, 'Set an ACME email before adding domains');
+    throw new Problem(400, 'Set the certificate email in Settings before adding domains');
+  if (p.adminHostname && !coveredDomain(p.adminHostname, p.domains))
+    throw new Problem(400, 'Admin hostname needs coverage from a configured domain');
   if (p.ingressIPs.some((address) => !safeAddress(address)))
     throw new Problem(
       400,
@@ -321,10 +321,12 @@ export function validateSnapshot(policy, raw) {
     if (r.kind !== 'static' && r.staticSite)
       throw new Problem(400, 'Only static routes can select a folder');
     if (r.kind === 'http' || r.kind === 'static') {
+      if (r.hostname === policy.adminHostname)
+        throw new Problem(400, 'Hostname is reserved for the admin panel');
       if (!coveredDomain(r.hostname, policy.domains))
         throw new Problem(
           400,
-          'Hostname must be an apex or one-level subdomain of a configured domain',
+          `Hostname ${r.hostname} is outside enabled domain coverage`,
         );
       if (hosts.has(r.hostname)) throw new Problem(400, 'Hostname already has a route');
       hosts.add(r.hostname);

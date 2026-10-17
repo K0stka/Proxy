@@ -55,7 +55,7 @@ const serial = (fn) => {
   return next;
 };
 async function certificates(currentPolicy = policy) {
-  const ready = [],
+  const ready = [], wildcard = [],
     prints = [];
   for (const d of currentPolicy.domains) {
     try {
@@ -66,15 +66,15 @@ async function certificates(currentPolicy = policy) {
         meta.staging !== currentPolicy.certificates.staging ||
         Date.parse(cert.validTo) <= Date.now() ||
         Date.parse(cert.validFrom) > Date.now() ||
-        !cert.checkHost(d.name) ||
-        !cert.checkHost(`proxy-check.${d.name}`)
+        !cert.checkHost(d.name)
       )
         continue;
       ready.push(d.name);
+      if (cert.checkHost(`proxy-check.${d.name}`)) wildcard.push(d.name);
       prints.push(createHash('sha256').update(pem).digest('hex'));
     } catch {}
   }
-  return { ready, fingerprint: prints.join(':') };
+  return { ready, wildcard, fingerprint: prints.join(':') };
 }
 function probeRevision() {
   return new Promise((resolve, reject) => {
@@ -139,6 +139,7 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
     revision,
     directory,
     readyDomains: certs.ready,
+    wildcardDomains: certs.wildcard,
     staticSites: content.sites,
     errorSites: content.errors,
   });
@@ -179,6 +180,7 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
       policyHash: policyHash(nextPolicy),
       routes: next.routes.filter((r) => r.published).map((r) => r.id),
       readyDomains: certs.ready,
+      wildcardDomains: certs.wildcard,
       appliedAt: new Date().toISOString(),
       staticFiles: Object.fromEntries(
         Object.entries(content.sites).map(([id, site]) => [id, site.count]),

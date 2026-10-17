@@ -5,7 +5,14 @@ import { createNavigation } from '../ui/navigation.js';
 
 function browser(entries = [{ hash: '', state: null }], index = 0) {
   const handlers = new Map();
-  const location = { hash: entries[index].hash };
+  const location = {};
+  function visit(path) {
+    const url = new URL(path || '/', 'https://proxy.invalid');
+    location.hash = url.hash;
+    location.pathname = url.pathname;
+    location.search = url.search;
+  }
+  visit(entries[index].hash);
   return {
     location, crypto: { randomUUID },
     addEventListener(name, fn) {
@@ -16,15 +23,15 @@ function browser(entries = [{ hash: '', state: null }], index = 0) {
       get state() { return entries[index].state; },
       pushState(state, _, hash) {
         entries.splice(++index, entries.length, { hash, state: structuredClone(state) });
-        location.hash = hash;
+        visit(hash);
       },
       replaceState(state, _, hash) {
         entries[index] = { hash, state: structuredClone(state) };
-        location.hash = hash;
+        visit(hash);
       },
       go(delta) {
         index += delta;
-        location.hash = entries[index].hash;
+        visit(entries[index].hash);
         for (const fn of handlers.get('popstate') ?? []) fn();
         for (const fn of handlers.get('hashchange') ?? []) fn();
       },
@@ -37,10 +44,18 @@ test('browser history and refresh preserve pages, wizard steps and unsaved field
   const tab = browser(), nav = createNavigation(tab);
   nav.setPage('Services');
   nav.setPage('Files');
+  assert.equal(tab.location.pathname, '/files');
+  assert.equal(tab.location.hash, '');
   tab.history.go(-1);
   assert.equal(nav.getSnapshot().page, 'Services');
   tab.history.go(1);
   assert.equal(nav.getSnapshot().page, 'Files');
+  nav.setPage('Settings');
+  assert.equal(nav.getSnapshot().settingsSection, 'general');
+  nav.setSettingsSection('certificates');
+  assert.equal(tab.location.pathname, '/settings/certificates');
+  assert.equal(createNavigation(tab.reload()).getSnapshot().settingsSection, 'certificates');
+  nav.setPage('Files');
   assert.equal(createNavigation(tab.reload()).getSnapshot().page, 'Files');
   nav.setWizard({ kind: 'folder', initial: { directory: 'public' } });
   nav.setField('folder', { directory: 'assets', include: ['*.css'] });
@@ -58,4 +73,10 @@ test('browser history and refresh preserve pages, wizard steps and unsaved field
   nav.setWizard(null);
   assert.equal(nav.getSnapshot().wizard, null);
   assert.equal(nav.getSnapshot().page, 'Files');
+  nav.setPage('Domains');
+  nav.setWizard({ kind: 'domains' });
+  assert.equal(tab.location.pathname, '/domains/new');
+  nav.setWizard({ kind: 'domains', initial: { name: 'example.net', subdomains: false } });
+  assert.equal(tab.location.pathname, '/domains/edit/example.net');
+  assert.equal(createNavigation(tab.reload()).getSnapshot().wizard.initial.subdomains, false);
 });

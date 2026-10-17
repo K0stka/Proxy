@@ -20,7 +20,7 @@ function Recovery({ code, onClose }) {
 function AuthScreen({ status, onAuth }) {
   const [token, setToken] = useState(''),
     [code, setCode] = useState(''),
-    [recover, setRecover] = useState(false),
+    [recover, setRecover] = useState(status.enrolled && status.originEnrolled === false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   async function submit(e) {
@@ -43,6 +43,19 @@ function AuthScreen({ status, onAuth }) {
         result = await api('/auth/login/verify', { method: 'POST', body: response });
       }
       setCSRF(result.csrf);
+      if (recover && status.originEnrolled === false) {
+        try {
+          const optionsJSON = await api('/auth/register/options', { method: 'POST' });
+          const response = await startRegistration({ optionsJSON });
+          const registered = await api('/auth/register/verify', { method: 'POST', body: response });
+          setCSRF(registered.csrf);
+          result = { ...registered, recoveryCode: result.recoveryCode };
+        } catch {
+          // Recovery already rotated the code; show it even if passkey setup was cancelled.
+          onAuth(result);
+          return;
+        }
+      }
       onAuth(result);
     } catch (e) {
       setError(e.name === 'NotAllowedError' ? 'Passkey prompt cancelled' : e.message);
@@ -64,6 +77,9 @@ function AuthScreen({ status, onAuth }) {
           {recover ? (
             <label>
               Recovery code
+              {status.originEnrolled === false && status.enrolled && (
+                <span className="hint">Authorize a passkey for this hostname.</span>
+              )}
               <input
                 type="password"
                 autoComplete="off"

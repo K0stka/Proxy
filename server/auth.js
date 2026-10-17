@@ -21,10 +21,11 @@ function cookies(req) {
 }
 
 export class Auth {
-  constructor(store, { origin, bootstrapToken, development = false }) {
+  constructor(store, { origin, bootstrapToken, development = false, legacyRPID }) {
     this.store = store;
     this.origin = origin;
     this.rpID = new URL(origin).hostname;
+    this.legacyRPID = legacyRPID ?? this.rpID;
     this.bootstrapToken = bootstrapToken;
     this.development = development;
     this.pending = new Map();
@@ -41,11 +42,15 @@ export class Auth {
   credentials() {
     return this.store.get('credentials', []);
   }
+  localCredentials() {
+    return this.credentials().filter((c) => (c.rpID ?? this.legacyRPID) === this.rpID);
+  }
   session(req) {
     const token = cookies(req)[this.development ? 'proxy_session' : '__Host-proxy_session'];
     if (!token || !/^[\w-]{43}$/.test(token)) return null;
     const sessions = this.store.get('sessions', []);
-    return sessions.find((s) => s.token === hash(token) && s.expires > Date.now()) ?? null;
+    return sessions.find((s) => s.token === hash(token) && s.expires > Date.now() &&
+      (s.origin === this.origin || (!s.origin && this.rpID === this.legacyRPID))) ?? null;
   }
   require(req, mutation = false) {
     const s = this.session(req);
@@ -73,7 +78,7 @@ export class Auth {
       .get('sessions', [])
       .filter((s) => s.expires > now)
       .slice(-9);
-    sessions.push({ token: hash(token), csrf, expires: now + 12 * 3600000 });
+    sessions.push({ token: hash(token), csrf, expires: now + 12 * 3600000, origin: this.origin });
     this.store.set('sessions', sessions);
     this.cookie(res, 'proxy_session', token, 12 * 3600);
     return { authenticated: true, csrf };
@@ -100,7 +105,7 @@ export class Auth {
   async handle(path, req, res, body) {
     if (path === '/api/auth/status' && req.method === 'GET') {
       const s = this.session(req);
-      return { enrolled: this.credentials().length > 0, authenticated: Boolean(s), csrf: s?.csrf };
+      return { enrolled: this.credentials().length > 0, originEnrolled: this.localCredentials().length > 0, authenticated: Boolean(s), csrf: s?.csrf };
     }
     if (req.method !== 'POST') throw new Problem(404, 'Not found');
     this.rate(req);
@@ -123,7 +128,7 @@ export class Auth {
         attestationType: 'none',
         supportedAlgorithmIDs: [-7, -257, -8],
         authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
-        excludeCredentials: current.map((c) => ({ id: c.id, transports: c.transports })),
+        excludeCredentials: this.localCredentials().map((c) => ({ id: c.id, transports: c.transports })),
       });
       this.challenge(req, res, {
         type: 'register',
@@ -168,6 +173,7 @@ export class Auth {
         ...latest,
         {
           id: c.id,
+          rpID: this.rpID,
           publicKey: Buffer.from(c.publicKey).toString('base64url'),
           counter: c.counter,
           transports: c.transports,
@@ -182,7 +188,7 @@ export class Auth {
       return { ...this.issue(req, res), recoveryCode };
     }
     if (path === '/api/auth/login/options') {
-      const credentials = this.credentials();
+      const credentials = this.localCredentials();
       if (!credentials.length) throw new Problem(400, 'Enroll your first passkey');
       const options = await generateAuthenticationOptions({
         rpID: this.rpID,
@@ -194,7 +200,7 @@ export class Auth {
     }
     if (path === '/api/auth/login/verify') {
       const pending = this.consume(req, res, 'login'),
-        credentials = this.credentials(),
+        credentials = this.localCredentials(),
         credential = credentials.find((c) => c.id === body.id);
       if (!credential) throw new Problem(400, 'Passkey not recognized');
       let result;
@@ -246,7 +252,7 @@ export class Auth {
     }
     if (path === '/api/auth/passkeys') {
       this.require(req, true);
-      return this.credentials().map((c) => ({ id: c.id, created: c.created }));
+      return this.credentials().map((c) => ({ id: c.id, created: c.created, hostname: c.rpID ?? this.legacyRPID }));
     }
     if (path === '/api/auth/passkeys/remove') {
       this.require(req, true);

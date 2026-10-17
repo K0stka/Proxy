@@ -49,7 +49,7 @@ Paste the variables from [.env.example](.env.example) into the stack's **Environ
 | `PROXY_CLOUDFLARE_TOKEN`                   | Cloudflare token with Zone Read and DNS Edit for the required zones                                          |
 | `PROXY_CLOUDFLARE_TOKENS`                  | Optional JSON token overrides per domain; leave `'{}'` for a single token                                    |
 
-Deployment values, the Core URL and credentials belong here. The proxy discovers every server visible to the Core account and its published container ports automatically. Configure domains and certificate preferences through **Domains → Manage domains**; routes, UDP blocks, static sites and error pages stay in the app/SQLite. There are no separate server mappings, destination allowlists or preapproved public port blocks. Environment changes require a stack recreation.
+Deployment values, the Core URL and credentials belong here. The proxy discovers every server visible to the Core account and its published container ports automatically. Use **Domains → Add domain / Edit** for individual domain coverage and **Settings → Certificates** for the shared email and certificate preferences; routes, UDP blocks, static sites and error pages stay in the app/SQLite. There are no separate server mappings, destination allowlists or preapproved public port blocks. Environment changes require a stack recreation.
 
 The Compose file uses `pull_policy: build` so a normal deployment rebuilds the images from the checked-out source, including when an image already exists ([Docker reference](https://docs.docker.com/reference/compose-file/services/#pull_policy)). Komodo's deployed commit label alone does not identify the code inside an existing running image. If an older UI persists, check that the deployment built and recreated `control` from this checkout and that Tailscale Serve targets that container's port.
 
@@ -100,18 +100,24 @@ Certbot needs an INI credential file internally. The worker creates private file
 Deploy/redeploy from Komodo, or run `docker compose up -d --build` with the same environment. Then on the VPS:
 
 ```sh
-sudo tailscale serve --bg http://127.0.0.1:3001
+sudo tailscale serve --bg --https=8443 http://127.0.0.1:3001
 ```
 
-The Serve URL must match `PROXY_ORIGIN`. Limit access to administrators with Tailscale grants. Do not enable Funnel. The management port is bound to VPS loopback; NGINX binds public traffic only on configured ingress addresses. Enroll with `PROXY_BOOTSTRAP_TOKEN` and store the recovery code. Open **Services** to see discovered servers and their container ports. Add your domains and ACME email through **Domains → Manage domains**, then connect services to routes.
+Set `PROXY_ORIGIN` to the exact Serve URL, including the port, for example `https://byttorrent.pancake-ghost.ts.net:8443`. [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) terminates private HTTPS and forwards to loopback. Limit access to administrators with Tailscale grants. Do not enable Funnel. The management port is bound to VPS loopback; NGINX binds public traffic only on configured ingress addresses. Enroll with `PROXY_BOOTSTRAP_TOKEN` and store the recovery code. Open **Services** to see discovered servers and their container ports. Set the shared email in **Settings → Certificates**, add domains individually through **Domains → Add domain**, then connect services to routes.
 
 ### 4. DNS, certificates, then publish
 
-Point the apex and `*` records for each domain at the VPS, initially **DNS-only**. Publish AAAA only when IPv6 is configured and protected. Cloudflare must be the authoritative DNS provider, not only the registrar. Raw TCP/UDP cannot use ordinary orange-cloud proxying.
+Point the apex record at the VPS, initially **DNS-only**. Add a `*` record only for domains on which you enable third-level subdomains. Publish AAAA only when IPv6 is configured and protected. Cloudflare must be the authoritative DNS provider, not only the registrar. Raw TCP/UDP cannot use ordinary orange-cloud proxying.
 
-Add your domains and certificate email in **Domains → Manage domains**. New installations request production certificates automatically; the edge reloads when they are ready. Wait for a certificate, then use **Services → Connect → Create draft → Publish**. Optional staging and DNS timing controls are under **Certificate diagnostics**. Existing staging configurations stay in staging until you switch them off. Keep torrent administration unpublished and access it directly through Tailscale.
+Set the shared email in **Settings → Certificates**. Use **Domains → Add domain** for each domain, or **Edit** on its card. Disable **Allow third-level subdomains** for an apex-only certificate; enable it to request both the apex and its wildcard. Existing domains retain wildcard coverage. New installations request production certificates automatically; the edge reloads when they are ready. Wait for a certificate, then use **Services → Connect → Create draft → Publish**. Staging and DNS timing controls are in **Settings → Certificates → Diagnostics**. Existing staging configurations stay in staging until you switch them off. Keep torrent administration unpublished and access it directly through Tailscale.
 
 Open TCP 80/443 and the published custom ingress ranges in the host and provider firewalls. The app deliberately cannot edit firewalls. Test ingress from a different network; an edge listener and a successful backend check do not verify the public path. UDP needs a real protocol-specific test.
+
+### Public admin hostname and private fallback
+
+In **Settings → General**, set a public hostname covered by a configured domain, for example `proxy.krychlic.com`. Point its DNS record at the VPS. The edge creates a fixed HTTPS proxy to the loopback management port once a production certificate covers it; no custom endpoint or management-port exception is needed. Clearing the hostname disables public access. The hostname is reserved, so ordinary routes cannot claim it.
+
+The private Tailscale Serve address remains independent of public DNS, the edge, and Let's Encrypt: `https://byttorrent.pancake-ghost.ts.net:8443` for the example above. Both addresses use passkeys and exact Host/Origin checks. Sessions and passkeys are scoped to their hostname/origin. Existing private-host passkeys remain valid. On first access at the other hostname, enter the recovery code to authorize creating a passkey there, then save the newly rotated recovery code. Cancelling that passkey prompt still shows the recovery code; you can add the passkey later in **Settings → Access**. Recovery revokes other sessions but preserves existing passkeys. Private availability still requires the control container and host Tailscale service to be running.
 
 ## Automatic discovery
 
@@ -127,14 +133,14 @@ Upgrading from the earlier manual setup preserves routes, domains, file rules an
 
 **Routes** is the main workspace: connect a public hostname or port to a destination. **Domains** shows shared certificate coverage. **Services** lists Komodo endpoints, and **Files** manages explicitly configured folders; both are optional shortcuts into the route wizard. You can create either type directly through Routes → New route.
 
-Pages and wizard steps have URLs. Browser Back/Forward navigate them; refresh restores the current wizard step and its unsaved fields from the tab's history. This does not publish or save changes to the server. Credentials and recovery codes are never placed in navigation history.
+Pages and wizard steps use normal paths such as `/settings/certificates` and `/routes/route?step=2`, without hash routing. Browser Back/Forward navigate them; refresh restores the current wizard step and its unsaved fields from the tab's history. This does not publish or save changes to the server. Credentials and recovery codes are never placed in navigation history.
 
 - **UDP blocks:** choose UDP → Address → Port block, then enter start/end ports. Every public port forwards to the identical destination port. Enter the destination IP and public start/end ports once in the route wizard. No separate port approval is required; the fixed total limit is 1,024 published stream ports.
 
 - **Create or edit:** follow the full-page wizard, review, then save. New routes stay drafts until published. Live edits apply only after NGINX validates and activates them; failed changes retain the working configuration.
 - **Disable:** new connections stop after application. Existing connections may drain for up to 30 seconds. This is not an immediate connection kill switch.
 - **Certificates:** eligibility is checked twice daily with jitter; manual requests have a cooldown. Failed checks retain valid certificates. Separate staging/production lineages avoid accidentally reusing a staging certificate. The Domains screen shows failures and expiry.
-- **Another domain:** add it through Domains → Manage. Ensure the Cloudflare token can access its zone. Only a new token or token override requires updating Komodo environment variables and recreating containers.
+- **Another domain:** add it through Domains → Add domain. Ensure the Cloudflare token can access its zone. Only a new token or token override requires updating Komodo environment variables and recreating containers.
 - **Private upstream CA:** HTTPS upstreams always verify their hostname and chain. To trust your own CA, provide an administrator-managed CA bundle containing your private CA and system roots at `/etc/ssl/certs/ca-certificates.crt` in the edge. There is no insecure verification toggle.
 - **Configuration drift:** the UI compares desired and active configuration hashes and shows **Retry** when they differ. A lost apply response is treated as uncertain, never as proof that no listener opened.
 - **Source IP:** raw TCP/UDP backends normally see the VPS. HTTP overwrites forwarding headers. Enable PROXY protocol only for a backend that supports it.

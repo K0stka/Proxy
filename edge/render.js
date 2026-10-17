@@ -51,11 +51,11 @@ function staticLocations(manifest) {
 export function render(
   policy,
   raw,
-  { revision, directory, readyDomains = [], staticSites = {}, errorSites = {} },
+  { revision, directory, readyDomains = [], wildcardDomains = readyDomains, staticSites = {}, errorSites = {} },
 ) {
   const snapshot = validateSnapshot(policy, raw),
     routes = snapshot.routes.filter((r) => r.published),
-    ready = new Set(readyDomains);
+    ready = new Set(readyDomains), wildcard = new Set(wildcardDomains);
   const http = [],
     stream = [];
   const listen = (ip, port, extra = '') =>
@@ -73,15 +73,38 @@ export function render(
     for (const domain of policy.domains.filter((d) => ready.has(d.name))) {
       const pattern = domain.name.replace(/\./g, '\\.');
       http.push(
-        `server { ${listen(ip, 443, 'ssl')} server_name ~^(?:[a-z0-9-]+\\.)?${pattern}$; ${certLines(domain.name)} if ($ssl_server_name != $host) { return 421; } ${errorLocations(directory, errorSites)} location / { return 404; } }`,
+        `server { ${listen(ip, 443, 'ssl')} server_name ~^${domain.subdomains && wildcard.has(domain.name) ? '(?:[a-z0-9-]+\\.)?' : ''}${pattern}$; ${certLines(domain.name)} if ($ssl_server_name != $host) { return 421; } ${errorLocations(directory, errorSites)} location / { return 404; } }`,
       );
     }
+  }
+  const adminDomain = coveredDomain(policy.adminHostname, policy.domains)?.name;
+  if (policy.adminHostname && !policy.certificates.staging && ready.has(adminDomain) && (policy.adminHostname === adminDomain || wildcard.has(adminDomain))) {
+    http.push(`server { ${policy.ingressIPs.map((ip) => listen(ip, 80)).join(' ')} server_name ${policy.adminHostname}; location / { return 308 https://${policy.adminHostname}$request_uri; } }`);
+    http.push(`server {
+${policy.ingressIPs.map((ip) => listen(ip, 443, 'ssl')).join(' ')}
+server_name ${policy.adminHostname}; ${certLines(adminDomain)}
+if ($ssl_server_name != $host) { return 421; }
+client_max_body_size 1m;
+${errorLocations(directory, errorSites)}
+location / {
+proxy_pass http://127.0.0.1:3001;
+proxy_set_header Host ${policy.adminHostname};
+proxy_set_header X-Forwarded-Proto https;
+proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header Forwarded "";
+proxy_set_header Proxy "";
+proxy_connect_timeout 5s;
+proxy_read_timeout 60s;
+proxy_intercept_errors on;
+}
+}`);
   }
   for (const r of routes) {
     const endpoint = `${address(r.targetHost)}:${r.kind === 'udp' ? '$server_port' : r.targetPort}`;
     if (r.kind === 'http' || r.kind === 'static') {
       const domain = coveredDomain(r.hostname, policy.domains)?.name;
-      if (!ready.has(domain))
+      if (!ready.has(domain) || (r.hostname !== domain && !wildcard.has(domain)))
         throw new Problem(
           409,
           `Certificate for ${domain} is not ready; issue it before publishing`,

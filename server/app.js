@@ -17,6 +17,7 @@ import {
   settingsFromPolicy,
   effectivePolicy,
   policyHash,
+  domainSchema,
 } from '../shared/model.js';
 import { bodyJSON, json, unixRequest } from '../shared/http.js';
 
@@ -39,6 +40,7 @@ export function createApp({
   const deployment = { origin: policy.origin, ingressIPs: policy.ingressIPs };
   if (!store.get('settings')) store.set('settings', settingsFromPolicy(policy));
   const auth = new Auth(store, { origin: policy.origin, bootstrapToken, development });
+  const publicAuth = new Map();
   let queue = Promise.resolve();
   const serial = (fn) => {
     const next = queue.then(fn);
@@ -115,10 +117,12 @@ export function createApp({
         } catch {}
         return {
           name: d.name,
+          subdomains: d.subdomains,
           staging: policy.certificates.staging,
           ready:
             Boolean(status.ready) &&
             status.staging === policy.certificates.staging &&
+            (status.subdomains ?? true) === d.subdomains &&
             Date.parse(status.expires) > Date.now(),
           expires: status.expires ?? null,
           lastCheck: status.lastCheck ?? null,
@@ -142,21 +146,30 @@ export function createApp({
         json(res, { ok: true });
         return;
       }
-      if (req.headers.host !== new URL(policy.origin).host)
+      const origin = req.headers.host === new URL(policy.origin).host ? policy.origin
+        : policy.adminHostname && req.headers.host === policy.adminHostname ? `https://${policy.adminHostname}` : null;
+      if (!origin)
         throw new Problem(403, 'Unrecognized management host');
-      const url = new URL(req.url, policy.origin),
+      let requestAuth = auth;
+      if (origin !== policy.origin) {
+        if (!publicAuth.has(origin)) publicAuth.set(origin, new Auth(store, {
+          origin, bootstrapToken, development, legacyRPID: new URL(policy.origin).hostname,
+        }));
+        requestAuth = publicAuth.get(origin);
+      }
+      const url = new URL(req.url, origin),
         path = url.pathname;
       if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method))
         throw new Problem(405, 'Method not allowed');
       const mutation = req.method !== 'GET';
-      if (mutation && req.headers.origin !== policy.origin)
+      if (mutation && req.headers.origin !== origin)
         throw new Problem(403, 'Unrecognized request origin');
       if (path.startsWith('/api/auth/')) {
-        json(res, await auth.handle(path, req, res, mutation ? await bodyJSON(req) : {}));
+        json(res, await requestAuth.handle(path, req, res, mutation ? await bodyJSON(req) : {}));
         return;
       }
       if (path.startsWith('/api/')) {
-        auth.require(req, mutation);
+        requestAuth.require(req, mutation);
         if (path === '/api/state' && req.method === 'GET') {
           let edgeStatus;
           try {
@@ -193,6 +206,36 @@ export function createApp({
               return settingsFromPolicy(policy);
             }),
           );
+          return;
+        }
+        if (path === '/api/preferences' && req.method === 'PUT') {
+          const raw = await bodyJSON(req);
+          const parsed = parse(settingsSchema.omit({ domains: true }).partial(), raw);
+          // Partial Zod objects still apply defaults; update only explicitly submitted fields.
+          const input = Object.fromEntries(Object.keys(raw).map((key) => [key, parsed[key]]));
+          json(res, await serial(async () => {
+            await apply(store.snapshot(), effectivePolicy(deployment, {
+              ...settingsFromPolicy(policy), ...input,
+            }, { development }));
+            return settingsFromPolicy(policy);
+          }));
+          return;
+        }
+        const domainMatch = path.match(/^\/api\/domains(?:\/([^/]+))?$/);
+        if (domainMatch && ['POST', 'PUT', 'DELETE'].includes(req.method)) {
+          const previous = domainMatch[1] ? decodeURIComponent(domainMatch[1]) : null;
+          const input = req.method === 'DELETE' ? null : parse(domainSchema, await bodyJSON(req));
+          if (req.method === 'DELETE') await bodyJSON(req);
+          if ((req.method === 'POST') !== !previous) throw new Problem(405, 'Method not allowed');
+          json(res, await serial(async () => {
+            if (previous && !policy.domains.some((d) => d.name === previous))
+              throw new Problem(404, 'Domain not found');
+            const domains = [...policy.domains.filter((d) => d.name !== previous), ...(input ? [input] : [])];
+            await apply(store.snapshot(), effectivePolicy(deployment, {
+              ...settingsFromPolicy(policy), domains,
+            }, { development }));
+            return input ?? { ok: true };
+          }));
           return;
         }
         if (path === '/api/discovery/refresh' && req.method === 'POST') {

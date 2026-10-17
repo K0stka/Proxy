@@ -21,10 +21,10 @@ def atomic_json(path, value):
     os.replace(temp, path)
 
 
-def cert_name(domain, staging):
+def cert_name(domain, staging, subdomains=True):
     if not isinstance(domain,str) or len(domain)>253 or "." not in domain or not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",label) for label in domain.split('.')):
         raise ValueError("Invalid configured domain")
-    return "proxy-" + domain + ("-staging" if staging else "")
+    return "proxy-" + domain + ("" if subdomains else "_apex") + ("-staging" if staging else "")
 
 
 def credential_path(domain):
@@ -51,7 +51,9 @@ def load_policy(path=Path('/cert-policy/policy.db')):
         raise ValueError('Invalid certificate settings')
     if names and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+',settings['email']):
         raise ValueError('Invalid ACME email')
-    return {'domains':[{'name':name} for name in names],'certificates':settings}
+    if any(type(domain.get('subdomains',True)) is not bool for domain in domains):
+        raise ValueError('Invalid subdomain setting')
+    return {'domains':[{'name':domain['name'], **({'subdomains':domain['subdomains']} if 'subdomains' in domain else {})} for domain in domains],'certificates':settings}
 
 
 def write_credentials(domain,env=None,credentials_dir=Path('/tmp/cloudflare')):
@@ -74,7 +76,7 @@ def write_credentials(domain,env=None,credentials_dir=Path('/tmp/cloudflare')):
 
 
 def certbot_args(domain, policy):
-    name = cert_name(domain["name"], policy["certificates"]["staging"])
+    name = cert_name(domain["name"], policy["certificates"]["staging"], domain.get('subdomains',True))
     credentials = str(credential_path(domain['name']))
     settings = policy["certificates"]
     propagation = settings["propagationSeconds"]
@@ -83,14 +85,16 @@ def certbot_args(domain, policy):
     args = ["certbot", "certonly", "--non-interactive", "--agree-tos", "--email="+settings["email"],
             "--config-dir", "/certbot", "--work-dir", "/tmp/certbot-work", "--logs-dir", "/tmp/certbot-logs",
             "--cert-name", name, "--keep-until-expiring", "--dns-cloudflare", "--dns-cloudflare-credentials", credentials,
-            "--dns-cloudflare-propagation-seconds", str(propagation), "-d", domain["name"], "-d", "*." + domain["name"]]
+            "--dns-cloudflare-propagation-seconds", str(propagation), "-d", domain["name"]]
+    if domain.get('subdomains',True):
+        args.extend(['-d', '*.'+domain['name']])
     if settings["staging"]:
         args.append("--staging")
     return args
 
 
-def export_certificate(domain, staging, tls_root=Path("/tls"), certbot_root=Path("/certbot")):
-    source = certbot_root / "live" / cert_name(domain, staging)
+def export_certificate(domain, staging, tls_root=Path("/tls"), certbot_root=Path("/certbot"), subdomains=True):
+    source = certbot_root / "live" / cert_name(domain, staging, subdomains)
     fullchain, key = (source / "fullchain.pem").read_bytes(), (source / "privkey.pem").read_bytes()
     # Never export a mismatched pair; a new directory and one symlink switch publish both.
     public_cert = subprocess.run(["openssl", "x509", "-pubkey", "-noout"], input=fullchain, capture_output=True, check=True).stdout
@@ -126,19 +130,19 @@ def check_domain(domain, policy, status_dir=Path("/cert-status")):
         old = json.loads(status_file.read_text())
     except (OSError, ValueError):
         old = {}
-    status = {**old, "lastCheck": dt.datetime.now(dt.timezone.utc).isoformat(), "staging": policy["certificates"]["staging"]}
+    status = {**old, "lastCheck": dt.datetime.now(dt.timezone.utc).isoformat(), "staging": policy["certificates"]["staging"], 'subdomains':domain.get('subdomains',True)}
     try:
         write_credentials(domain["name"])
         result = subprocess.run(certbot_args(domain, policy), capture_output=True, timeout=600, check=False)
         if result.returncode:
             raise ValueError("Certbot failed")
-        status.update(export_certificate(domain["name"], policy["certificates"]["staging"]))
+        status.update(export_certificate(domain["name"], policy["certificates"]["staging"], subdomains=domain.get('subdomains',True)))
         status["error"] = None
     except (OSError, ValueError, subprocess.SubprocessError):
         # Do not forward raw Certbot output or DNS-provider errors into logs or the UI.
         status["error"] = "Certificate check failed. Verify the DNS zone, token permissions, propagation and ACME limits."
         try:
-            status["ready"] = bool(old.get("ready")) and old.get("staging") == policy["certificates"]["staging"] and bool(old.get("expires")) and dt.datetime.fromisoformat(old["expires"]) > dt.datetime.now(dt.timezone.utc)
+            status["ready"] = bool(old.get("ready")) and old.get("staging") == policy["certificates"]["staging"] and old.get('subdomains',True)==domain.get('subdomains',True) and bool(old.get("expires")) and dt.datetime.fromisoformat(old["expires"]) > dt.datetime.now(dt.timezone.utc)
         except (ValueError, TypeError):
             status["ready"] = False
     atomic_json(status_file, status)

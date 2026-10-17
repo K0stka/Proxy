@@ -207,6 +207,40 @@ test('first run has no example domains, targets or services and accepts UI setup
   assert.equal((await f.request('/api/settings', { method: 'PUT', body: settings })).status, 200);
   assert.deepEqual(f.store.get('settings'), settings);
 });
+
+test('domain CRUD, global preferences and admin origins preserve private access and certificate boundaries', async (t) => {
+  const f = await fixture(t);
+  assert.equal((await f.request('/api/domains', { method: 'POST', body: { name: 'apex.example.org', subdomains: false } })).status, 200);
+  assert.equal((await f.request('/api/domains', { method: 'POST', body: { name: 'apex.example.org', subdomains: false } })).status, 400);
+  assert.equal((await f.request('/api/routes', { method: 'POST', body: route({ hostname: 'sub.apex.example.org' }) })).status, 400);
+  assert.equal((await f.request('/api/domains/apex.example.org', { method: 'PUT', body: { name: 'apex.example.org', subdomains: true } })).status, 200);
+  assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { adminHostname: 'proxy.krychlic.com' } })).status, 200);
+  assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { certificates: {
+    email: 'shared@example.net', staging: false, propagationSeconds: 60,
+  } } })).status, 200);
+  assert.equal(f.store.get('settings').adminHostname, 'proxy.krychlic.com');
+  assert.equal((await f.request('/api/routes', { method: 'POST', body: route({ hostname: 'proxy.krychlic.com' }) })).status, 400);
+  assert.equal((await f.request('/api/domains/apex.example.org', { method: 'DELETE' })).status, 200);
+  assert.equal((await f.request('/api/domains/krychlic.com', { method: 'DELETE' })).status, 400);
+  const publicHeaders = { host: 'proxy.krychlic.com', origin: 'https://proxy.krychlic.com' };
+  assert.equal((await f.request('/api/state', { extra: publicHeaders })).status, 401);
+  assert.equal((await f.request('/api/state')).status, 200);
+  f.store.set('credentials', [{ id: randomToken(), rpID: 'localhost', transports: [] }]);
+  const publicStatus = await (await f.request('/api/auth/status', { extra: publicHeaders, authenticated: false })).json();
+  assert.equal(publicStatus.enrolled, true);
+  assert.equal(publicStatus.originEnrolled, false);
+  assert.equal((await (await f.request('/api/auth/status', { authenticated: false })).json()).originEnrolled, true);
+  const code = randomToken();
+  f.store.set('recovery', hash(code));
+  const recovered = await f.request('/api/auth/recover', { method: 'POST', authenticated: false, extra: publicHeaders, body: { code } });
+  assert.equal(recovered.status, 200);
+  const session = await recovered.json(), cookie = recovered.headers.getSetCookie()[0].split(';')[0];
+  assert.equal((await f.request('/api/state', { authenticated: false, extra: { ...publicHeaders, cookie } })).status, 200);
+  assert.equal((await f.request('/api/state', { authenticated: false, extra: { cookie } })).status, 401);
+  assert.equal((await f.request('/api/preferences', { method: 'PUT', authenticated: false,
+    extra: { ...publicHeaders, cookie, origin: policy().origin, 'x-csrf-token': session.csrf }, body: { adminHostname: '' } })).status, 403);
+  assert.equal((await f.request('/settings/certificates')).status, 200);
+});
 test('API rejects unauthenticated, cross-origin, forged-host and CSRF requests', async (t) => {
   const f = await fixture(t);
   assert.equal((await f.request('/api/state', { authenticated: false })).status, 401);

@@ -373,7 +373,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
   const endpoints = serviceEndpoints(state.discovery.services, route.kind);
   const reviewed = {
     ...route,
-    hostname: isWebsite(route) ? `${subdomain ? subdomain + '.' : ''}${domain}` : '',
+    hostname: isWebsite(route) ? `${subdomain && state.domains.find((d) => d.name === domain)?.subdomains ? subdomain + '.' : ''}${domain}` : '',
     portEnd:
       route.kind === 'tcp' || (route.kind === 'udp' && !udpBlock) ? route.portStart : route.portEnd,
     sourceCIDRs: cidrs.split(/[\s,]+/).filter(Boolean),
@@ -623,7 +623,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
         <>
           {isWebsite(route) ? (
             <div className="field-pair">
-              <label>
+              {state.domains.find((d) => d.name === domain)?.subdomains && <label>
                 Subdomain
                 <input
                   value={subdomain}
@@ -631,7 +631,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                   pattern="[a-zA-Z0-9-]*"
                   placeholder="Leave empty for apex"
                 />
-              </label>
+              </label>}
               <label>
                 Domain
                 <select value={domain} required onChange={(e) => setDomain(e.target.value)}>

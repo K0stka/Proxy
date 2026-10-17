@@ -7,6 +7,22 @@ const options = {
   directory: '/runtime/rev-test',
   readyDomains: ['krychlic.com', 'example.net'],
 };
+
+test('apex and wildcard readiness differ; admin proxy has a fixed destination and requires production TLS', () => {
+  const p = policy();
+  p.certificates.staging = false;
+  p.adminHostname = 'proxy.krychlic.com';
+  const apex = route({ hostname: 'krychlic.com', published: true });
+  const pending = render(p, snapshot([apex]), { ...options, wildcardDomains: [] }).config;
+  assert(!pending.includes('proxy_pass http://127.0.0.1:3001'));
+  assert.throws(() => render(p, snapshot([route({ published: true })]), { ...options, wildcardDomains: [] }), /not ready/);
+  const ready = render(p, snapshot([apex]), options).config;
+  assert(ready.includes('proxy_pass http://127.0.0.1:3001'));
+  assert(ready.includes('proxy_set_header Host proxy.krychlic.com'));
+  p.domains[0].subdomains = false;
+  p.adminHostname = 'krychlic.com';
+  assert.throws(() => render(p, snapshot([route({ published: true })]), options), /Hostname/);
+});
 test('UDP uses accepted destination port, with no DNS resolver or single-response assumption', () => {
   const output = render(
     policy(),

@@ -619,10 +619,55 @@ summary {
   font-weight: 500;
 }
 
-.settings-grid {
+.settings-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 30px;
+  grid-template-columns: 180px minmax(0, 760px);
+  gap: 40px;
+  align-items: start;
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 24px;
+}
+.settings-nav button {
+  text-align: left;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+.settings-nav button[aria-current='page'] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.settings-content { min-width: 0; }
+.settings-content h2 {
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+  font-size: 22px;
+  font-weight: 500;
+}
+.settings-content form > .primary { margin-top: 24px; }
+.settings-row {
+  padding: 20px 0;
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.domain-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 1fr; gap: 24px; }
+  .settings-nav { position: static; flex-direction: row; flex-wrap: wrap; }
 }
 .settings-block {
   padding: 24px;
@@ -800,9 +845,6 @@ dialog > p {
     padding: 30px 24px;
   }
 
-  .settings-grid {
-    grid-template-columns: 1fr;
-  }
   .route-row {
     gap: 10px;
   }
@@ -1315,15 +1357,6 @@ dialog > p {
   }
 }
 
-.domain-input {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-.domain-input label {
-  flex: 1;
-  min-width: 0;
-}
 .wizard-main h2 {
   font-size: 17px;
   margin-bottom: 14px;

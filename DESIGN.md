@@ -1,6 +1,6 @@
 # Proxy — proposed design
 
-One Komodo stack on the VPS, with a private management interface and NGINX handling public traffic. The implementation is available in this workspace; see README.md for setup and verification. It has not been deployed on the user's servers or independently security-audited. The controller uses Node's built-in SQLite rather than Go to match the available toolchain and avoid a native database dependency.
+One Komodo stack on the VPS, with a Tailscale HTTPS management address, an optional authenticated public admin hostname, and NGINX handling public traffic. The implementation is available in this workspace; see README.md for setup and verification. It has not been deployed on the user's servers or independently security-audited. The controller uses Node's built-in SQLite rather than Go to match the available toolchain and avoid a native database dependency.
 
 ## Product
 
@@ -10,9 +10,9 @@ Navigation: **Routes · Services · Files · Domains · Settings**.
 
 - **Routes:** Websites and TCP/UDP tabs; destination, exposure, status, edit/disable actions.
 - **Services:** Home/VPS groups with running state, published ports, last discovery time, and a Connect action. Unreachable and unpublished ports are clearly distinguished.
-- **Domains:** DNS readiness, apex/wildcard certificate coverage, expiry, renewal status, and last failure.
+- **Domains:** Individual Add/Edit flows, apex-only or apex-plus-wildcard coverage, expiry, renewal status, and last failure.
 - **Files:** Folder paths, inclusion/exclusion rules and shared 404/502 pages.
-- **Settings:** Passkeys and configuration export. Core connection is configured in environment; servers and published ports are discovered automatically.
+- **Settings:** General (public admin hostname), shared certificate preferences/email, passkeys, and configuration export. Core connection is configured in environment; servers and published ports are discovered automatically.
 
 Use quiet neutral surfaces, a restrained green accent and compact readable rows. Creation, editing, publishing and error-page setup use full-page step-by-step wizards with review before applying. Folder rules are edited in Files. The sidebar and wizard progress stay fixed while long content scrolls. Status always has a text label. Advanced options stay collapsed. Live edits use the same validated activation and rollback as publishing.
 
@@ -90,9 +90,9 @@ The stack never changes host/provider firewall policy. During installation open 
 
 ## DNS and certificates
 
-Cloudflare must host the authoritative DNS for each automated zone; being the registrar alone is insufficient. Initially point the apex and wildcard DNS records at the VPS. Add AAAA records only if IPv6 ingress is actually configured and protected. Start with DNS-only records for predictable direct ingress. Cloudflare's ordinary orange-cloud proxy does not carry arbitrary TCP/UDP; those hostnames require DNS-only records or a separate Spectrum setup.
+Cloudflare must host the authoritative DNS for each automated zone; being the registrar alone is insufficient. Point the apex DNS record at the VPS, plus the wildcard record when third-level subdomains are enabled. Add AAAA records only if IPv6 ingress is actually configured and protected. Start with DNS-only records for predictable direct ingress. Cloudflare's ordinary orange-cloud proxy does not carry arbitrary TCP/UDP; those hostnames require DNS-only records or a separate Spectrum setup.
 
-For each domain, issue a separate Let's Encrypt certificate containing both `example.com` and `*.example.com` through Certbot DNS-01. A wildcard does not cover the apex by itself or deeper names such as `a.b.example.com`; those need explicit coverage. Other authoritative DNS providers require a corresponding plugin/token and are outside the Cloudflare-first setup.
+For each domain, issue a separate Let's Encrypt certificate through Certbot DNS-01. Apex-only mode requests only `example.com`; subdomain mode requests both `example.com` and `*.example.com`. Distinct Certbot lineages isolate the two coverage modes, while legacy domains retain wildcard mode. A wildcard does not cover the apex by itself or deeper names such as `a.b.example.com`; those need explicit coverage. Other authoritative DNS providers require a corresponding plugin/token and are outside the Cloudflare-first setup.
 
 Pass Cloudflare API tokens through environment variables to the certificate worker only, restricted to DNS Edit on the required zones. Per-zone overrides are supported. Never use the Global API Key; never place tokens in the browser, logs, exported configuration, or proxy container. Certbot credential INI files are generated privately in RAM-backed temporary storage, mode 0600. Zone-level DNS access remains powerful and must be treated accordingly.
 
@@ -111,7 +111,7 @@ On website routes, NGINX-generated upstream connection failures display a static
 ## Security and safe changes
 
 - UI/API access is tailnet-only, limited to administrator identities by Tailscale grants. Add application passkey authentication through a maintained WebAuthn library, with one-time enrollment and an offline recovery code. Do not treat forwarded identity headers as sufficient authentication. Use private HTTPS, secure HttpOnly sessions, CSRF/origin checks, session expiry, a restrictive CSP, and no browser-stored API tokens.
-- Tailscale grants permit VPS → home only on required backend ports and the Core API; permit home Core → VPS Periphery separately. Replace any broad allow-all grants. Public exposure requires an explicit Publish action showing the hostname or IP:ports. Leave sensitive interfaces such as a torrent Web UI unpublished; administrators can access them directly over Tailscale. A private hostname proxy with split DNS is a separate optional feature, outside the initial design.
+- Tailscale grants permit VPS → home only on required backend ports and the Core API; permit home Core → VPS Periphery separately. Replace any broad allow-all grants. Public exposure requires an explicit Publish action showing the hostname or IP:ports. Leave sensitive interfaces such as a torrent Web UI unpublished; administrators can access them directly over Tailscale. The optional public admin hostname uses a fixed loopback upstream and production TLS. A separate Tailscale HTTPS hostname/port remains available without the edge; passkeys and sessions remain scoped to their corresponding hostname/origin.
 - Manual upstreams use literal IPs; reject cloud metadata, management ports, unspecified and multicast destinations. Discovered DNS names are resolved to literal endpoints before route creation, preventing live DNS rebinding of an applied route. Treat container labels/names, Core responses, hostnames, imported state, and page text as untrusted.
 - The edge applier exposes only a permissioned internal Unix socket and typed routing operations. It validates the schema and destination policy independently, renders fixed templates, and invokes fixed NGINX commands. No arbitrary NGINX directives, uploaded executable templates, shell, file paths, or user-controlled includes.
 - Application state and proxy state are separate. Apply serially: validate → render versioned candidate → `nginx -t` → atomic switch → graceful reload → verify new worker/listener state → record applied revision. A successful reload signal alone is not success. Restore the last good revision on failure. Unchanged discovery never reloads the proxy.
@@ -126,7 +126,7 @@ Forward its configured fixed listening TCP and UDP port(s), and configure the cl
 
 Build Node/SQLite control + React UI, NGINX with stream support + typed applier, and a Certbot Cloudflare worker. Deliver one Compose stack, a short setup guide, an environment-variable template, and no default password. Nginx Proxy Manager is an existing baseline for manual management, but its documented setup does not provide this Komodo discovery workflow; the custom work belongs in the controller, not a new forwarding engine.
 
-Before production, verify on the installed Komodo version: inventory/port schema and least-privilege access; home/VPS HTTP and WebSockets; TCP; both endpoints of a UDP range with a real protocol; wildcard/apex and second-zone renewal in ACME staging; 404/502/504 semantics; public UI denial and authentication bypass attempts; malicious hostname/config inputs; firewall exposure; failed apply rollback; Core/tailnet outages; restart/backup restore; and sustained UDP session/socket usage. No production security claim is justified by a visual prototype alone.
+Before production, verify on the installed Komodo version: inventory/port schema and least-privilege access; home/VPS HTTP and WebSockets; TCP; both endpoints of a UDP range with a real protocol; wildcard/apex and second-zone renewal in ACME staging; 404/502/504 semantics; public/private origin isolation and authentication bypass attempts; malicious hostname/config inputs; firewall exposure; failed apply rollback; Core/tailnet outages; restart/backup restore; and sustained UDP session/socket usage. No production security claim is justified by a visual prototype alone.
 
 ## Verified references
 
