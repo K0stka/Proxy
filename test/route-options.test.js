@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeContainers } from '../server/komodo.js';
-import { serviceEndpoints, portLabel, visibleServicePorts, serviceProxies } from '../ui/routes.js';
+import { serviceEndpoints, portLabel, visibleServicePorts, serviceProxies, routeSubdomain } from '../ui/routes.js';
+import { byName } from '../ui/order.js';
 import { route } from './fixtures.js';
 
 test('destination picker offers normalized running services and explains unavailable matching ports', () => {
@@ -66,4 +67,13 @@ test('service proxies match saved discovery references and custom endpoints with
   assert.deepEqual(serviceProxies(routes, service, port), [saved, custom]);
   const udp = route({ kind: 'udp', targetHost: port.targetHost, portStart: 8400, portEnd: 8500 });
   assert.deepEqual(serviceProxies([udp, custom], service, { ...port, protocol: 'udp' }), [udp]);
+});
+
+test('names sort ascending without case sensitivity and route names form valid subdomains', () => {
+  assert.deepEqual([{ name: 'Zulu' }, { name: 'service 10' }, { name: 'Alpha' }, { name: 'Service 2' }].sort(byName).map((item) => item.name), ['Alpha', 'Service 2', 'service 10', 'Zulu']);
+  assert.deepEqual([{ directory: 'zebra/public' }, { directory: 'alpha' }].sort(byName).map((item) => item.directory), ['alpha', 'zebra/public']);
+  assert.equal(routeSubdomain('My Website / Test'), 'my-website-test');
+  assert.equal(routeSubdomain(' Žlutý kůň! '), 'zluty-kun');
+  assert.equal(routeSubdomain('---'), '');
+  assert.equal(routeSubdomain('x'.repeat(62) + ' more').length, 62);
 });

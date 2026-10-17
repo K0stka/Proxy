@@ -44,6 +44,13 @@ case "$role" in
         prepare /cert-requests 10003 2770
         uid=10003
         ;;
+    files)
+        uid=${PROXY_FILES_UID:-1000}
+        case "$uid" in ''|*[!0-9]*) fail 'PROXY_FILES_UID must be numeric' ;; esac
+        [ "$uid" -le 2147483647 ] || fail 'PROXY_FILES_UID is too large'
+        [ -z "${PROXY_GIT_SSH_PATH:-}" ] || host_path "$PROXY_GIT_SSH_PATH" >/dev/null
+        prepare /ipc "$uid" 2770
+        ;;
     *) fail 'Unknown container role' ;;
 esac
 exec setpriv --reuid="$uid" --regid=10000 --clear-groups --inh-caps=-all --ambient-caps=-all --bounding-set=-all --no-new-privs "$@"

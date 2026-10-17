@@ -348,15 +348,32 @@ a:hover {
   gap: 14px;
   min-width: 0;
 }
-.folder-card > svg {
+.folder-heading > svg {
   color: var(--muted);
+  margin-top: 3px;
 }
-.folder-card > strong {
+.folder-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.folder-heading > div {
+  min-width: 0;
+}
+.folder-heading h3 {
   font-size: 15px;
   overflow-wrap: anywhere;
 }
-.folder-card > code {
+.folder-heading code {
   color: var(--muted);
+}
+.folder-rules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
 }
 .folder-actions {
   margin-top: 8px;

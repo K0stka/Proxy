@@ -6,6 +6,7 @@ import { Plus, KeyRound, Trash2, Download, Pencil } from 'lucide-react';
 import Modal from './dialog.jsx';
 import { api, setCSRF } from './api.js';
 import { useNavigation } from './navigation.js';
+import { compareNames } from './order.js';
 const when = (value) =>
   new Date(value).toLocaleString(undefined, {
     dateStyle: 'medium',
@@ -219,39 +220,42 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
               Add passkey
             </Button>
           </Group>
-          {keys.map((key, index) => (
-            <div className="key-row" key={key.id}>
-              <KeyRound size={20} />
-              <div>
-                <Text size="sm" fw={500}>
-                  {key.name || `Passkey ${index + 1}`}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {key.hostname} · {when(key.created)}
-                </Text>
+          {keys
+            .map((key, index) => ({ ...key, displayName: key.name || `Passkey ${index + 1}` }))
+            .sort((a, b) => compareNames(a.displayName, b.displayName))
+            .map((key) => (
+              <div className="key-row" key={key.id}>
+                <KeyRound size={20} />
+                <div>
+                  <Text size="sm" fw={500}>
+                    {key.displayName}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {key.hostname} · {when(key.created)}
+                  </Text>
+                </div>
+                <Group gap="xs" wrap="nowrap">
+                  <Button
+                    className="icon-button"
+                    aria-label={`Rename ${key.displayName}`}
+                    onClick={() => {
+                      setNameError('');
+                      setRenaming({ id: key.id, name: key.name || '' });
+                    }}
+                  >
+                    <Pencil size={16} />
+                  </Button>
+                  <Button
+                    className="icon-button"
+                    disabled={keys.length < 2}
+                    onClick={() => removeKey(key.id)}
+                    aria-label={`Revoke ${key.displayName} and sign out all sessions`}
+                  >
+                    <Trash2 size={16} />
+                  </Button>
+                </Group>
               </div>
-              <Group gap="xs" wrap="nowrap">
-                <Button
-                  className="icon-button"
-                  aria-label={`Rename ${key.name || `passkey ${index + 1}`}`}
-                  onClick={() => {
-                    setNameError('');
-                    setRenaming({ id: key.id, name: key.name || '' });
-                  }}
-                >
-                  <Pencil size={16} />
-                </Button>
-                <Button
-                  className="icon-button"
-                  disabled={keys.length < 2}
-                  onClick={() => removeKey(key.id)}
-                  aria-label={'Revoke passkey ' + (index + 1) + ' and sign out all sessions'}
-                >
-                  <Trash2 size={16} />
-                </Button>
-              </Group>
-            </div>
-          ))}
+            ))}
         </Paper>
       </Tabs.Panel>
       <Tabs.Panel value="backup">

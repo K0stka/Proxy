@@ -12,6 +12,7 @@ test('startup prepares storage repeatedly and runs each role without setup privi
       ['control', 10001, '/state', 0o700, '0'],
       ['certificates', 10003, '/certbot', 0o700, '0'],
       ['edge', 10002, '/runtime', 0o700, '400'],
+      ['files', 1000, '/ipc', 0o2770, '0'],
     ]) {
       for (let attempt = 0; attempt < 2; attempt++)
         execFileSync('proxy-start', [role, process.execPath, '-e', `

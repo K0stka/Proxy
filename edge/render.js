@@ -95,7 +95,7 @@ proxy_set_header X-Real-IP $remote_addr;
 proxy_set_header Forwarded "";
 proxy_set_header Proxy "";
 proxy_connect_timeout 5s;
-proxy_read_timeout 60s;
+proxy_read_timeout 180s;
 proxy_intercept_errors on;
 }
 }`);

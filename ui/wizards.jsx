@@ -15,6 +15,7 @@ import {
   Server as ServerIcon,
 } from 'lucide-react';
 import { api } from './api.js';
+import { byName, compareNames } from './order.js';
 import { useNavigation, useWizardField } from './navigation.js';
 import {
   blankSite,
@@ -25,6 +26,7 @@ import {
   kindName,
   portLabel,
   serviceEndpoints,
+  routeSubdomain,
 } from './routes.js';
 export function Wizard({
   title,
@@ -168,7 +170,7 @@ export function SitePicker({
     let current = true;
     api('/sites')
       .then((data) => {
-        if (current) setCatalog(data);
+        if (current) setCatalog({ ...data, folders: data.folders.toSorted(byName) });
       })
       .catch((e) => {
         if (current)
@@ -220,7 +222,7 @@ export function SitePicker({
       exclude,
     });
   }
-  const files = inspection?.files ?? [];
+  const files = (inspection?.files ?? []).toSorted((a, b) => compareNames(a.path, b.path));
   return (
     <div className="site-picker">
       {!fixedDirectory && (
@@ -397,14 +399,19 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
     state.domains[0]?.name ??
     '';
   const [domain, setDomain] = useWizardField('domain', initialDomain),
-    [subdomain, setSubdomain] = useWizardField(
+    [customSubdomain, setSubdomain] = useWizardField(
       'subdomain',
       initial.hostname
         ? initial.hostname === initialDomain
           ? ''
           : initial.hostname.slice(0, -initialDomain.length - 1)
-        : 'app',
+        : routeSubdomain(initial.name),
     );
+  const [subdomainEdited, setSubdomainEdited] = useWizardField(
+    'subdomainEdited',
+    Boolean(initial.id || initial.hostname),
+  );
+  const subdomain = subdomainEdited ? customSubdomain : routeSubdomain(route.name) || 'service';
   const set = (key, value) =>
     setRoute((r) => ({
       ...r,
@@ -679,7 +686,10 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
               {state.domains.find((d) => d.name === domain)?.subdomains && (
                 <TextInput
                   value={subdomain}
-                  onChange={(e) => setSubdomain(e.target.value.toLowerCase())}
+                  onChange={(e) => {
+                    setSubdomainEdited(true);
+                    setSubdomain(e.target.value.toLowerCase());
+                  }}
                   pattern={'[a-zA-Z0-9\\-]*'}
                   placeholder="Leave empty for apex"
                   label={'Subdomain'}
@@ -947,7 +957,7 @@ export function ErrorPagesWizard({ state, code = 404, onClose, onSaved }) {
                 label={'Page document'}
               />
               <datalist id="error-page-documents">
-                {check?.exposed.map((path) => (
+                {check?.exposed.toSorted(compareNames).map((path) => (
                   <option key={path} value={path} />
                 ))}
               </datalist>

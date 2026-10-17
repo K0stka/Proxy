@@ -1,4 +1,14 @@
+import { compareNames } from './order.js';
 export const isWebsite = (route) => route.kind === 'http' || route.kind === 'static';
+export const routeSubdomain = (name) =>
+  name
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63)
+    .replace(/-+$/g, '');
 export const listener = (route) =>
   isWebsite(route)
     ? route.hostname
@@ -11,7 +21,14 @@ export const kindName = { http: 'Service', static: 'Static site', tcp: 'TCP', ud
 export const portLabel = (port) =>
   `${port.hostPort || 'Container only'} (${port.containerPort}) / ${port.protocol.toUpperCase()}`;
 export const visibleServicePorts = (service) =>
-  service.ports.filter((port) => port.hostPort > 0 && port.usable && !port.restricted);
+  service.ports
+    .filter((port) => port.hostPort > 0 && port.usable && !port.restricted)
+    .sort(
+      (a, b) =>
+        a.hostPort - b.hostPort ||
+        a.containerPort - b.containerPort ||
+        compareNames(a.protocol, b.protocol),
+    );
 export function serviceProxies(routes, service, port) {
   return routes.filter((route) => {
     if (route.kind === 'static' || (route.kind === 'udp') !== (port.protocol === 'udp'))
@@ -34,28 +51,35 @@ export function serviceProxies(routes, service, port) {
 }
 export function serviceEndpoints(services, kind) {
   const protocol = kind === 'udp' ? 'udp' : 'tcp';
-  return services.flatMap((service) =>
-    visibleServicePorts(service)
-      .filter((port) => port.protocol === protocol)
-      .map((port) => ({
-        key: JSON.stringify([
-          service.server,
-          service.containerId,
-          service.name,
-          port.protocol,
-          port.hostPort,
-          port.containerPort,
-        ]),
-        service,
-        port,
-        reason:
-          service.state !== 'running'
-            ? `Container is ${service.state}`
-            : !port.usable
-              ? port.reason
-              : '',
-      })),
-  );
+  return services
+    .flatMap((service) =>
+      visibleServicePorts(service)
+        .filter((port) => port.protocol === protocol)
+        .map((port) => ({
+          key: JSON.stringify([
+            service.server,
+            service.containerId,
+            service.name,
+            port.protocol,
+            port.hostPort,
+            port.containerPort,
+          ]),
+          service,
+          port,
+          reason:
+            service.state !== 'running'
+              ? `Container is ${service.state}`
+              : !port.usable
+                ? port.reason
+                : '',
+        })),
+    )
+    .sort(
+      (a, b) =>
+        compareNames(a.service.serverName, b.service.serverName) ||
+        compareNames(a.service.name, b.service.name) ||
+        a.port.hostPort - b.port.hostPort,
+    );
 }
 export const blankSite = (directory) => ({
   directory,

@@ -32,6 +32,7 @@ async function fixture(t, { empty = false } = {}) {
     certificatePolicyStore = new Store(':memory:');
   let fail = false;
   const applies = [];
+  const filesCalls = [];
   const app = createApp({
     policy: p,
     store,
@@ -43,6 +44,10 @@ async function fixture(t, { empty = false } = {}) {
     certStatusDir: directory,
     certRequestDir: join(directory, 'requests'),
     development: true,
+    filesRequest: async (_socket, path, options) => {
+      filesCalls.push({ path, ...options });
+      return path === '/repositories' ? [] : { changed: true };
+    },
     edgeRequest: async (_socket, path, options) => {
       if (path === '/status') return { available: true };
       if (path === '/probe') {
@@ -133,6 +138,7 @@ async function fixture(t, { empty = false } = {}) {
     certificatePolicyStore,
     request,
     applies,
+    filesCalls,
     directory,
     setFail: (value) => (fail = value),
   };
@@ -155,6 +161,22 @@ test('passkey names persist without changing credentials or sessions and require
   const keys = await (await f.request('/api/auth/passkeys', { method: 'POST' })).json();
   assert.equal(keys[0].name, 'Laptop');
   assert.equal(keys[0].publicKey, undefined);
+});
+
+test('Git pulls require authentication, CSRF and a configured folder, then refresh proxy files', async (t) => {
+  const f = await fixture(t);
+  const request = (body, options = {}) => f.request('/api/sites/pull', { method: 'POST', body, ...options });
+  assert.equal((await request({ directory: 'site' }, { authenticated: false })).status, 401);
+  assert.equal((await request({ directory: 'site' }, { extra: { 'x-csrf-token': 'wrong' } })).status, 403);
+  assert.equal((await request({ directory: '../private' })).status, 400);
+  assert.equal((await request({ directory: 'site' })).status, 404);
+  assert.equal(f.filesCalls.length, 0);
+  const spec = { directory: 'site', include: [], exclude: [] };
+  assert.equal((await f.request('/api/sites/config', { method: 'PUT', body: spec })).status, 200);
+  const before = f.applies.length;
+  assert.equal((await request({ directory: 'site' })).status, 200);
+  assert.equal(f.applies.length, before + 1);
+  assert.deepEqual(f.filesCalls, [{ path: '/pull', method: 'POST', body: { directory: 'site' }, timeout: 130000 }]);
 });
 
 test('interface styles use a fresh CSP nonce without allowing inline scripts', async (t) => {

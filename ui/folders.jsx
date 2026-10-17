@@ -1,7 +1,7 @@
 import { Button } from './controls.jsx';
-import { TextInput, Alert, Paper } from '@mantine/core';
+import { TextInput, Alert, Paper, Group, Text, Menu } from '@mantine/core';
 import React, { useState } from 'react';
-import { ArrowUpRight, FolderOpen, Plus, Pencil, Trash2 } from 'lucide-react';
+import { FolderOpen, Plus, Pencil, Trash2, MoreHorizontal, GitPullRequest } from 'lucide-react';
 import { api } from './api.js';
 import { blankSite } from './routes.js';
 import { SitePicker, Wizard } from './wizards.jsx';
@@ -106,9 +106,25 @@ export function FolderWizard({ initial, onClose, onSaved }) {
     </Wizard>
   );
 }
-export default function Folders({ catalog, onHost, onEdit, onCreate, onSaved }) {
+export default function Folders({ catalog, onEdit, onCreate, onSaved }) {
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const [pulling, setPulling] = useState(null),
+    [result, setResult] = useState(null);
+  async function pull(directory) {
+    setPulling(directory);
+    setError('');
+    setResult(null);
+    try {
+      const updated = await api('/sites/pull', { method: 'POST', body: { directory } });
+      setResult({ directory, message: updated.changed ? 'Updated' : 'Already up to date' });
+      await onSaved('Folder updated');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPulling(null);
+    }
+  }
   async function remove(directory) {
     setBusy(true);
     setError('');
@@ -149,27 +165,85 @@ export default function Folders({ catalog, onHost, onEdit, onCreate, onSaved }) 
             withBorder={true}
             p="lg"
           >
-            <FolderOpen size={23} />
-            <strong>{folder.directory}</strong>
-            <code>/sites/{folder.directory}</code>
-            <div className="folder-actions">
-              <Button className="secondary" onClick={() => onEdit(folder)}>
-                <Pencil size={15} />
-                Edit
-              </Button>
-              <Button className="secondary" onClick={() => onHost(folder.directory)}>
-                Host folder
-                <ArrowUpRight size={15} />
-              </Button>
-              <Button
-                className="icon-button"
-                disabled={busy}
-                aria-label={`Remove folder definition ${folder.directory}`}
-                onClick={() => remove(folder.directory)}
-              >
-                <Trash2 size={15} />
-              </Button>
+            <Group justify="space-between" wrap="nowrap" align="flex-start">
+              <div className="folder-heading">
+                <FolderOpen size={22} />
+                <div>
+                  <h3>
+                    {folder.directory
+                      .split('/')[0]
+                      .replace(/^./u, (letter) => letter.toLocaleUpperCase())}
+                  </h3>
+                  <code>/sites/{folder.directory}</code>
+                </div>
+              </div>
+              <Menu position="bottom-end" withinPortal>
+                <Menu.Target>
+                  <Button
+                    className="icon-button"
+                    aria-label={`Folder actions for ${folder.directory}`}
+                    disabled={busy || Boolean(pulling)}
+                  >
+                    <MoreHorizontal size={18} />
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item
+                    color="red"
+                    leftSection={<Trash2 size={15} />}
+                    onClick={() => remove(folder.directory)}
+                  >
+                    Remove folder
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Group>
+            <div className="folder-rules">
+              <div>
+                <Text size="xs" c="dimmed">
+                  Include
+                </Text>
+                <Text size="sm" lineClamp={2} title={folder.include.join(', ')}>
+                  {folder.include.join(', ') || 'All files'}
+                </Text>
+              </div>
+              <div>
+                <Text size="xs" c="dimmed">
+                  Exclude
+                </Text>
+                <Text size="sm" lineClamp={2} title={folder.exclude.join(', ')}>
+                  {folder.exclude.join(', ') || 'None'}
+                </Text>
+              </div>
             </div>
+            <Group justify="space-between" gap="sm" className="folder-actions">
+              <Button
+                className="secondary"
+                onClick={() => onEdit(folder)}
+                disabled={busy || Boolean(pulling)}
+              >
+                <Pencil size={15} />
+                Edit rules
+              </Button>
+              {(catalog.repositories ?? []).some(
+                (repo) => repo.directory === folder.directory && repo.git,
+              ) && (
+                <Button
+                  className="secondary"
+                  loading={pulling === folder.directory}
+                  disabled={busy || Boolean(pulling && pulling !== folder.directory)}
+                  onClick={() => pull(folder.directory)}
+                >
+                  <GitPullRequest size={15} />
+                  Git pull
+                </Button>
+              )}
+              {result?.directory === folder.directory && (
+                <Text size="xs" c="dimmed" role="status">
+                  {result.message}
+                </Text>
+              )}
+            </Group>
           </Paper>
         ))}
       </div>

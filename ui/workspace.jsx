@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import {
   Waypoints,
   ShieldCheck,
-  ArrowUpRight,
   Plus,
   Server,
   Globe,
@@ -19,9 +18,9 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { api } from './api.js';
+import { byName } from './order.js';
 import {
   freshRoute,
-  folderRules,
   listener,
   destination,
   portLabel,
@@ -68,7 +67,18 @@ export default function Workspace({ onLogout, onRecovery }) {
     );
   async function refresh() {
     try {
-      setState(await api('/state'));
+      const next = await api('/state');
+      setState({
+        ...next,
+        routes: next.routes.toSorted(byName),
+        sites: next.sites.toSorted(byName),
+        domains: next.domains.toSorted(byName),
+        discovery: {
+          ...next.discovery,
+          servers: next.discovery.servers.toSorted(byName),
+          services: next.discovery.services.toSorted(byName),
+        },
+      });
     } catch (e) {
       if (e.status === 401) onLogout();
       else report(e.message, true);
@@ -76,7 +86,8 @@ export default function Workspace({ onLogout, onRecovery }) {
   }
   async function loadFiles() {
     try {
-      setCatalog(await api('/sites'));
+      const next = await api('/sites');
+      setCatalog({ ...next, folders: next.folders.toSorted(byName) });
     } catch (e) {
       setCatalog({
         folders: [],
@@ -148,17 +159,6 @@ export default function Workspace({ onLogout, onRecovery }) {
           containerId: service.containerId,
           containerPort: port.containerPort,
         },
-      },
-    });
-  }
-  function hostFolder(directory) {
-    setWizard({
-      kind: 'route',
-      initial: {
-        ...freshRoute(state),
-        name: directory.split('/').at(-1),
-        kind: 'static',
-        staticSite: folderRules(state, directory),
       },
     });
   }
@@ -628,7 +628,6 @@ export default function Workspace({ onLogout, onRecovery }) {
               </section>
               <Folders
                 catalog={catalog}
-                onHost={hostFolder}
                 onCreate={() =>
                   setWizard({
                     kind: 'folder',

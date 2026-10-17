@@ -51,10 +51,10 @@ const hostStorage = JSON.parse(
     },
   ),
 );
-assert.deepEqual(Object.keys(hostStorage.services).sort(), ['certificates', 'control', 'edge']);
+assert.deepEqual(Object.keys(hostStorage.services).sort(), ['certificates', 'control', 'edge', 'files']);
 for (const [name, service] of Object.entries(hostStorage.services)) {
   for (const mount of service.volumes) {
-    if (mount.target === '/ipc') {
+    if (['/ipc', '/files-ipc'].includes(mount.target)) {
       assert.equal(mount.type, 'volume');
       continue;
     }
@@ -70,6 +70,20 @@ for (const [name, service] of Object.entries(hostStorage.services)) {
   }
   assert(!service.volumes.some((mount) => mount.source === '/srv/proxy/data'));
 }
+
+const sshStorage = JSON.parse(execFileSync('docker', [
+  'compose', '-f', 'compose.yaml', '-f', 'compose.paths.yaml', '-f', 'compose.ssh.yaml', 'config', '--format', 'json',
+], { encoding: 'utf8', env: { ...process.env, PROXY_DATA_PATH: '/srv/proxy/data', PROXY_SITES_PATH: '/srv/proxy/sites', PROXY_GIT_SSH_PATH: '/home/operator/.ssh', PROXY_FILES_UID: '1000' } }));
+for (const [name, service] of Object.entries(sshStorage.services)) {
+  const keyMount = service.volumes.find((mount) => mount.source === '/home/operator/.ssh');
+  assert.equal(Boolean(keyMount), name === 'files');
+  if (keyMount) {
+    assert.equal(keyMount.read_only, true);
+    assert.equal(keyMount.bind.create_host_path, false);
+  }
+}
+assert.equal(sshStorage.services.files.volumes.find((mount) => mount.target === '/sites').read_only ?? false, false);
+assert.equal(sshStorage.services.edge.volumes.find((mount) => mount.target === '/sites').read_only, true);
 
 const run = (args, input) =>
   execFileSync('docker', args, {

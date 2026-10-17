@@ -1,6 +1,6 @@
 # Proxy
 
-A private routing workspace for a public VPS and home services connected through Tailscale. One Komodo stack: **NGINX edge + management UI + Certbot**.
+A private routing workspace for a public VPS and home services connected through Tailscale. One Komodo stack: **NGINX edge + management UI + Certbot + isolated Git updater**.
 
 - Websites, WebSockets, streaming, custom TCP, and UDP ranges preserving destination ports.
 - Static websites from mounted folders, file filters and full-page setup wizards.
@@ -64,7 +64,7 @@ PROXY_DATA_PATH=/srv/proxy/data
 
 In Komodo's Compose file list, add **both files in this order**: `compose.yaml`, then `compose.paths.yaml`. The second file replaces persistent volume mounts with host directories; setting `PROXY_DATA_PATH` alone does not enable it.
 
-Deploy normally. Compose creates missing host directories automatically. Each container runs its storage setup script, prepares its writable directory permissions, drops setup privileges, then starts its application. There are only three long-running services and no separate initialization job or host setup command.
+Deploy normally. Compose creates missing host directories automatically. Each container runs its storage setup script, prepares its writable directory permissions, drops setup privileges, then starts its application. There are four long-running services and no separate initialization job or host setup command.
 
 Use canonical absolute, non-overlapping data/sites paths on local Linux storage, without symlink aliases or dot segments. Each startup script touches only its writable mount roots, leaves existing file contents and file ownership alone, and never walks the tree recursively. Containers receive only their required subdirectories; none mounts the whole data root. Websites must be readable by UID 10002; sites permissions are not rewritten. SQLite uses WAL files and locking.
 
@@ -131,6 +131,8 @@ Upgrading from the earlier manual setup preserves routes, domains, file rules an
 
 ## Everyday use
 
+Resource lists and selectors sort by name ascending. During route creation, the default subdomain follows the formatted route name (for example, `My Service` becomes `my-service`) until edited manually. Renaming an existing route preserves its hostname.
+
 **Routes** is the main workspace: connect a public hostname or port to a destination. **Domains** shows shared certificate coverage. **Services** lists Komodo endpoints, and **Files** manages explicitly configured folders; both are optional shortcuts into the route wizard. You can create either type directly through Routes → New route.
 
 Pages and wizard steps use normal paths such as `/settings/certificates` and `/routes/route?step=2`, without hash routing. Browser Back/Forward navigate them; refresh restores the current wizard step and its unsaved fields from the tab's history. This does not publish or save changes to the server. Credentials and recovery codes are never placed in navigation history.
@@ -148,7 +150,7 @@ Pages and wizard steps use normal paths such as `/settings/certificates` and `/r
 
 ## Static sites and error pages
 
-Compose mounts your sites directory read-only at `/sites` in the edge. Use **Files → Add folder** to define a relative path (such as `websites/portfolio`, with no leading or trailing slash) and include/exclude rules, preview its files, then save. Only configured folders (plus previously saved route/page folders) appear; the mount is not searched for websites. Empty folders and asset-only folders are valid; there is no `index.html` requirement. Use **Edit** to change the path or rules and **Host folder** to connect it to a route. These are folder definitions, not filesystem creation/upload commands; create the actual directories on the host. No server-side scripts execute.
+Compose mounts your sites directory read-only at `/sites` in the edge. Use **Files → Add folder** to define a relative path (such as `websites/portfolio`, with no leading or trailing slash) and include/exclude rules, preview its files, then save. Only configured folders (plus previously saved route/page folders) appear; the mount is not searched for websites. Empty folders and asset-only folders are valid; there is no `index.html` requirement. Use **Edit rules** to change the path or rules and create a static route in Routes to connect it to a hostname. These are folder definitions, not filesystem creation/upload commands; create the actual directories on the host. No server-side scripts execute.
 
 ```text
 sites/
@@ -163,6 +165,21 @@ In the folder wizard, use **Only expose** patterns such as `*.html`, `assets/**`
 Saving a folder updates every route and error page using it atomically. Changing its path updates those references; it does not move host files. Removing a folder definition is allowed only when unused and never deletes disk content. Saving rules updates every website and error page using the folder. Existing per-route filters are preserved until shared rules are saved. Edits to exposed files appear immediately. New filenames require **Sync files** on the published route (or a configuration apply/edge restart). Certificate renewal reloads preserve the existing file list. Directory listings are disabled. Missing or unreadable paths reject the update. With no exposed `index.html`, a static route still serves its approved files directly; its root URL returns the shared 404. Each site supports up to 5,000 entries and the configuration up to 10,000 exposed files. Filenames containing dollar signs, backslashes or control characters are blocked. Files must be readable by edge UID 10002; keep the mount read-only and do not put unrelated host data in it.
 
 In **Files → Error pages**, use **Edit** on the separate 404 or 502 card. Each has its own two-step flow and URL (for example `/files/pages/502`), and saving one never overwrites the other. Choose a configured folder and its page document, such as `notice.htm` or `nested/error.html`. Existing selections default to `index.html`, but any exposed document can be selected. The chosen document must exist, remain included by the folder rules and be readable (maximum 1 MB); other folders need no page document. Use relative asset URLs (`./style.css`, `./app.js`, `./icons/logo.svg`), including in CSS; root-absolute URLs do not resolve into the error bundle. Relative URLs resolve from the selected document’s subdirectory. Assets are served under `/_proxy/errors/<code>/`, including on unmatched hostnames. Timeouts use the same 502 bundle while keeping HTTP status 504. Built-in pages remain available. The shared 502 page is always used for backend 502/504 responses; there is no per-route toggle. New error assets are included when applying the pages or reapplying configuration. The website mount starts empty; add your own site and error-page directories.
+
+### Git pull from folder cards
+
+Folder titles use the first path segment: `something/else/entirely` displays **Something**. The full path stays visible. The Git pull button appears when the folder, or a parent inside `/sites`, contains an ordinary Git repository. It pulls the repository's current branch/upstream using fast-forward only, refuses local changes and never resets or deletes them. Hooks and checkout filters are disabled; no build scripts or submodule updates run. A successful pull reapplies the proxy file lists, including error-page assets. File checkout itself is not an atomic website deployment.
+
+Git runs in the separate `files` container. It can write the sites mount but has no Core/Cloudflare credentials, authentication database, TLS keys or Docker socket. NGINX keeps its sites mount read-only. Set `PROXY_FILES_UID` in Komodo Environment to the VPS user ID that owns the repositories and SSH keys (usually `1000`; use `0` only if those files are owned by root). Existing ownership is never changed recursively. The updater also needs write access to the repository contents; website files must remain readable by edge UID 10002.
+
+For SSH repositories, append `compose.ssh.yaml` after your other Compose files and set:
+
+```dotenv
+PROXY_FILES_UID=1000
+PROXY_GIT_SSH_PATH=/home/YOUR_VPS_USER/.ssh
+```
+
+For root-owned repositories/keys use UID `0` and `/root/.ssh`. The SSH directory is mounted read-only, at its existing absolute path, into the files updater only. Existing SSH config and standard private keys are used; host keys must already be trusted in `known_hosts`. Interactive key passphrases and an SSH agent from your host session are not available inside the container. HTTPS public repositories need no SSH override. Linked Git worktrees, Git LFS checkout filters and build pipelines are not supported by this pull action. It does not clone repositories or change the remote URL.
 
 ## State, security and updates
 

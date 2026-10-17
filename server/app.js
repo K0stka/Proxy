@@ -39,6 +39,8 @@ export function createApp({
     localAddresses: async () => (await edgeRequest(edgeSocket, '/network')).addresses,
   }),
   edgeRequest = unixRequest,
+  filesRequest = unixRequest,
+  filesSocket = '/files-ipc/files.sock',
   distDir = resolve('dist'),
 }) {
   const deployment = { origin: policy.origin, ingressIPs: policy.ingressIPs };
@@ -52,6 +54,13 @@ export function createApp({
     return next;
   };
   const edge = (path, options) => edgeRequest(edgeSocket, path, options);
+  function configuredFolders() {
+    const snapshot = store.snapshot();
+    const folders = new Map(snapshot.sites.map((site) => [site.directory, site]));
+    for (const site of [...snapshot.routes.map((route) => route.staticSite), snapshot.pages.notFoundSite, snapshot.pages.badGatewaySite])
+      if (site && !folders.has(site.directory)) folders.set(site.directory, site);
+    return [...folders.values()];
+  }
   function domainPolicy(input, previous) {
     if (previous && !policy.domains.some((d) => d.name === previous))
       throw new Problem(404, 'Domain not found');
@@ -325,15 +334,26 @@ export function createApp({
           return;
         }
         if (path === '/api/sites' && req.method === 'GET') {
-          const snapshot = store.snapshot(),
-            folders = new Map(snapshot.sites.map((site) => [site.directory, site]));
-          for (const site of [
-            ...snapshot.routes.map((route) => route.staticSite),
-            snapshot.pages.notFoundSite,
-            snapshot.pages.badGatewaySite,
-          ])
-            if (site && !folders.has(site.directory)) folders.set(site.directory, site);
-          json(res, { folders: [...folders.values()] });
+          const folders = configuredFolders();
+          let repositories = [], gitAvailable = false;
+          try {
+            repositories = await filesRequest(filesSocket, '/repositories', { method: 'POST', body: { directories: folders.map((folder) => folder.directory) }, timeout: 3000 });
+            gitAvailable = true;
+          } catch {}
+          json(res, { folders, repositories, gitAvailable });
+          return;
+        }
+        if (path === '/api/sites/pull' && req.method === 'POST') {
+          const directory = parse(siteDirectory, (await bodyJSON(req)).directory);
+          const result = await serial(async () => {
+            if (!configuredFolders().some((folder) => folder.directory === directory))
+              throw new Problem(404, 'Folder not configured');
+            const result = await filesRequest(filesSocket, '/pull', { method: 'POST', body: { directory }, timeout: 130000 });
+            try { await apply(store.snapshot()); }
+            catch { throw new Problem(502, 'Git pull completed, but proxy file synchronization failed. Reapply the configuration before retrying.'); }
+            return result;
+          });
+          json(res, result);
           return;
         }
         if (path === '/api/sites/config' && req.method === 'PUT') {

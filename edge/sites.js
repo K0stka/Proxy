@@ -10,7 +10,7 @@ const descriptorPath = (handle) => `/proc/self/fd/${handle.fd}`;
 
 // Linux directory descriptors pin each parent. Renaming a folder or swapping in
 // a symlink cannot redirect a later open outside the mounted content tree.
-async function openPath(relative, directory = true) {
+export async function openPath(relative, directory = true) {
   let current = await open(ROOT, directoryFlags);
   try {
     const parts = relative.split('/');

@@ -29,6 +29,7 @@ services:
       - control_state:/state
       - certificate_policy:/cert-policy
       - edge_ipc:/ipc
+      - files_ipc:/files-ipc
       - cert_status:/cert-status:ro
       - cert_requests:/cert-requests
     tmpfs: ['/tmp:rw,noexec,nosuid,size=32m']
@@ -86,6 +87,31 @@ services:
       timeout: 5s
       retries: 3
 
+  files:
+    build:
+      context: .
+      dockerfile: containers/files.Dockerfile
+      args:
+        PROXY_FILES_UID: ${PROXY_FILES_UID:-1000}
+        PROXY_GIT_SSH_PATH: ${PROXY_GIT_SSH_PATH:-}
+    environment:
+      PROXY_FILES_UID: ${PROXY_FILES_UID:-1000}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER, SETUID, SETGID, SETPCAP]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - files_ipc:/ipc
+      - ${PROXY_SITES_PATH:-./sites}:/sites
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m,mode=1777']
+    pids_limit: 80
+    mem_limit: 256m
+    cpus: 1
+    stop_grace_period: 130s
+    logging: *logging
+
   certificates:
     build: { context: ., dockerfile: containers/certificates.Dockerfile }
     environment:
@@ -113,6 +139,7 @@ services:
 volumes:
   control_state:
   edge_ipc:
+  files_ipc:
   edge_state:
   certbot_state:
   tls:

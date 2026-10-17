@@ -1,0 +1,11 @@
+# Optional: allow the isolated files updater to use the VPS user's existing SSH keys/config.
+services:
+  files:
+    environment:
+      PROXY_GIT_SSH_PATH: ${PROXY_GIT_SSH_PATH:?Set the absolute VPS SSH directory}
+    volumes:
+      - type: bind
+        source: ${PROXY_GIT_SSH_PATH:?Set the absolute VPS SSH directory}
+        target: ${PROXY_GIT_SSH_PATH:?Set the absolute VPS SSH directory}
+        read_only: true
+        bind: { create_host_path: false }
