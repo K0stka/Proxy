@@ -37,16 +37,14 @@ test('destination picker offers normalized running services and explains unavail
   assert.equal(new Set([...options, ...udp].map((option) => option.key)).size, 3);
 });
 
-test('protected and unsafe endpoints are hidden while remote loopback bindings explain the required fix', () => {
+test('protected, unsafe and remote loopback endpoints are hidden from services and destinations', () => {
   const services = normalizeContainers([
     { id: 'core', name: 'Core', ports: [{ PrivatePort: 9120, PublicPort: 9120, IP: '0.0.0.0', Type: 'tcp' }] },
     { id: 'unsafe', name: 'Unsafe', ports: [{ PrivatePort: 80, PublicPort: 8080, IP: '169.254.169.254', Type: 'tcp' }] },
     { id: 'steam', name: 'Steam', state: 'running', ports: [{ PrivatePort: 3000, PublicPort: 8484, IP: '127.0.0.1', Type: 'tcp' }] },
   ], { id: 'home', name: 'Home', address: '100.89.5.109', local: false });
-  assert.deepEqual(services.map((service) => visibleServicePorts(service).length), [0, 0, 1]);
+  assert.deepEqual(services.map((service) => visibleServicePorts(service).length), [0, 0, 0]);
   const options = serviceEndpoints(services, 'http');
-  assert.equal(options.length, 1);
-  assert.equal(options[0].port.usable, false);
-  assert.match(options[0].reason, /Bound to 127\.0\.0\.1 on the remote server/);
-  assert.match(options[0].reason, /Tailscale IP/);
+  assert.equal(options.length, 0);
+  assert.match(services[2].ports[0].reason, /Bound to 127\.0\.0\.1 on the remote server/);
 });

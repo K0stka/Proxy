@@ -11,7 +11,7 @@ export const kindName = { http: 'Website', static: 'Static site', tcp: 'TCP', ud
 export const portLabel = (port) =>
   `${port.hostPort || 'Container only'} (${port.containerPort}) / ${port.protocol.toUpperCase()}`;
 export const visibleServicePorts = (service) =>
-  service.ports.filter((port) => port.hostPort > 0 && !port.restricted);
+  service.ports.filter((port) => port.hostPort > 0 && port.usable && !port.restricted);
 export function serviceEndpoints(services, kind) {
   const protocol = kind === 'udp' ? 'udp' : 'tcp';
   return services.flatMap((service) =>
