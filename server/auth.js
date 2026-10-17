@@ -252,7 +252,19 @@ export class Auth {
     }
     if (path === '/api/auth/passkeys') {
       this.require(req, true);
-      return this.credentials().map((c) => ({ id: c.id, created: c.created, hostname: c.rpID ?? this.legacyRPID }));
+      return this.credentials().map((c) => ({ id: c.id, name: c.name ?? '', created: c.created, hostname: c.rpID ?? this.legacyRPID }));
+    }
+    if (path === '/api/auth/passkeys/rename') {
+      this.require(req, true);
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!name || name.length > 80 || /[\u0000-\u001f\u007f]/.test(name))
+        throw new Problem(400, 'Enter a passkey name of 1–80 characters');
+      const credentials = this.credentials();
+      const credential = credentials.find((c) => c.id === body.id);
+      if (!credential) throw new Problem(404, 'Passkey not found');
+      credential.name = name;
+      this.store.set('credentials', credentials);
+      return { ok: true };
     }
     if (path === '/api/auth/passkeys/remove') {
       this.require(req, true);

@@ -436,7 +436,7 @@ a:hover {
   padding: 20px 0;
   border-top: 1px solid var(--line);
 }
-.key-row > div {
+.key-row > div:first-of-type {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;

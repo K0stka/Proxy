@@ -1,8 +1,9 @@
 import { Button, NumberField, Disclosure } from './controls.jsx';
-import { TextInput, Switch, Tabs, Paper, Stack, Group, Text, Anchor } from '@mantine/core';
+import { TextInput, Switch, Tabs, Paper, Stack, Group, Text, Anchor, Alert } from '@mantine/core';
 import React, { useState, useEffect } from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
-import { Plus, KeyRound, Trash2, Download } from 'lucide-react';
+import { Plus, KeyRound, Trash2, Download, Pencil } from 'lucide-react';
+import Modal from './dialog.jsx';
 import { api, setCSRF } from './api.js';
 import { useNavigation } from './navigation.js';
 const when = (value) =>
@@ -14,6 +15,9 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
   const { settingsSection: section, setSettingsSection } = useNavigation();
   const [preferences, setPreferences] = useState(state.settings);
   const [saved, setSaved] = useState(false);
+  const [renaming, setRenaming] = useState(null),
+    [nameError, setNameError] = useState(''),
+    [savingName, setSavingName] = useState(false);
   const [keys, setKeys] = useState([]),
     [busy, setBusy] = useState(false);
   async function load() {
@@ -64,6 +68,22 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
       onLogout();
     } catch (e) {
       report(e.message, true);
+    }
+  }
+  async function renameKey(e) {
+    e.preventDefault();
+    setSavingName(true);
+    setNameError('');
+    try {
+      await api('/auth/passkeys/rename', { method: 'POST', body: renaming });
+      setKeys((keys) =>
+        keys.map((key) => (key.id === renaming.id ? { ...key, name: renaming.name.trim() } : key)),
+      );
+      setRenaming(null);
+    } catch (e) {
+      setNameError(e.message);
+    } finally {
+      setSavingName(false);
     }
   }
   async function savePreferences(e) {
@@ -204,20 +224,32 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
               <KeyRound size={20} />
               <div>
                 <Text size="sm" fw={500}>
-                  Passkey {index + 1}
+                  {key.name || `Passkey ${index + 1}`}
                 </Text>
                 <Text size="xs" c="dimmed">
                   {key.hostname} · {when(key.created)}
                 </Text>
               </div>
-              <Button
-                className="icon-button"
-                disabled={keys.length < 2}
-                onClick={() => removeKey(key.id)}
-                aria-label={'Revoke passkey ' + (index + 1) + ' and sign out all sessions'}
-              >
-                <Trash2 size={16} />
-              </Button>
+              <Group gap="xs" wrap="nowrap">
+                <Button
+                  className="icon-button"
+                  aria-label={`Rename ${key.name || `passkey ${index + 1}`}`}
+                  onClick={() => {
+                    setNameError('');
+                    setRenaming({ id: key.id, name: key.name || '' });
+                  }}
+                >
+                  <Pencil size={16} />
+                </Button>
+                <Button
+                  className="icon-button"
+                  disabled={keys.length < 2}
+                  onClick={() => removeKey(key.id)}
+                  aria-label={'Revoke passkey ' + (index + 1) + ' and sign out all sessions'}
+                >
+                  <Trash2 size={16} />
+                </Button>
+              </Group>
             </div>
           ))}
         </Paper>
@@ -238,6 +270,54 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
           </Stack>
         </Paper>
       </Tabs.Panel>
+      {renaming && (
+        <Modal
+          title="Name passkey"
+          onClose={() => {
+            if (!savingName) setRenaming(null);
+          }}
+        >
+          <form onSubmit={renameKey}>
+            <Stack gap="lg">
+              <TextInput
+                label="Name"
+                placeholder="e.g. Laptop or phone"
+                autoFocus
+                required
+                maxLength={80}
+                disabled={savingName}
+                value={renaming.name}
+                onChange={(e) => {
+                  setNameError('');
+                  setRenaming((key) => ({ ...key, name: e.target.value }));
+                }}
+              />
+              {nameError && (
+                <Alert color="red" role="alert">
+                  {nameError}
+                </Alert>
+              )}
+              <Group justify="flex-end" gap="lg">
+                <Button
+                  className="text-button"
+                  disabled={savingName}
+                  onClick={() => setRenaming(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="primary"
+                  type="submit"
+                  loading={savingName}
+                  disabled={!renaming.name.trim()}
+                >
+                  Save name
+                </Button>
+              </Group>
+            </Stack>
+          </form>
+        </Modal>
+      )}
     </Tabs>
   );
 }

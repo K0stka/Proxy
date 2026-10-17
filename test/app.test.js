@@ -137,6 +137,26 @@ async function fixture(t, { empty = false } = {}) {
     setFail: (value) => (fail = value),
   };
 }
+test('passkey names persist without changing credentials or sessions and require authorization', async (t) => {
+  const f = await fixture(t);
+  const credential = { id: randomToken(), publicKey: 'existing-key', counter: 7, rpID: 'localhost', created: '2026-10-17T12:00:00Z' };
+  f.store.set('credentials', [credential]);
+  const sessions = f.store.get('sessions');
+  const rename = (body, options = {}) => f.request('/api/auth/passkeys/rename', { method: 'POST', body, ...options });
+  assert.equal((await rename({ id: credential.id, name: 'Laptop' }, { authenticated: false })).status, 401);
+  assert.equal((await rename({ id: credential.id, name: 'Laptop' }, { extra: { 'x-csrf-token': 'invalid' } })).status, 403);
+  for (const name of ['', '  ', 'x'.repeat(81), 'Laptop\nPhone', 123])
+    assert.equal((await rename({ id: credential.id, name })).status, 400);
+  assert.equal((await rename({ id: 'missing', name: 'Laptop' })).status, 404);
+  assert.deepEqual(f.store.get('credentials'), [credential]);
+  assert.equal((await rename({ id: credential.id, name: '  Laptop  ' })).status, 200);
+  assert.deepEqual(f.store.get('credentials'), [{ ...credential, name: 'Laptop' }]);
+  assert.deepEqual(f.store.get('sessions'), sessions);
+  const keys = await (await f.request('/api/auth/passkeys', { method: 'POST' })).json();
+  assert.equal(keys[0].name, 'Laptop');
+  assert.equal(keys[0].publicKey, undefined);
+});
+
 test('interface styles use a fresh CSP nonce without allowing inline scripts', async (t) => {
   const f = await fixture(t);
   await writeFile(join(f.directory, 'index.html'), '<meta name="style-nonce" content="__PROXY_STYLE_NONCE__">');
