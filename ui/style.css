@@ -301,8 +301,7 @@ a:hover {
 .route-row.proxy-disabled {
   border-color: var(--mantine-color-gray-6);
 }
-.discovered-service.proxy-enabled,
-.route-row.proxy-enabled {
+.discovered-service.proxy-enabled {
   border-color: var(--mantine-primary-color-filled);
 }
 .service-heading strong {
@@ -346,11 +345,10 @@ a:hover {
 }
 .folder-heading > svg {
   color: var(--muted);
-  margin-top: 3px;
 }
 .folder-heading {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   min-width: 0;
 }

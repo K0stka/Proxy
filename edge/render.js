@@ -79,6 +79,15 @@ export function render(
   }
   const adminDomain = coveredDomain(policy.adminHostname, policy.domains)?.name;
   if (policy.adminHostname && !policy.certificates.staging && ready.has(adminDomain) && (policy.adminHostname === adminDomain || wildcard.has(adminDomain))) {
+    const adminProxy = `proxy_pass http://127.0.0.1:3001;
+proxy_set_header Host ${policy.adminHostname};
+proxy_set_header X-Forwarded-Proto https;
+proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header Forwarded "";
+proxy_set_header Proxy "";
+proxy_connect_timeout 5s;
+proxy_read_timeout 180s;`;
     http.push(`server { ${policy.ingressIPs.map((ip) => listen(ip, 80)).join(' ')} server_name ${policy.adminHostname}; location / { return 308 https://${policy.adminHostname}$request_uri; } }`);
     http.push(`server {
 ${policy.ingressIPs.map((ip) => listen(ip, 443, 'ssl')).join(' ')}
@@ -87,16 +96,22 @@ if ($ssl_server_name != $host) { return 421; }
 client_max_body_size 1m;
 ${errorLocations(directory, errorSites)}
 location / {
-proxy_pass http://127.0.0.1:3001;
-proxy_set_header Host ${policy.adminHostname};
-proxy_set_header X-Forwarded-Proto https;
-proxy_set_header X-Forwarded-For $remote_addr;
-proxy_set_header X-Real-IP $remote_addr;
-proxy_set_header Forwarded "";
-proxy_set_header Proxy "";
-proxy_connect_timeout 5s;
-proxy_read_timeout 180s;
+${adminProxy}
 proxy_intercept_errors on;
+}
+location /api/ {
+${adminProxy}
+proxy_intercept_errors off;
+error_page 502 = @admin_api_unavailable;
+error_page 504 = @admin_api_timeout;
+}
+location @admin_api_unavailable {
+default_type application/json;
+return 502 '{"error":"Management service unavailable. Check the operation result before retrying."}';
+}
+location @admin_api_timeout {
+default_type application/json;
+return 504 '{"error":"Management request timed out. Check the operation result before retrying."}';
 }
 }`);
   }

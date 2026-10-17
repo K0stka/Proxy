@@ -178,7 +178,7 @@ test('Git pulls require authentication, CSRF and a configured folder, then refre
   const before = f.applies.length;
   assert.equal((await request({ directory: 'site' })).status, 200);
   assert.equal(f.applies.length, before + 1);
-  assert.deepEqual(f.filesCalls, [{ path: '/pull', method: 'POST', body: { directory: 'site' }, timeout: 130000 }]);
+  assert.deepEqual(f.filesCalls, [{ path: '/pull', method: 'POST', body: { directory: 'site' }, timeout: 130000, service: 'Files updater' }]);
 });
 
 test('interface styles use a fresh CSP nonce without allowing inline scripts', async (t) => {

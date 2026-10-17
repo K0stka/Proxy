@@ -18,6 +18,62 @@ export const gitEnvironment = () => ({
   PROXY_GIT_SSH_PATH: process.env.PROXY_GIT_SSH_PATH ?? '',
 });
 
+export function gitProblem(stderr) {
+  const failures = [
+    [
+      /not possible to fast-forward|divergent branches|cannot fast-forward/i,
+      409,
+      'Local and remote branches have diverged. Reconcile the repository on the VPS before pulling.',
+    ],
+    [
+      /no tracking information|no upstream configured|no such ref was fetched/i,
+      409,
+      'The current branch has no available upstream. Configure its tracking branch on the VPS.',
+    ],
+    [
+      /would be overwritten|local changes|unstaged changes|uncommitted changes/i,
+      409,
+      'Repository has local changes. Commit or remove them before pulling.',
+    ],
+    [
+      /Mount the VPS SSH directory/i,
+      400,
+      'SSH access is not configured. Add compose.ssh.yaml and set PROXY_GIT_SSH_PATH.',
+    ],
+    [
+      /host key verification failed|remote host identification has changed/i,
+      502,
+      'SSH host verification failed. Check known_hosts in the mounted SSH directory.',
+    ],
+    [
+      /permission denied \(publickey|authentication failed|could not read username|repository not found/i,
+      502,
+      'Git authentication failed or the remote repository is unavailable. Check repository access and the mounted SSH keys.',
+    ],
+    [
+      /permission denied|read-only file system|unable to create|cannot open.*FETCH_HEAD/i,
+      400,
+      'Git cannot write the repository. Check ownership and PROXY_FILES_UID.',
+    ],
+    [
+      /could not resolve|connection timed out|connection refused|network is unreachable|failed to connect|operation too slow|remote end hung up/i,
+      502,
+      'Git could not reach the remote repository. Check VPS connectivity and try again.',
+    ],
+    [
+      /SSL certificate problem|server certificate verification failed/i,
+      502,
+      'Git could not verify the remote HTTPS certificate. Check the remote certificate and VPS clock.',
+    ],
+  ];
+  for (const [pattern, status, message] of failures)
+    if (pattern.test(stderr)) return new Problem(status, message);
+  return new Problem(
+    502,
+    'Git pull failed. Check repository access, SSH keys/known_hosts, write permissions and whether the branch can fast-forward.',
+  );
+}
+
 export function runGit(args, cwd, env = gitEnvironment()) {
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, {
@@ -27,20 +83,27 @@ export function runGit(args, cwd, env = gitEnvironment()) {
       detached: true,
     });
     let output = '',
+      stderr = '',
       size = 0,
-      failed = false;
-    const kill = () => {
-      failed = true;
+      failure = '';
+    const kill = (reason) => {
+      failure ||= reason;
       try {
         process.kill(-child.pid, 'SIGKILL');
       } catch {}
     };
-    const timer = setTimeout(kill, 120000);
+    const timer = setTimeout(
+      () =>
+        kill('Git pull timed out after 120 seconds. Check remote connectivity before retrying.'),
+      120000,
+    );
     for (const stream of [child.stdout, child.stderr])
       stream.on('data', (bytes) => {
         size += bytes.length;
-        if (size > 1_000_000) kill();
+        if (size > 1_000_000)
+          kill('Git returned too much output. Inspect the repository on the VPS before retrying.');
         else if (stream === child.stdout) output += bytes.toString();
+        else stderr += bytes.toString();
       });
     child.once('error', () => {
       clearTimeout(timer);
@@ -48,12 +111,10 @@ export function runGit(args, cwd, env = gitEnvironment()) {
     });
     child.once('close', (code) => {
       clearTimeout(timer);
-      if (failed || code !== 0) {
-        const error = new Problem(
-          502,
-          'Git pull failed. Check repository access, SSH keys/known_hosts, write permissions and whether the branch can fast-forward.',
-        );
-        error.gitExitCode = failed ? null : code;
+      if (failure || code !== 0) {
+        // Return only fixed messages; Git output can contain remote credentials.
+        const error = failure ? new Problem(502, failure) : gitProblem(stderr);
+        error.gitExitCode = failure ? null : code;
         reject(error);
       } else resolve(output.trimEnd());
     });
@@ -82,7 +143,7 @@ async function openRepository(directory) {
   const checked = await openPath(directory);
   await checked.close();
   const parts = directory.split('/');
-  for (let length = parts.length; length > 0; length--) {
+  for (let length = parts.length; length >= 0; length--) {
     const root = await openPath(parts.slice(0, length).join('/'));
     try {
       const metadata = await open(

@@ -117,6 +117,8 @@ Open TCP 80/443 and the published custom ingress ranges in the host and provider
 
 In **Settings → General**, set a public hostname covered by a configured domain, for example `proxy.krychlic.com`. Point its DNS record at the VPS. The edge creates a fixed HTTPS proxy to the loopback management port once a production certificate covers it; no custom endpoint or management-port exception is needed. Clearing the hostname disables public access. The hostname is reserved, so ordinary routes cannot claim it.
 
+Management API errors remain JSON, including gateway failures, so action errors can be shown in toasts. Browser pages and proxied websites use the shared HTML error pages.
+
 The private Tailscale Serve address remains independent of public DNS, the edge, and Let's Encrypt: `https://byttorrent.pancake-ghost.ts.net:8443` for the example above. Both addresses use passkeys and exact Host/Origin checks. Sessions and passkeys are scoped to their hostname/origin. Existing private-host passkeys remain valid. On first access at the other hostname, enter the recovery code to authorize creating a passkey there, then save the newly rotated recovery code. Cancelling that passkey prompt still shows the recovery code; you can add the passkey later in **Settings → Access**. Recovery revokes other sessions but preserves existing passkeys. Private availability still requires the control container and host Tailscale service to be running.
 
 ## Automatic discovery
@@ -169,6 +171,8 @@ In **Files → Error pages**, use **Edit** on the separate 404 or 502 card. Each
 ### Git pull from folder cards
 
 Folder titles use the first path segment: `something/else/entirely` displays **Something**. The full path stays visible. The Git pull button appears when the folder, or a parent inside `/sites`, contains an ordinary Git repository. It pulls the repository's current branch/upstream using fast-forward only, refuses local changes and never resets or deletes them. Hooks and checkout filters are disabled; no build scripts or submodule updates run. A successful pull reapplies the proxy file lists, including error-page assets. File checkout itself is not an atomic website deployment.
+
+Git pulls the nearest parent repository inside `/sites`, including a repository rooted at `/sites` itself. For example, a folder `codenames/dist` uses `/sites/codenames/.git`. Repositories above the mounted `/sites` tree are inaccessible; mount their parent directory if needed.
 
 Git runs in the separate `files` container. It can write the sites mount but has no Core/Cloudflare credentials, authentication database, TLS keys or Docker socket. NGINX keeps its sites mount read-only. Set `PROXY_FILES_UID` in Komodo Environment to the VPS user ID that owns the repositories and SSH keys (usually `1000`; use `0` only if those files are owned by root). Existing ownership is never changed recursively. The updater also needs write access to the repository contents; website files must remain readable by edge UID 10002.
 

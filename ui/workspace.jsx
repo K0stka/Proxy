@@ -1,5 +1,5 @@
 import { Button } from './controls.jsx';
-import { Alert, Paper, NavLink, Menu, Switch } from '@mantine/core';
+import { Alert, Paper, NavLink, Menu, Switch, Tooltip } from '@mantine/core';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Waypoints,
@@ -399,34 +399,41 @@ export default function Workspace({ onLogout, onRecovery }) {
                               })
                             }
                           >
-                            <strong>{listener(route)}</strong>
+                            <strong>{route.name}</strong>
                             <span>
-                              {route.name}
+                              {listener(route)}
                               <span className="inline-arrow">→</span>
-                              {destination(route)}
+                              <span title={destination(route)}>
+                                {route.source?.container ?? destination(route)}
+                              </span>
                             </span>
                           </Button>
                           <div className="route-actions">
-                            <Button
-                              className="secondary small"
-                              onClick={() =>
-                                setWizard({
-                                  kind: 'route',
-                                  initial: route,
-                                })
-                              }
-                              aria-label={`Edit ${route.name}`}
-                            >
-                              <Pencil size={14} />
-                            </Button>
-                            {!route.published && (
+                            <Tooltip label="Edit proxy">
                               <Button
                                 className="icon-button"
-                                onClick={() => setConfirmation(route)}
-                                aria-label={`Delete ${route.name}`}
+                                onClick={() =>
+                                  setWizard({
+                                    kind: 'route',
+                                    initial: route,
+                                  })
+                                }
+                                aria-label={`Edit ${route.name}`}
                               >
-                                <Trash2 size={15} />
+                                <Pencil size={17} />
                               </Button>
+                            </Tooltip>
+                            {!route.published && (
+                              <Tooltip label="Delete proxy">
+                                <Button
+                                  className="icon-button"
+                                  color="red.6"
+                                  onClick={() => setConfirmation(route)}
+                                  aria-label={`Delete ${route.name}`}
+                                >
+                                  <Trash2 size={17} />
+                                </Button>
+                              </Tooltip>
                             )}
                           </div>
                         </Paper>

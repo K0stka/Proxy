@@ -9,7 +9,13 @@ export async function api(path, { method = 'GET', body } = {}) {
     headers: method === 'GET' ? {} : { 'content-type': 'application/json', 'x-csrf-token': csrf },
     body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
   });
-  const data = await response.json();
+  const data = await response.json().catch(() => {
+    const error = new Error(
+      `Server returned HTTP ${response.status} instead of JSON. The operation result is unknown; check before retrying.`,
+    );
+    error.status = response.ok ? 502 : response.status;
+    throw error;
+  });
   if (!response.ok) {
     const error = new Error(data.error ?? 'Request failed');
     error.status = response.status;

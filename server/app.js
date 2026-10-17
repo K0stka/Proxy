@@ -337,7 +337,7 @@ export function createApp({
           const folders = configuredFolders();
           let repositories = [], gitAvailable = false;
           try {
-            repositories = await filesRequest(filesSocket, '/repositories', { method: 'POST', body: { directories: folders.map((folder) => folder.directory) }, timeout: 3000 });
+            repositories = await filesRequest(filesSocket, '/repositories', { method: 'POST', body: { directories: folders.map((folder) => folder.directory) }, timeout: 3000, service: 'Files updater' });
             gitAvailable = true;
           } catch {}
           json(res, { folders, repositories, gitAvailable });
@@ -348,7 +348,7 @@ export function createApp({
           const result = await serial(async () => {
             if (!configuredFolders().some((folder) => folder.directory === directory))
               throw new Problem(404, 'Folder not configured');
-            const result = await filesRequest(filesSocket, '/pull', { method: 'POST', body: { directory }, timeout: 130000 });
+            const result = await filesRequest(filesSocket, '/pull', { method: 'POST', body: { directory }, timeout: 130000, service: 'Files updater' });
             try { await apply(store.snapshot()); }
             catch { throw new Problem(502, 'Git pull completed, but proxy file synchronization failed. Reapply the configuration before retrying.'); }
             return result;

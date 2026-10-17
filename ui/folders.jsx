@@ -161,7 +161,7 @@ export default function Folders({ catalog, onEdit, onCreate, onSaved }) {
             withBorder={true}
             p="lg"
           >
-            <Group justify="space-between" wrap="nowrap" align="flex-start">
+            <Group justify="space-between" wrap="nowrap" align="center">
               <div className="folder-heading">
                 <FolderOpen size={22} />
                 <div>
@@ -203,6 +203,7 @@ export default function Folders({ catalog, onEdit, onCreate, onSaved }) {
                   <Button
                     className="icon-button"
                     aria-label={`Remove ${folder.directory}`}
+                    color="red.6"
                     disabled={busy || Boolean(pulling)}
                     onClick={() => remove(folder.directory)}
                   >

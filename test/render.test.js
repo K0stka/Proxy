@@ -19,6 +19,8 @@ test('apex and wildcard readiness differ; admin proxy has a fixed destination an
   const ready = render(p, snapshot([apex]), options).config;
   assert(ready.includes('proxy_pass http://127.0.0.1:3001'));
   assert(ready.includes('proxy_set_header Host proxy.krychlic.com'));
+  assert.match(ready, /location \/api\/ \{[^}]*proxy_intercept_errors off;[^}]*error_page 502 = @admin_api_unavailable;/);
+  assert.match(ready, /location @admin_api_unavailable \{\s*default_type application\/json;\s*return 502/);
   p.domains[0].subdomains = false;
   p.adminHostname = 'krychlic.com';
   assert.throws(() => render(p, snapshot([route({ published: true })]), options), /Hostname/);

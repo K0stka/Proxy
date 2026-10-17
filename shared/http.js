@@ -26,7 +26,11 @@ export function json(res, value, status = 200) {
   });
   res.end(JSON.stringify(value));
 }
-export function unixRequest(socketPath, path, { method = 'GET', body, timeout = 12000 } = {}) {
+export function unixRequest(
+  socketPath,
+  path,
+  { method = 'GET', body, timeout = 12000, service = 'Edge' } = {},
+) {
   return new Promise((resolve, reject) => {
     const request = http.request(
       {
@@ -49,20 +53,27 @@ export function unixRequest(socketPath, path, { method = 'GET', body, timeout = 
           try {
             const data = JSON.parse(Buffer.concat(chunks).toString());
             if (response.statusCode !== 200)
-              reject(new Problem(502, data.error ?? 'Edge rejected configuration'));
+              reject(
+                new Problem(
+                  response.statusCode >= 400 && response.statusCode < 500
+                    ? response.statusCode
+                    : 502,
+                  data.error ?? `${service} rejected the request`,
+                ),
+              );
             else resolve(data);
           } catch {
-            reject(new Problem(502, 'Invalid edge response'));
+            reject(new Problem(502, `Invalid ${service.toLowerCase()} response`));
           }
         });
       },
     );
-    request.on('timeout', () => request.destroy(new Error('Edge timed out')));
+    request.on('timeout', () => request.destroy(new Error(`${service} timed out`)));
     request.on('error', () =>
       reject(
         new Problem(
           503,
-          'Edge did not confirm the result. Check the active configuration before retrying.',
+          `${service} did not confirm the result. Check the ${service.toLowerCase()} service before retrying.`,
         ),
       ),
     );
