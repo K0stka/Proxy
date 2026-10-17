@@ -125,7 +125,7 @@ export function effectivePolicy(deployment, settings, { development = false } = 
 }
 export const policyHash = (policy) =>
   createHash('sha256').update(JSON.stringify(policy)).digest('hex');
-export const routeSchema = z
+export const routeFields = z
   .object({
     id: z.string().uuid(),
     name: z.string().trim().min(1).max(80),
@@ -158,8 +158,12 @@ export const routeSchema = z
       .nullable()
       .default(null),
   })
-  .strict()
-  .transform(({ interceptErrors, ...route }) => route);
+  .strict();
+export const routeSchema = routeFields.transform(({ interceptErrors, ...route }) => route);
+export const errorPageSchema = z.object({
+  site: staticSiteSchema.nullable(),
+  document: siteDocument,
+}).strict();
 export const pagesSchema = z
   .object({
     notFoundTitle: z.string().trim().min(1).max(100),

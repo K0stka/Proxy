@@ -26,6 +26,8 @@ import {
   effectivePolicy,
   settingsFromPolicy,
   policyHash,
+  parse,
+  pagesSchema,
 } from '../shared/model.js';
 import { bodyJSON, json } from '../shared/http.js';
 import { render } from './render.js';
@@ -276,6 +278,12 @@ const server = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {
           .filter(Boolean)
           .map((item) => item.address),
       });
+      return;
+    }
+    if (req.url === '/pages/validate' && req.method === 'POST') {
+      const pages = parse(pagesSchema, await bodyJSON(req));
+      await prepareSites({ routes: [], pages });
+      json(res, { ok: true });
       return;
     }
     if (req.url === '/sites/inspect' && req.method === 'POST') {

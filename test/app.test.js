@@ -58,6 +58,14 @@ async function fixture(t, { empty = false } = {}) {
           files: exposed.map((path) => ({ path, allowed: true })),
         };
       }
+      if (path === '/pages/validate') {
+        for (const [key, documentKey] of [['notFoundSite', 'notFoundDocument'], ['badGatewaySite', 'badGatewayDocument']]) {
+          const site = options.body[key];
+          if (site && !['index.html', 'app.js'].filter(fileFilter(site)).includes(options.body[documentKey]))
+            throw new Problem(400, 'Error page document must be exposed by its folder rules');
+        }
+        return { ok: true };
+      }
       if (fail) throw new Problem(502, 'Candidate rejected');
       applies.push(options.body);
       return { revision: 'test', available: true };
@@ -206,6 +214,29 @@ test('first run has no example domains, targets or services and accepts UI setup
   const settings = settingsFromPolicy(policy());
   assert.equal((await f.request('/api/settings', { method: 'PUT', body: settings })).status, 200);
   assert.deepEqual(f.store.get('settings'), settings);
+});
+
+test('wizard validation checks the current step without writes and error pages save independently', async (t) => {
+  const f = await fixture(t), before = f.store.snapshot();
+  const validate = (body) => f.request('/api/validate', { method: 'POST', body });
+  assert.equal((await validate({ kind: 'route', step: 0, value: { name: ' ', kind: 'http' } })).status, 400);
+  assert.equal((await validate({ kind: 'route', step: 0, value: { name: 'Website', kind: 'http' } })).status, 200);
+  assert.equal((await validate({ kind: 'route', step: 1, value: route({ targetHost: '169.254.169.254' }) })).status, 400);
+  assert.equal((await validate({ kind: 'route', step: 2, value: route({ hostname: 'too.deep.krychlic.com' }) })).status, 400);
+  assert.equal((await validate({ kind: 'domain', value: { name: 'https://invalid.example.net' } })).status, 400);
+  assert.equal((await validate({ kind: 'folder', value: { directory: '/leading/', include: [], exclude: [] } })).status, 400);
+  assert.deepEqual(f.store.snapshot(), before);
+  assert.equal(f.applies.length, 0);
+  const gateway = { site: { directory: 'errors/gateway', include: [], exclude: [] }, document: 'index.html' };
+  assert.equal((await f.request('/api/pages/502', { method: 'PUT', body: gateway })).status, 200);
+  const notFound = { site: { directory: 'errors/not-found', include: [], exclude: [] }, document: 'missing.html' };
+  assert.equal((await validate({ kind: 'page', code: 404, value: notFound })).status, 400);
+  assert.deepEqual(f.store.snapshot().pages.badGatewaySite, gateway.site);
+  notFound.document = 'index.html';
+  assert.equal((await validate({ kind: 'page', code: 404, value: notFound })).status, 200);
+  assert.equal((await f.request('/api/pages/404', { method: 'PUT', body: notFound })).status, 200);
+  assert.deepEqual(f.store.snapshot().pages.badGatewaySite, gateway.site);
+  assert.deepEqual(f.store.snapshot().pages.notFoundSite, notFound.site);
 });
 
 test('domain CRUD, global preferences and admin origins preserve private access and certificate boundaries', async (t) => {

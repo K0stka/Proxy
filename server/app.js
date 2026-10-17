@@ -18,6 +18,10 @@ import {
   effectivePolicy,
   policyHash,
   domainSchema,
+  routeFields,
+  safeTarget,
+  defaultPages,
+  errorPageSchema,
 } from '../shared/model.js';
 import { bodyJSON, json, unixRequest } from '../shared/http.js';
 
@@ -48,6 +52,38 @@ export function createApp({
     return next;
   };
   const edge = (path, options) => edgeRequest(edgeSocket, path, options);
+  function domainPolicy(input, previous) {
+    if (previous && !policy.domains.some((d) => d.name === previous))
+      throw new Problem(404, 'Domain not found');
+    const domains = [...policy.domains.filter((d) => d.name !== previous), ...(input ? [input] : [])];
+    const nextPolicy = effectivePolicy(deployment, { ...settingsFromPolicy(policy), domains }, { development });
+    validateSnapshot(nextPolicy, store.snapshot());
+    return nextPolicy;
+  }
+  function folderSnapshot(spec, previous) {
+    const old = store.snapshot();
+    if (previous !== spec.directory && old.sites.some((site) => site.directory === spec.directory))
+      throw new Problem(409, 'That folder is already configured');
+    const update = (site) => site?.directory === previous ? spec : site;
+    return validateSnapshot(policy, {
+      ...old,
+      routes: old.routes.map((route) => ({ ...route, staticSite: update(route.staticSite) })),
+      pages: { ...old.pages, notFoundSite: update(old.pages.notFoundSite), badGatewaySite: update(old.pages.badGatewaySite) },
+      sites: [...old.sites.filter((site) => site.directory !== previous), spec],
+    });
+  }
+  function pageSnapshot(code, value) {
+    const spec = parse(errorPageSchema, value), old = store.snapshot();
+    const [siteKey, documentKey] = code === 404
+      ? ['notFoundSite', 'notFoundDocument'] : ['badGatewaySite', 'badGatewayDocument'];
+    const next = validateSnapshot(policy, { ...old, pages: {
+      ...old.pages, [siteKey]: spec.site, [documentKey]: spec.document,
+    } });
+    return { next, selection: { ...defaultPages,
+      [siteKey]: next.pages[siteKey], [documentKey]: next.pages[documentKey],
+    } };
+  }
+  const checkPages = (pages) => edge('/pages/validate', { method: 'POST', body: pages });
   async function apply(next, nextPolicy = policy) {
     next = validateSnapshot(nextPolicy, next);
     const old = store.snapshot(),
@@ -221,6 +257,54 @@ export function createApp({
           }));
           return;
         }
+        if (path === '/api/validate' && req.method === 'POST') {
+          const input = await bodyJSON(req), value = input?.value;
+          if (input?.kind === 'domain') domainPolicy(parse(domainSchema, value), input.previous);
+          else if (input?.kind === 'folder') {
+            const spec = parse(staticSiteSchema, value);
+            const previous = input.previousDirectory === undefined ? spec.directory : parse(siteDirectory, input.previousDirectory);
+            const next = folderSnapshot(spec, previous);
+            await edge('/sites/inspect', { method: 'POST', body: spec });
+            const affected = { ...defaultPages };
+            for (const [key, documentKey] of [['notFoundSite', 'notFoundDocument'], ['badGatewaySite', 'badGatewayDocument']])
+              if (next.pages[key]?.directory === spec.directory) {
+                affected[key] = next.pages[key]; affected[documentKey] = next.pages[documentKey];
+              }
+            if (affected.notFoundSite || affected.badGatewaySite) await checkPages(affected);
+          } else if (input?.kind === 'page' && [404, 502].includes(input.code)) {
+            await checkPages(pageSnapshot(input.code, value).selection);
+          } else if (input?.kind === 'route' && [0, 1, 2].includes(input.step)) {
+            const base = parse(routeFields.pick({ name: true, kind: true }).strip(), value);
+            if (input.step === 1) {
+              if (base.kind === 'static') {
+                const spec = parse(staticSiteSchema, value.staticSite);
+                await edge('/sites/inspect', { method: 'POST', body: spec });
+              } else {
+                const endpoint = parse(routeFields.pick({ targetHost: true, targetPort: true, upstreamTLS: true, upstreamServerName: true, source: true }).strip(), value);
+                if (!safeTarget(endpoint.targetHost, endpoint.targetPort))
+                  throw new Problem(400, 'Choose a safe destination IP and host port');
+                if (endpoint.upstreamTLS && !endpoint.upstreamServerName)
+                  throw new Problem(400, 'HTTPS backend requires its certificate hostname');
+              }
+            } else if (input.step === 2) {
+              const route = parse(routeSchema, { ...value, id: value.id ?? randomUUID(), published: true });
+              const old = store.snapshot();
+              validateSnapshot(policy, { ...old, routes: [...old.routes.filter((r) => r.id !== route.id), route] });
+            }
+          } else throw new Problem(400, 'Unknown validation step');
+          json(res, { ok: true });
+          return;
+        }
+        const singlePage = path.match(/^\/api\/pages\/(404|502)$/);
+        if (singlePage && req.method === 'PUT') {
+          const input = await bodyJSON(req);
+          json(res, await serial(async () => {
+            const { next, selection } = pageSnapshot(Number(singlePage[1]), input);
+            await checkPages(selection);
+            return apply(next);
+          }));
+          return;
+        }
         const domainMatch = path.match(/^\/api\/domains(?:\/([^/]+))?$/);
         if (domainMatch && ['POST', 'PUT', 'DELETE'].includes(req.method)) {
           const previous = domainMatch[1] ? decodeURIComponent(domainMatch[1]) : null;
@@ -228,12 +312,7 @@ export function createApp({
           if (req.method === 'DELETE') await bodyJSON(req);
           if ((req.method === 'POST') !== !previous) throw new Problem(405, 'Method not allowed');
           json(res, await serial(async () => {
-            if (previous && !policy.domains.some((d) => d.name === previous))
-              throw new Problem(404, 'Domain not found');
-            const domains = [...policy.domains.filter((d) => d.name !== previous), ...(input ? [input] : [])];
-            await apply(store.snapshot(), effectivePolicy(deployment, {
-              ...settingsFromPolicy(policy), domains,
-            }, { development }));
+            await apply(store.snapshot(), domainPolicy(input, previous));
             return input ?? { ok: true };
           }));
           return;
@@ -266,25 +345,7 @@ export function createApp({
           const result = await serial(async () => {
             await edge('/sites/inspect', { method: 'POST', body: spec });
             const old = store.snapshot();
-            if (
-              previous !== spec.directory &&
-              old.sites.some((site) => site.directory === spec.directory)
-            )
-              throw new Problem(409, 'That folder is already configured');
-            const update = (site) => (site?.directory === previous ? spec : site);
-            const next = validateSnapshot(policy, {
-              ...old,
-              routes: old.routes.map((route) => ({
-                ...route,
-                staticSite: update(route.staticSite),
-              })),
-              pages: {
-                ...old.pages,
-                notFoundSite: update(old.pages.notFoundSite),
-                badGatewaySite: update(old.pages.badGatewaySite),
-              },
-              sites: [...old.sites.filter((site) => site.directory !== previous), spec],
-            });
+            const next = folderSnapshot(spec, previous);
             if (snapshotHash(next) !== snapshotHash(old)) await apply(next);
             else store.set('snapshot', next);
             return spec;

@@ -21,6 +21,7 @@ export function FolderWizard({ initial, onClose, onSaved }) {
       });
       await onSaved('Folder saved');
     } catch (e) {
+      if ([400, 409].includes(e.status)) setStep(0);
       setError(e.message);
     } finally {
       setBusy(false);
@@ -35,6 +36,9 @@ export function FolderWizard({ initial, onClose, onSaved }) {
       onClose={onClose}
       busy={busy}
       onSubmit={save}
+      onValidate={() => api('/validate', { method: 'POST', body: {
+        kind: 'folder', value, previousDirectory: initial?.directory,
+      } })}
       submitLabel="Save folder"
       error={error}
       canContinue={step > 0 || (Boolean(check) && check.directory === value.directory)}
@@ -47,7 +51,7 @@ export function FolderWizard({ initial, onClose, onSaved }) {
               required
               value={value.directory}
               onChange={(e) => setValue((v) => ({ ...v, directory: e.target.value }))}
-              placeholder="Relative folder path"
+              placeholder="websites/portfolio (no leading or trailing /)"
             />
           </label>
           <SitePicker

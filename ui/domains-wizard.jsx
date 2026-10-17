@@ -15,12 +15,13 @@ export default function DomainWizard({ initial, emailConfigured, onClose, onSave
         method: initial ? 'PUT' : 'POST', body: value,
       });
       await onSaved('Domain saved');
-    } catch (e) { setError(e.message); }
+    } catch (e) { if ([400, 409].includes(e.status)) setStep(0); setError(e.message); }
     finally { setBusy(false); }
   }
   return (
     <Wizard title={initial ? 'Edit domain' : 'Add domain'} steps={['Domain', 'Review']}
       step={step} onStep={setStep} onClose={onClose} onSubmit={save}
+      onValidate={() => api('/validate', { method: 'POST', body: { kind: 'domain', value, previous: initial?.name } })}
       submitLabel={initial ? 'Save changes' : 'Add domain'} error={error} busy={busy}>
       {step === 0 ? <>
         {!emailConfigured && <p className="hint">Set the shared email in <a href="/settings/certificates">Settings → Certificates</a> before saving a domain.</p>}

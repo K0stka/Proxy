@@ -161,10 +161,11 @@ export default function Workspace({ onLogout, onRecovery }) {
       />
     );
   if (wizard?.kind === 'pages')
-    return <ErrorPagesWizard state={state} onClose={() => setWizard(null)} onSaved={saved} />;
+    return <ErrorPagesWizard code={wizard.code ?? 404} state={state} onClose={() => setWizard(null)} onSaved={saved} />;
   if (wizard?.kind === 'domains')
     return <DomainWizard initial={wizard.initial ?? state.settings.domains.find((d) => d.name === wizard.domainName)} emailConfigured={Boolean(state.settings.certificates.email)} onClose={() => setWizard(null)} onSaved={saved} />;
   const edgeReady = state.edge.available === true;
+  const portServices = state.discovery.services.filter((service) => service.ports.length > 0);
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -420,7 +421,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                 {state.discovery.stale && <span>Discovery out of date</span>}
                 <span>Updated {when(state.discovery.lastSuccess)}</span>
               </div>
-              {state.discovery.servers.map((server) => (
+              {state.discovery.servers.filter((server) => server.error || portServices.some((s) => s.server === server.id)).map((server) => (
                 <section className="server-group" key={server.id}>
                   <h2>
                     <Server size={18} />
@@ -428,7 +429,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                     <code>{server.address}</code>
                   </h2>
                   {server.error && <div className="notice">{server.error}</div>}
-                  {state.discovery.services
+                  {portServices
                     .filter((s) => s.server === server.id)
                     .map((service) => (
                       <article
@@ -455,34 +456,35 @@ export default function Workspace({ onLogout, onRecovery }) {
                             </button>
                           </div>
                         ))}
-                        {!service.ports.length && <p className="hint">No host ports</p>}
                       </article>
                     ))}
-                  {!state.discovery.services.some((s) => s.server === server.id) && (
-                    <p className="quiet-empty">No services</p>
-                  )}
                 </section>
               ))}
+              {!portServices.length && !state.discovery.error && (
+                <div className="empty-state"><Server size={28} /><h2>No services with ports</h2></div>
+              )}
             </>
           )}
           {page === 'Files' && (
             <>
-              <section className="settings-block">
-                <div className="section-title">
-                  <h3>Error pages</h3>
-                  <button className="secondary" onClick={() => setWizard({ kind: 'pages' })}>
-                    Edit pages
-                  </button>
-                </div>
+              <section className="error-pages-section" aria-label="Error pages">
+                <h2>Error pages</h2>
+                <div className="error-pages-grid">
                 {[
                   ['404', state.pages.notFoundSite, state.pages.notFoundDocument],
                   ['502', state.pages.badGatewaySite, state.pages.badGatewayDocument],
                 ].map(([code, site, document]) => (
-                  <div className="policy-row" key={code}>
-                    <strong>{code}</strong>
-                    <code>{site ? `/sites/${site.directory}/${document}` : 'Built-in'}</code>
-                  </div>
+                  <article className="error-page-card" key={code}>
+                    <div className="error-page-heading">
+                      <div><span className="error-page-code">{code}</span><h3>{code === '404' ? 'Not found' : 'Service unavailable'}</h3></div>
+                      <button className="secondary" aria-label={`Edit ${code} page`} onClick={() => setWizard({ kind: 'pages', code: Number(code) })}>
+                        <Pencil size={14} /> Edit
+                      </button>
+                    </div>
+                    <code>{site ? `/sites/${site.directory}/${document}` : 'Built-in page'}</code>
+                  </article>
                 ))}
+                </div>
               </section>
               <Folders
                 catalog={catalog}

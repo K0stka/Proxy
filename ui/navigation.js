@@ -12,16 +12,18 @@ export function createNavigation(browser) {
     const [, section, action, name] = url.pathname.split('/');
     const kind = section === 'domains' && ['new', 'edit'].includes(action) ? 'domains' : action;
     const domainName = section === 'domains' && action === 'edit' ? name : null;
+    const code = section === 'files' && kind === 'pages' ? (name === '502' ? 502 : 404) : null;
     const page = pages.find((name) => name.toLowerCase() === section) ?? 'Routes';
     const saved = browser.history.state?.proxyNavigation;
     const matches = saved?.page === page && saved.wizard?.kind === kind &&
       (!domainName || (saved.wizard.initial?.name ?? saved.wizard.domainName) === domainName) &&
+      (code === null || (saved.wizard.code ?? 404) === code) &&
       !(section === 'domains' && action === 'new' && saved.wizard?.initial);
-    const wizard = kinds.includes(kind) ? (matches ? saved.wizard : { kind, domainName }) : null;
+    const wizard = kinds.includes(kind) ? (matches ? saved.wizard : { kind, domainName, ...(code ? { code } : {}) }) : null;
     const id = wizard ? (matches ? saved.id : null) ?? browser.crypto.randomUUID() : null;
     const maxStep = wizard?.kind === 'route'
       ? (wizard.publishOnly ? 0 : 3)
-      : wizard?.kind === 'pages' ? 2 : 1;
+      : 1;
     const requestedStep = Math.floor(Number(url.searchParams.get('step'))) || 0;
     return {
       page, wizard, id,
@@ -37,7 +39,7 @@ export function createNavigation(browser) {
     const domainName = next.wizard?.initial?.name ?? next.wizard?.domainName;
     const wizardPath = next.wizard?.kind === 'domains'
       ? domainName ? `/edit/${domainName}` : '/new'
-      : `/${next.wizard?.kind}`;
+      : next.wizard?.kind === 'pages' ? `/pages/${next.wizard.code ?? 404}` : `/${next.wizard?.kind}`;
     const path = `/${next.page.toLowerCase()}${next.wizard ? `${wizardPath}?step=${next.step}` : next.page === 'Settings' ? `/${next.settingsSection ?? 'general'}` : ''}`;
     browser.history[method]({ ...browser.history.state, proxyNavigation: next }, '', path);
     for (const listener of listeners) listener();

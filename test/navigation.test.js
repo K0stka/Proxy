@@ -79,4 +79,8 @@ test('browser history and refresh preserve pages, wizard steps and unsaved field
   nav.setWizard({ kind: 'domains', initial: { name: 'example.net', subdomains: false } });
   assert.equal(tab.location.pathname, '/domains/edit/example.net');
   assert.equal(createNavigation(tab.reload()).getSnapshot().wizard.initial.subdomains, false);
+  nav.setPage('Files');
+  nav.setWizard({ kind: 'pages', code: 502 });
+  assert.equal(tab.location.pathname, '/files/pages/502');
+  assert.equal(createNavigation(tab.reload()).getSnapshot().wizard.code, 502);
 });

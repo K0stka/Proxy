@@ -665,6 +665,15 @@ summary {
   overflow-wrap: anywhere;
 }
 .domain-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.error-pages-section { margin-bottom: 36px; }
+.error-pages-section > h2 { margin-bottom: 18px; }
+.error-pages-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.error-page-card { padding: 22px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); min-width: 0; }
+.error-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.error-page-heading h3 { margin-top: 4px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.error-page-code { font-size: 26px; font-weight: 550; letter-spacing: -1px; }
+.error-page-card > code { display: block; font-size: 11px; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .error-pages-grid { grid-template-columns: 1fr; } }
 @media (max-width: 900px) {
   .settings-layout { grid-template-columns: 1fr; gap: 24px; }
   .settings-nav { position: static; flex-direction: row; flex-wrap: wrap; }

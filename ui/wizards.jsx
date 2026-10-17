@@ -36,8 +36,12 @@ export function Wizard({
   submitLabel,
   error,
   canContinue = true,
+  onValidate,
 }) {
   const heading = useRef(null);
+  const [validating, setValidating] = useState(false),
+    [validationError, setValidationError] = useState('');
+  const disabled = busy || validating;
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
     heading.current?.focus();
@@ -49,9 +53,6 @@ export function Wizard({
           <Waypoints />
           proxy
         </div>
-        <button className="secondary" disabled={busy} onClick={onClose}>
-          Cancel
-        </button>
       </header>
       <div className="wizard-body">
         <nav className="wizard-steps" aria-label="Progress">
@@ -74,33 +75,43 @@ export function Wizard({
             </h1>
           </div>
           <form
-            onSubmit={(e) => {
+            onChangeCapture={() => setValidationError('')}
+            onSubmit={async (e) => {
               e.preventDefault();
-              if (busy || !canContinue) return;
-              if (step < steps.length - 1) onStep(step + 1);
-              else onSubmit();
+              if (disabled || !canContinue) return;
+              if (step === steps.length - 1) return onSubmit();
+              setValidationError('');
+              setValidating(true);
+              try {
+                await onValidate?.(step);
+                onStep(step + 1);
+              } catch (e) { setValidationError(e.message); }
+              finally { setValidating(false); }
             }}
           >
-            <fieldset disabled={busy}>{children}</fieldset>
-            {error && (
+            <fieldset disabled={disabled}>{children}</fieldset>
+            {(validationError || error) && (
               <div className="notice error" role="alert">
-                {error}
+                {validationError || error}
               </div>
             )}
             <div className="wizard-actions">
+              <button type="button" className="text-button" disabled={disabled} onClick={onClose}>
+                Cancel
+              </button>
               {step > 0 && (
                 <button
                   type="button"
                   className="secondary"
-                  disabled={busy}
-                  onClick={() => onStep(step - 1)}
+                  disabled={disabled}
+                  onClick={() => { setValidationError(''); onStep(step - 1); }}
                 >
                   <ArrowLeft size={16} />
                   Back
                 </button>
               )}
-              <button className="primary" disabled={busy || !canContinue}>
-                {busy ? 'Applying…' : step === steps.length - 1 ? submitLabel : 'Continue'}
+              <button className="primary" disabled={disabled || !canContinue}>
+                {validating ? 'Checking…' : busy ? 'Applying…' : step === steps.length - 1 ? submitLabel : 'Continue'}
                 {step === steps.length - 1 ? <Check size={16} /> : <ArrowRight size={16} />}
               </button>
             </div>
@@ -392,6 +403,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
         publishOnly ? 'Published' : initial.published ? 'Changes applied' : 'Draft saved',
       );
     } catch (e) {
+      if (!publishOnly && [400, 409].includes(e.status)) setStep(2);
       setError(e.message);
     } finally {
       setBusy(false);
@@ -441,6 +453,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
       onClose={onClose}
       busy={busy}
       onSubmit={save}
+      onValidate={(step) => api('/validate', { method: 'POST', body: { kind: 'route', step, value: reviewed } })}
       submitLabel={
         publishOnly
           ? 'Publish publicly'
@@ -794,120 +807,53 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
   );
 }
 
-export function ErrorPagesWizard({ state, onClose, onSaved }) {
-  const pages = state.pages;
+export function ErrorPagesWizard({ state, code = 404, onClose, onSaved }) {
   const { step, setStep } = useNavigation();
-  const [value, setValue] = useWizardField('pages', pages);
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
+  const siteKey = code === 404 ? 'notFoundSite' : 'badGatewaySite';
+  const documentKey = code === 404 ? 'notFoundDocument' : 'badGatewayDocument';
+  const [value, setValue] = useWizardField('errorPage', {
+    site: state.pages[siteKey], document: state.pages[documentKey],
+  });
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''),
     [check, setCheck] = useState(null);
-  const selections = [
-    ['notFoundSite', '404 page', 'notFoundDocument'],
-    ['badGatewaySite', '502 page', 'badGatewayDocument'],
-  ];
-  const key = selections[step]?.[0],
-    site = value[key],
-    documentKey = selections[step]?.[2];
   async function save() {
     setBusy(true);
     setError('');
     try {
-      await api('/pages', { method: 'PUT', body: value });
-      await onSaved('Error pages updated');
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
+      await api('/pages/' + code, { method: 'PUT', body: value });
+      await onSaved('Error page saved');
+    } catch (e) { if ([400, 409].includes(e.status)) setStep(0); setError(e.message); }
+    finally { setBusy(false); }
   }
   return (
-    <Wizard
-      title="Error pages"
-      steps={[...selections.map((s) => s[1]), 'Review']}
-      step={step}
-      onStep={(s) => {
-        setStep(s);
-        setCheck(null);
-        setError('');
-      }}
-      onClose={onClose}
-      busy={busy}
-      onSubmit={save}
-      submitLabel="Apply pages"
-      error={error}
-      canContinue={
-        step === selections.length || !site || Boolean(check?.exposed.includes(value[documentKey]))
-      }
-    >
-      {step < selections.length ? (
-        <>
-          <div className="segmented">
-            <button
-              type="button"
-              aria-pressed={!site}
-              onClick={() => setValue((v) => ({ ...v, [key]: null }))}
-            >
-              Built-in
-            </button>
-            <button
-              type="button"
-              aria-pressed={Boolean(site)}
-              onClick={() => setValue((v) => ({ ...v, [key]: v[key] ?? blankSite('') }))}
-            >
-              Folder
-            </button>
-          </div>
-          {site ? (
-            <>
-              <SitePicker
-                key={key}
-                value={site}
-                onChange={(spec) =>
-                  setValue((v) => ({
-                    ...v,
-                    [key]: folderRules(state, spec.directory),
-                  }))
-                }
-                onStatus={setCheck}
-              />
-              <label>
-                Page document
-                <input
-                  required
-                  value={value[documentKey]}
-                  list="error-page-documents"
-                  onChange={(e) => setValue((v) => ({ ...v, [documentKey]: e.target.value }))}
-                />
-              </label>
-              <datalist id="error-page-documents">
-                {check?.exposed.map((path) => (
-                  <option key={path} value={path} />
-                ))}
-              </datalist>
-              {check && !check.exposed.includes(value[documentKey]) && (
-                <p className="error-text">Choose a document exposed by the folder rules.</p>
-              )}
-              <p className="hint">Use relative asset URLs, such as ./style.css.</p>
-            </>
-          ) : (
-            <div className="builtin-page">
-              <span>{step === 0 ? '404' : '502'}</span>
-              <h2>{step === 0 ? pages.notFoundTitle : pages.badGatewayTitle}</h2>
-            </div>
-          )}
-        </>
-      ) : (
-        <dl className="review-list">
-          {selections.map(([key, label, documentKey]) => (
-            <div key={key}>
-              <dt>{label}</dt>
-              <dd>
-                {value[key] ? `/sites/${value[key].directory}/${value[documentKey]}` : 'Built-in'}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
+    <Wizard title={'Edit ' + code + ' page'} steps={['Page', 'Review']}
+      step={step} onStep={(next) => { setError(''); setStep(next); }}
+      onClose={onClose} onSubmit={save} submitLabel="Save page" busy={busy} error={error}
+      onValidate={() => api('/validate', { method: 'POST', body: { kind: 'page', code, value } })}
+      canContinue={step > 0 || !value.site || (check?.directory === value.site.directory && Boolean(check?.exposed.includes(value.document)))}>
+      {step === 0 ? <>
+        <div className="segmented">
+          <button type="button" aria-pressed={!value.site}
+            onClick={() => setValue((v) => ({ ...v, site: null }))}>Built-in</button>
+          <button type="button" aria-pressed={Boolean(value.site)}
+            onClick={() => setValue((v) => ({ ...v, site: v.site ?? blankSite('') }))}>Folder</button>
+        </div>
+        {value.site ? <>
+          <SitePicker key={code} value={value.site} onStatus={setCheck}
+            onChange={(spec) => setValue((v) => ({ ...v, site: folderRules(state, spec.directory) }))} />
+          <label>Page document
+            <input required value={value.document} placeholder="index.html" list="error-page-documents"
+              onChange={(e) => setValue((v) => ({ ...v, document: e.target.value }))} />
+          </label>
+          <datalist id="error-page-documents">{check?.exposed.map((path) => <option key={path} value={path} />)}</datalist>
+          {check && !check.exposed.includes(value.document) && <p className="error-text">Choose a document exposed by the folder rules.</p>}
+          <p className="hint">Use relative asset URLs, such as ./style.css.</p>
+        </> : <div className="builtin-page">
+          <span>{code}</span><h2>{code === 404 ? state.pages.notFoundTitle : state.pages.badGatewayTitle}</h2>
+        </div>}
+      </> : <dl className="review-list">
+        <div><dt>{code} page</dt><dd>{value.site ? '/sites/' + value.site.directory + '/' + value.document : 'Built-in'}</dd></div>
+      </dl>}
     </Wizard>
   );
 }
