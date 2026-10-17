@@ -178,13 +178,6 @@ strong {
   color: var(--ink);
   box-shadow: 0 1px 3px light-dark(#152f1910, #0003);
 }
-.nav-count {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--soft);
-  margin-left: auto;
-}
 .sidebar-bottom {
   margin-top: auto;
   padding: 24px 12px 0;
@@ -192,46 +185,10 @@ strong {
   flex-direction: column;
   gap: 10px;
 }
-.connection {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-}
-.dot {
-  width: 6px;
-  height: 6px;
-  background: var(--accent);
-  border-radius: 50%;
-}
-.dot.offline {
-  background: var(--warning);
-}
 .workspace {
   min-width: 0;
   display: flex;
   flex-direction: column;
-}
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: var(--bg);
-  min-height: 64px;
-  padding: 0 40px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  color: var(--muted);
-  font-size: 11px;
-}
-.topbar > span {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  overflow-wrap: anywhere;
 }
 
 .workspace main {
@@ -342,9 +299,6 @@ strong {
   color: var(--error);
   border-color: transparent;
 }
-.notice.success {
-  color: var(--accent);
-}
 .notice.dismissible {
   justify-content: space-between;
 }
@@ -425,34 +379,10 @@ strong {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 10px;
-  border-radius: 4px;
-  padding: 4px 7px;
-  white-space: nowrap;
-  font-weight: 500;
-}
-.badge.green {
-  background: var(--soft);
-  color: var(--accent);
-}
-.badge.green:before {
-  content: '';
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-.badge.muted {
-  background: var(--sidebar);
+.status-text {
+  font-size: 11px;
   color: var(--muted);
-}
-.badge.amber {
-  background: var(--warning-bg);
-  color: var(--warning);
+  white-space: nowrap;
 }
 .route-footnote {
   display: flex;
@@ -785,15 +715,6 @@ summary {
   justify-content: center;
   margin-top: 14px;
 }
-.private-note {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  color: var(--muted);
-  margin-top: 38px;
-}
 .loading {
   display: flex;
   gap: 12px;
@@ -870,9 +791,6 @@ dialog > p {
   .workspace main {
     padding: 48px 60px;
   }
-  .topbar {
-    padding: 0 60px;
-  }
 }
 @media (max-width: 1150px) {
   .app-shell {
@@ -880,9 +798,6 @@ dialog > p {
   }
   .workspace main {
     padding: 30px 24px;
-  }
-  .topbar {
-    padding: 0 24px;
   }
 
   .settings-grid {
@@ -930,14 +845,6 @@ dialog > p {
     width: 14px;
     height: 14px;
   }
-  .nav-count {
-    display: none;
-  }
-  .topbar {
-    min-height: 44px;
-    padding: 0 20px;
-    font-size: 10px;
-  }
 
   .workspace main {
     padding: 28px 20px;
@@ -970,7 +877,7 @@ dialog > p {
     justify-content: flex-start;
     margin-left: 44px;
   }
-  .route-actions .badge {
+  .route-actions .status-text {
     margin-right: auto;
   }
 
@@ -1201,14 +1108,6 @@ dialog > p {
   margin-top: 22px;
   font-size: 12px;
 }
-.file-lock {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 11px;
-  margin: 14px 0 24px;
-}
 .file-summary {
   display: flex;
   gap: 14px;
@@ -1413,9 +1312,6 @@ dialog > p {
   }
   .sidebar nav button {
     flex-shrink: 0;
-  }
-  .topbar {
-    position: static;
   }
 }
 

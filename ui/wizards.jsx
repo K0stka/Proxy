@@ -8,7 +8,6 @@ import {
   FolderOpen,
   Cable,
   Radio,
-  LockKeyhole,
   File,
   Server as ServerIcon,
 } from 'lucide-react';
@@ -245,10 +244,6 @@ export function SitePicker({
                 placeholder={'private/**\n**/*.map'}
               />
             </label>
-          </div>
-          <div className="file-lock">
-            <LockKeyhole size={13} />
-            Dotfiles and symlinks are always hidden.
           </div>
         </>
       )}

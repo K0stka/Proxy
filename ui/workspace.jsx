@@ -14,7 +14,6 @@ import {
   LogOut,
   Trash2,
   Pencil,
-  LockKeyhole,
   ChevronRight,
 } from 'lucide-react';
 import { api } from './api.js';
@@ -40,7 +39,7 @@ export default function Workspace({ onLogout, onRecovery }) {
     [confirmation, setConfirmation] = useState(null),
     [working, setWorking] = useState(false),
     [catalog, setCatalog] = useState({ folders: [], error: null });
-  const report = (message, error = false) => setNotice({ message, error });
+  const report = (message, error = false) => setNotice(error ? { message } : null);
   async function refresh() {
     try {
       setState(await api('/state'));
@@ -165,8 +164,7 @@ export default function Workspace({ onLogout, onRecovery }) {
     return <ErrorPagesWizard state={state} onClose={() => setWizard(null)} onSaved={saved} />;
   if (wizard?.kind === 'domains')
     return <DomainsWizard state={state} onClose={() => setWizard(null)} onSaved={saved} />;
-  const live = state.routes.filter((r) => r.published).length,
-    edgeReady = state.edge.available === true;
+  const edgeReady = state.edge.available === true;
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -189,15 +187,10 @@ export default function Workspace({ onLogout, onRecovery }) {
             >
               <Icon size={18} />
               {name}
-              {name === 'Routes' && <span className="nav-count">{state.routes.length}</span>}
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="connection">
-            <span className={edgeReady ? 'dot' : 'dot offline'} />
-            {edgeReady ? 'Edge online' : 'Edge offline'}
-          </div>
           <button
             className="text-button"
             onClick={async () => {
@@ -215,12 +208,6 @@ export default function Workspace({ onLogout, onRecovery }) {
         </div>
       </aside>
       <div className="workspace">
-        <header className="topbar">
-          <span>
-            <LockKeyhole size={14} />
-            {new URL(state.policy.origin).hostname}
-          </span>
-        </header>
         <main>
           <div className="page-heading">
             <h1>{page}</h1>
@@ -265,8 +252,8 @@ export default function Workspace({ onLogout, onRecovery }) {
           </div>
           {notice && (
             <div
-              className={`notice dismissible ${notice.error ? 'error' : 'success'}`}
-              role={notice.error ? 'alert' : 'status'}
+              className="notice dismissible error"
+              role="alert"
             >
               <span>{notice.message}</span>
               <button
@@ -282,6 +269,9 @@ export default function Workspace({ onLogout, onRecovery }) {
             <div className="notice error" role="alert">
               {state.edge.error}
             </div>
+          )}
+          {!edgeReady && !state.edge.error && (
+            <div className="notice error" role="alert">Edge unavailable</div>
           )}
           {edgeReady && !state.edge.inSync && (
             <div className="notice error" role="alert">
@@ -325,9 +315,6 @@ export default function Workspace({ onLogout, onRecovery }) {
                     </button>
                   ))}
                 </div>
-                <span className="hint">
-                  {live} published · {state.routes.length - live} drafts
-                </span>
               </div>
               <div className="route-list">
                 {state.routes
@@ -351,9 +338,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                           </span>
                         </button>
                         <div className="route-actions">
-                          <span
-                            className={`badge ${route.published ? (edgeReady && state.edge.inSync ? 'green' : 'amber') : 'muted'}`}
-                          >
+                          <span className="status-text">
                             {route.published
                               ? edgeReady && state.edge.inSync
                                 ? 'Published'
@@ -432,10 +417,8 @@ export default function Workspace({ onLogout, onRecovery }) {
             <>
               {state.discovery.error && <div className="notice">{state.discovery.error}</div>}
               <div className="inventory-status">
-                <span className={`badge ${state.discovery.stale ? 'amber' : 'green'}`}>
-                  {state.discovery.stale ? 'Stale' : 'Current'}
-                </span>
-                <span>{when(state.discovery.lastSuccess)}</span>
+                {state.discovery.stale && <span>Discovery out of date</span>}
+                <span>Updated {when(state.discovery.lastSuccess)}</span>
               </div>
               {state.discovery.servers.map((server) => (
                 <section className="server-group" key={server.id}>
@@ -454,11 +437,9 @@ export default function Workspace({ onLogout, onRecovery }) {
                       >
                         <div className="service-heading">
                           <strong>{service.name}</strong>
-                          <span
-                            className={`badge ${service.state === 'running' ? 'green' : 'muted'}`}
-                          >
-                            {service.state}
-                          </span>
+                          {service.state !== 'running' && (
+                            <span className="status-text">{service.state}</span>
+                          )}
                         </div>
                         {service.ports.map((port, i) => (
                           <div className="port-row" key={i}>
@@ -528,7 +509,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                 <section className="domain-card" key={d.name}>
                   <div className="section-title">
                     <Globe size={22} />
-                    <span className={`badge ${d.ready && !d.staging ? 'green' : 'amber'}`}>
+                    <span className="status-text">
                       {d.staging ? 'Staging' : d.ready ? 'Ready' : 'Pending'}
                     </span>
                   </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
-import { Waypoints, ShieldCheck, Check, KeyRound, Fingerprint, CircleAlert } from 'lucide-react';
+import { Waypoints, Check, KeyRound, Fingerprint, CircleAlert } from 'lucide-react';
 import { api, setCSRF } from './api.js';
 import Modal from './dialog.jsx';
 import Workspace from './workspace.jsx';
@@ -114,9 +114,6 @@ function AuthScreen({ status, onAuth }) {
             {recover ? 'Back to sign in' : 'Lost your passkey?'}
           </button>
         )}
-        <div className="private-note">
-          <ShieldCheck size={14} /> Tailscale only
-        </div>
       </div>
     </div>
   );
