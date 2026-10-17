@@ -21,10 +21,10 @@ test('published ports need no allowlist; remote loopback, metadata and managemen
     {
       id: 'web',
       name: 'web',
-      state: 'running',
+      state: 'Running',
       ports: [
         { PrivatePort: 80, Type: 'tcp' },
-        { PrivatePort: 80, PublicPort: 3000, IP: '127.0.0.1', Type: 'tcp' },
+        { PrivatePort: 80, PublicPort: 3002, IP: '127.0.0.1', Type: 'tcp' },
         { private_port: 80, public_port: 3000, ip: '0.0.0.0', typ: 'tcp' },
         { PrivatePort: 80, PublicPort: 3001, IP: '0.0.0.0', Type: 'tcp' },
         { PrivatePort: 80, PublicPort: 8080, IP: '169.254.169.254', Type: 'tcp' },
@@ -33,6 +33,7 @@ test('published ports need no allowlist; remote loopback, metadata and managemen
   ];
   const server = { id: 'home', name: 'Home', address: '100.101.102.103', local: false };
   const ports = normalizeContainers(containers, server)[0].ports;
+  assert.equal(normalizeContainers(containers, server)[0].state, 'running');
   assert.deepEqual(
     ports.map((port) => port.usable),
     [false, false, true, false, false],
@@ -50,6 +51,34 @@ test('published ports need no allowlist; remote loopback, metadata and managemen
     server,
   );
   assert(!mapped[0].ports[0].usable);
+});
+
+test('dual-stack mappings collapse to one outside/inside port while TCP and UDP stay separate', () => {
+  const [service] = normalizeContainers(
+    [
+      {
+        name: 'Dashy',
+        state: 'Running',
+        ports: [
+          { PrivatePort: 8080, PublicPort: 9000, IP: '::', Type: 'TCP' },
+          { PrivatePort: 8080, PublicPort: 9000, IP: '0.0.0.0', Type: 'tcp' },
+          { PrivatePort: 8080, PublicPort: 9000, IP: '127.0.0.1', Type: 'tcp' },
+          { PrivatePort: 8080, PublicPort: 9000, IP: '0.0.0.0', Type: 'udp' },
+          { PrivatePort: 5432, Type: 'tcp' },
+        ],
+      },
+    ],
+    { id: 'home', name: 'Home', address: '100.101.102.103', local: false },
+  );
+  assert.equal(service.state, 'running');
+  assert.equal(service.ports.length, 3);
+  assert(service.ports[0].usable);
+  assert.equal(service.ports[0].targetHost, '100.101.102.103');
+  assert.deepEqual(
+    service.ports.map((port) => port.protocol),
+    ['tcp', 'udp', 'tcp'],
+  );
+  assert(!service.ports[2].usable);
 });
 
 test('all readable servers are discovered, DNS is pinned to IPs, local host is detected and failures are isolated', async () => {

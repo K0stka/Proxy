@@ -8,6 +8,33 @@ export const destination = (route) =>
     ? `/sites/${route.staticSite?.directory ?? ''}`
     : `${route.targetHost.includes(':') ? `[${route.targetHost}]` : route.targetHost}:${route.kind === 'udp' ? (route.portStart === route.portEnd ? route.portStart : `${route.portStart}–${route.portEnd}`) : route.targetPort}`;
 export const kindName = { http: 'Website', static: 'Static site', tcp: 'TCP', udp: 'UDP' };
+export const portLabel = (port) =>
+  `${port.hostPort || 'Unpublished'} (${port.containerPort}) / ${port.protocol.toUpperCase()}`;
+export function serviceEndpoints(services, kind) {
+  const protocol = kind === 'udp' ? 'udp' : 'tcp';
+  return services.flatMap((service) =>
+    service.ports
+      .filter((port) => port.protocol === protocol)
+      .map((port) => ({
+        key: JSON.stringify([
+          service.server,
+          service.containerId,
+          service.name,
+          port.protocol,
+          port.hostPort,
+          port.containerPort,
+        ]),
+        service,
+        port,
+        reason:
+          service.state !== 'running'
+            ? `Container is ${service.state}`
+            : !port.usable
+              ? port.reason
+              : '',
+      })),
+  );
+}
 export const blankSite = (directory) => ({
   directory,
   include: [],

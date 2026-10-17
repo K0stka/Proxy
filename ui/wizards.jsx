@@ -13,7 +13,16 @@ import {
   Server as ServerIcon,
 } from 'lucide-react';
 import { api } from './api.js';
-import { blankSite, folderRules, isWebsite, listener, destination, kindName } from './routes.js';
+import {
+  blankSite,
+  folderRules,
+  isWebsite,
+  listener,
+  destination,
+  kindName,
+  portLabel,
+  serviceEndpoints,
+} from './routes.js';
 
 export function Wizard({
   title,
@@ -369,17 +378,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
   const steps = publishOnly
     ? ['Review & publish']
     : ['Route type', 'Destination', 'Address', 'Review'];
-  const endpoints = state.discovery.services.flatMap((service) =>
-    service.state === 'running'
-      ? service.ports
-          .filter((port) => port.usable && port.protocol === (route.kind === 'udp' ? 'udp' : 'tcp'))
-          .map((port) => ({
-            key: `${service.server}:${service.containerId}:${port.hostPort}`,
-            service,
-            port,
-          }))
-      : [],
-  );
+  const endpoints = serviceEndpoints(state.discovery.services, route.kind);
   const reviewed = {
     ...route,
     hostname: isWebsite(route) ? `${subdomain ? subdomain + '.' : ''}${domain}` : '',
@@ -408,6 +407,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
   }
   function sourceChange(key) {
     const endpoint = endpoints.find((e) => e.key === key);
+    if (endpoint?.reason) return;
     if (!endpoint) {
       set('source', null);
       return;
@@ -432,6 +432,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
         (e) =>
           e.service.containerId === route.source.containerId &&
           e.service.server === route.source.server &&
+          e.port.targetHost === route.targetHost &&
           e.port.hostPort === route.targetPort,
       )?.key ?? '')
     : '';
@@ -532,13 +533,19 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                   <option value="saved">{route.source.container} · saved endpoint</option>
                 )}
                 {endpoints.map((e) => (
-                  <option value={e.key} key={e.key}>
-                    {e.service.serverName} / {e.service.name} · {e.port.containerPort} →{' '}
-                    {e.port.hostPort}
+                  <option value={e.key} key={e.key} disabled={Boolean(e.reason)}>
+                    {e.service.serverName} / {e.service.name} · {portLabel(e.port)}
+                    {e.reason ? ` · ${e.reason}` : ''}
                   </option>
                 ))}
               </select>
             </label>
+            {!endpoints.length && (
+              <p className="hint">
+                No {route.kind === 'udp' ? 'UDP' : 'TCP'} ports discovered. Check Services or use a
+                custom endpoint.
+              </p>
+            )}
             {!route.source && (
               <>
                 <div className="field-pair">

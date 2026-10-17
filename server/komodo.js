@@ -8,6 +8,22 @@ loopbacks.addSubnet('127.0.0.0', 8, 'ipv4');
 loopbacks.addAddress('::1', 'ipv6');
 const loopback = (address) =>
   isIP(address) !== 0 && loopbacks.check(address, isIP(address) === 4 ? 'ipv4' : 'ipv6');
+function uniquePorts(ports) {
+  const mappings = new Map();
+  for (const port of ports) {
+    const key = JSON.stringify([port.protocol, port.hostPort, port.containerPort]),
+      previous = mappings.get(key);
+    if (
+      !previous ||
+      (!previous.usable && port.usable) ||
+      (previous.usable === port.usable &&
+        isIP(port.targetHost) === 4 &&
+        isIP(previous.targetHost) === 6)
+    )
+      mappings.set(key, port);
+  }
+  return [...mappings.values()];
+}
 export function normalizeContainers(containers, server) {
   if (!Array.isArray(containers)) throw Error('Unexpected Komodo container response');
   return containers.slice(0, 2000).map((c) => ({
@@ -15,49 +31,53 @@ export function normalizeContainers(containers, server) {
     serverName: server.name,
     containerId: String(c.id ?? ''),
     name: String(c.name ?? '').slice(0, 256),
-    state: String(c.state ?? 'unknown'),
-    ports: (Array.isArray(c.ports) ? c.ports : [])
-      .slice(0, 200)
-      .map((p) => {
-        const hostPort = Number(p.PublicPort ?? p.public_port ?? 0),
-          containerPort = Number(p.PrivatePort ?? p.private_port ?? 0),
-          bind = String(p.IP ?? p.ip ?? ''),
-          protocol = p.Type ?? p.typ ?? 'tcp';
-        let targetHost = server.address;
-        if (bind && !isIP(bind)) targetHost = '';
-        if (isIP(bind) && !['0.0.0.0', '::'].includes(bind))
-          targetHost = loopback(canonicalIP(bind))
-            ? server.local
-              ? canonicalIP(bind)
-              : ''
-            : canonicalIP(bind);
-        const usable = Boolean(hostPort) && safeTarget(targetHost, hostPort);
-        return {
-          containerPort,
-          hostPort,
-          bind,
-          protocol,
-          targetHost,
-          usable,
-          reason: !hostPort
-            ? 'Not published on host'
-            : !targetHost
-              ? 'No reachable address; check the server address in Komodo'
-              : !safeTarget(targetHost, hostPort)
-                ? 'Unsafe address or protected management port'
-                : 'Binding available; connection not yet checked',
-        };
-      })
-      .filter(
-        (p) =>
-          Number.isInteger(p.containerPort) &&
-          p.containerPort > 0 &&
-          p.containerPort <= 65535 &&
-          Number.isInteger(p.hostPort) &&
-          p.hostPort >= 0 &&
-          p.hostPort <= 65535 &&
-          ['tcp', 'udp'].includes(p.protocol),
-      ),
+    state: String(c.state ?? 'unknown')
+      .trim()
+      .toLowerCase(),
+    ports: uniquePorts(
+      (Array.isArray(c.ports) ? c.ports : [])
+        .slice(0, 200)
+        .map((p) => {
+          const hostPort = Number(p.PublicPort ?? p.public_port ?? 0),
+            containerPort = Number(p.PrivatePort ?? p.private_port ?? 0),
+            bind = String(p.IP ?? p.ip ?? ''),
+            protocol = String(p.Type ?? p.typ ?? 'tcp').toLowerCase();
+          let targetHost = server.address;
+          if (bind && !isIP(bind)) targetHost = '';
+          if (isIP(bind) && !['0.0.0.0', '::'].includes(bind))
+            targetHost = loopback(canonicalIP(bind))
+              ? server.local
+                ? canonicalIP(bind)
+                : ''
+              : canonicalIP(bind);
+          const usable = Boolean(hostPort) && safeTarget(targetHost, hostPort);
+          return {
+            containerPort,
+            hostPort,
+            bind,
+            protocol,
+            targetHost,
+            usable,
+            reason: !hostPort
+              ? 'Not published on host'
+              : !targetHost
+                ? 'No reachable address; check the server address in Komodo'
+                : !safeTarget(targetHost, hostPort)
+                  ? 'Unsafe address or protected management port'
+                  : 'Binding available; connection not yet checked',
+          };
+        })
+        .filter(
+          (p) =>
+            Number.isInteger(p.containerPort) &&
+            p.containerPort > 0 &&
+            p.containerPort <= 65535 &&
+            Number.isInteger(p.hostPort) &&
+            p.hostPort >= 0 &&
+            p.hostPort <= 65535 &&
+            ['tcp', 'udp'].includes(p.protocol),
+        ),
+    ),
   }));
 }
 export class Discovery {

@@ -3,7 +3,6 @@ import {
   Waypoints,
   ShieldCheck,
   ArrowUpRight,
-  ArrowRight,
   Plus,
   Server,
   Globe,
@@ -19,7 +18,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { api } from './api.js';
-import { freshRoute, folderRules, listener, destination } from './routes.js';
+import { freshRoute, folderRules, listener, destination, portLabel } from './routes.js';
 import { RouteWizard, ErrorPagesWizard } from './wizards.jsx';
 import Settings from './settings.jsx';
 import Modal from './dialog.jsx';
@@ -435,11 +434,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                         </div>
                         {service.ports.map((port, i) => (
                           <div className="port-row" key={i}>
-                            <code>
-                              {port.containerPort}
-                              <ArrowRight size={13} />
-                              {port.hostPort || 'unpublished'} / {port.protocol.toUpperCase()}
-                            </code>
+                            <code>{portLabel(port)}</code>
                             {!port.usable && <span className="hint">{port.reason}</span>}
                             <button
                               className="secondary small"
