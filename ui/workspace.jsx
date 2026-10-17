@@ -19,7 +19,14 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { api } from './api.js';
-import { freshRoute, folderRules, listener, destination, portLabel } from './routes.js';
+import {
+  freshRoute,
+  folderRules,
+  listener,
+  destination,
+  portLabel,
+  visibleServicePorts,
+} from './routes.js';
 import { RouteWizard, ErrorPagesWizard } from './wizards.jsx';
 import Settings from './settings.jsx';
 import Modal from './dialog.jsx';
@@ -211,7 +218,7 @@ export default function Workspace({ onLogout, onRecovery }) {
     );
   const edgeReady = state.edge.available === true;
   const portServices = state.discovery.services
-    .map((service) => ({ ...service, ports: service.ports.filter((port) => port.hostPort > 0) }))
+    .map((service) => ({ ...service, ports: visibleServicePorts(service) }))
     .filter((service) => service.ports.length > 0);
   return (
     <div className="app-shell">

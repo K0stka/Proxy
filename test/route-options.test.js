@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeContainers } from '../server/komodo.js';
-import { serviceEndpoints, portLabel } from '../ui/routes.js';
+import { serviceEndpoints, portLabel, visibleServicePorts } from '../ui/routes.js';
 
 test('destination picker offers normalized running services and explains unavailable matching ports', () => {
   const services = normalizeContainers(
@@ -35,4 +35,18 @@ test('destination picker offers normalized running services and explains unavail
   assert.equal(udp.length, 1);
   assert.equal(portLabel(udp[0].port), '5353 (53) / UDP');
   assert.equal(new Set([...options, ...udp].map((option) => option.key)).size, 3);
+});
+
+test('protected and unsafe endpoints are hidden while remote loopback bindings explain the required fix', () => {
+  const services = normalizeContainers([
+    { id: 'core', name: 'Core', ports: [{ PrivatePort: 9120, PublicPort: 9120, IP: '0.0.0.0', Type: 'tcp' }] },
+    { id: 'unsafe', name: 'Unsafe', ports: [{ PrivatePort: 80, PublicPort: 8080, IP: '169.254.169.254', Type: 'tcp' }] },
+    { id: 'steam', name: 'Steam', state: 'running', ports: [{ PrivatePort: 3000, PublicPort: 8484, IP: '127.0.0.1', Type: 'tcp' }] },
+  ], { id: 'home', name: 'Home', address: '100.89.5.109', local: false });
+  assert.deepEqual(services.map((service) => visibleServicePorts(service).length), [0, 0, 1]);
+  const options = serviceEndpoints(services, 'http');
+  assert.equal(options.length, 1);
+  assert.equal(options[0].port.usable, false);
+  assert.match(options[0].reason, /Bound to 127\.0\.0\.1 on the remote server/);
+  assert.match(options[0].reason, /Tailscale IP/);
 });

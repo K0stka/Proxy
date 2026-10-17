@@ -244,7 +244,7 @@ export function coveredDomain(host, domains) {
   );
 }
 export const MAX_STREAM_PORTS = 1024;
-const protectedPorts = [3001, 8120, 9120, 2375, 2376];
+export const protectedPorts = [3001, 8120, 9120, 2375, 2376];
 const unsafeAddresses = new BlockList();
 for (const [address, bits, type] of [
   ['0.0.0.0', 8, 'ipv4'],

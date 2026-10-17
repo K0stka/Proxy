@@ -1,6 +1,6 @@
 import { isIP, BlockList } from 'node:net';
 import { lookup as dnsLookup } from 'node:dns/promises';
-import { safeAddress, safeTarget, canonicalIP } from '../shared/model.js';
+import { safeAddress, safeTarget, canonicalIP, protectedPorts } from '../shared/model.js';
 import { readKomodoURL } from '../shared/env.js';
 
 const loopbacks = new BlockList();
@@ -58,10 +58,15 @@ export function normalizeContainers(containers, server) {
             protocol,
             targetHost,
             usable,
+            restricted: protectedPorts.includes(hostPort) || (Boolean(hostPort && targetHost) && !safeTarget(targetHost, hostPort)),
             reason: !hostPort
               ? 'No Docker host-port mapping'
               : !targetHost
-                ? 'No reachable address; check the server address in Komodo'
+                ? loopback(canonicalIP(bind)) && !server.local
+                  ? `Bound to ${bind} on the remote server; publish this port on its Tailscale IP`
+                  : bind && !isIP(bind)
+                    ? 'Docker reported an invalid host binding'
+                    : 'No reachable address; set the server External Address in Komodo'
                 : !safeTarget(targetHost, hostPort)
                   ? 'Unsafe address or protected management port'
                   : 'Binding available; connection not yet checked',
