@@ -301,7 +301,13 @@ a:hover {
 .discovered-service {
   min-width: 0;
 }
-.discovered-service.proxied {
+.discovered-service.proxied,
+.route-row.proxy-disabled {
+  border-color: var(--mantine-color-gray-6);
+  background: var(--mantine-color-gray-light);
+}
+.discovered-service.proxy-enabled,
+.route-row.proxy-enabled {
   border-color: var(--mantine-color-cyan-6);
   background: var(--mantine-color-cyan-light);
 }

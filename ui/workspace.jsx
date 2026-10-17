@@ -398,7 +398,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                     const Icon = icons[route.kind];
                     return (
                       <Paper
-                        className="route-row"
+                        className={`route-row ${route.published ? 'proxy-enabled' : 'proxy-disabled'}`}
                         key={route.id}
                         component="article"
                         withBorder={true}
@@ -545,7 +545,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                         .filter((s) => s.server === server.id)
                         .map((service) => (
                           <Paper
-                            className={`discovered-service${service.ports.some((port) => serviceProxies(state.routes, service, port).length) ? ' proxied' : ''}`}
+                            className={`discovered-service${service.ports.some((port) => serviceProxies(state.routes, service, port).length) ? ' proxied' : ''}${service.ports.some((port) => serviceProxies(state.routes, service, port).some((route) => route.published)) ? ' proxy-enabled' : ''}`}
                             key={`${service.server}:${service.containerId}:${service.name}`}
                             component="article"
                             withBorder={true}
