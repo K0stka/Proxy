@@ -95,12 +95,12 @@ a:hover {
 .app-shell {
   display: grid;
   grid-template-columns: 228px minmax(0, 1fr);
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
 }
 .sidebar {
-  position: sticky;
-  top: 0;
-  height: 100dvh;
+  height: 100%;
+  min-height: 0;
   overflow-y: auto;
   border-right: 1px solid var(--line);
   padding: 28px 16px 20px;
@@ -144,6 +144,9 @@ a:hover {
 }
 .workspace {
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 .workspace > main {
   width: 100%;
@@ -175,12 +178,6 @@ a:hover {
 }
 .notice {
   margin-bottom: 20px;
-}
-.dismissible .mantine-Alert-message {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
 }
 .routes-toolbar {
   margin-bottom: 20px;
@@ -241,7 +238,6 @@ a:hover {
   opacity: 0.6;
 }
 .route-actions,
-.folder-actions,
 .domain-actions,
 .dialog-actions {
   display: flex;
@@ -368,16 +364,6 @@ a:hover {
 .folder-heading code {
   color: var(--muted);
 }
-.folder-rules {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--line);
-}
-.folder-actions {
-  margin-top: 8px;
-}
 .domain-card {
   min-width: 0;
 }
@@ -466,10 +452,9 @@ a:hover {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.wizard-top {
-  border-bottom: 1px solid var(--line);
-  padding: 24px 32px;
-  background: var(--surface);
+.workspace > .wizard-shell {
+  max-width: none;
+  padding: 0;
 }
 .wizard-body {
   display: grid;
@@ -738,6 +723,20 @@ a:hover {
 .dialog-actions {
   justify-content: flex-end;
 }
+.toast-stack {
+  position: fixed;
+  z-index: 1000;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  right: max(24px, env(safe-area-inset-right));
+  display: grid;
+  gap: 12px;
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.toast-stack > * {
+  pointer-events: auto;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 1000px) {
   .app-shell {
     grid-template-columns: 200px minmax(0, 1fr);
@@ -819,9 +818,6 @@ a:hover {
   }
   .route-actions {
     margin-left: 0;
-  }
-  .wizard-top {
-    padding: 20px;
   }
   .wizard-body {
     display: block;

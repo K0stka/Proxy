@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createApp } from '../server/app.js';
@@ -107,12 +107,14 @@ async function fixture(t, { empty = false } = {}) {
         },
         (res) => {
           let response = '';
-          res.on('data', (chunk) => (response += chunk));
+          const chunks = [];
+          res.on('data', (chunk) => { chunks.push(chunk); response += chunk; });
           res.on('end', () =>
             resolve({
               status: res.statusCode,
               json: async () => JSON.parse(response),
               text: async () => response,
+              arrayBuffer: async () => Buffer.concat(chunks),
               headers: {
                 get: (name) => res.headers[name.toLowerCase()],
                 getSetCookie: () => res.headers['set-cookie'] ?? [],
@@ -195,6 +197,29 @@ test('interface styles use a fresh CSP nonce without allowing inline scripts', a
     assert.ok(!response.headers.get('content-security-policy').includes('unsafe-inline'));
     previous = nonce;
   }
+});
+
+test('PWA manifest and icons are served as app files without relaxing authentication or CSP', async (t) => {
+  const f = await fixture(t);
+  await mkdir(join(f.directory, 'icons'));
+  for (const [path, mime] of [
+    ['manifest.webmanifest', 'application/manifest+json'],
+    ['favicon.svg', 'image/svg+xml'],
+    ['icons/proxy-180.png', 'image/png'],
+    ['icons/proxy-192.png', 'image/png'],
+    ['icons/proxy-512.png', 'image/png'],
+    ['icons/proxy-maskable-512.png', 'image/png'],
+  ]) {
+    const expected = await readFile(new URL(`../public/${path}`, import.meta.url));
+    await writeFile(join(f.directory, path), expected);
+    const response = await f.request(`/${path}`, { authenticated: false });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), mime);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), expected);
+    assert.ok(!response.headers.get('content-security-policy').includes('unsafe-inline'));
+  }
+  assert.equal((await f.request('/api/state', { authenticated: false })).status, 401);
 });
 
 test('settings are private, SQLite-backed, independently applied and reject changes invalidating saved routes', async (t) => {

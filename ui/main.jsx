@@ -6,6 +6,7 @@ import { Waypoints, Check, KeyRound, Fingerprint, CircleAlert } from 'lucide-rea
 import { api, setCSRF } from './api.js';
 import Modal from './dialog.jsx';
 import Workspace from './workspace.jsx';
+import { ToastProvider } from './toasts.jsx';
 import { MantineProvider, createTheme, PasswordInput, Alert } from '@mantine/core';
 import '@mantine/core/styles.css';
 import './style.css';
@@ -100,7 +101,7 @@ function AuthScreen({ status, onAuth }) {
     <div className="auth-shell">
       <div className="auth-panel">
         <div className="brand">
-          <Waypoints /> proxy
+          <Waypoints /> Proxy
         </div>
         <div className="auth-symbol">
           <Fingerprint size={32} />
@@ -266,6 +267,8 @@ createRoot(document.getElementById('root')).render(
     defaultColorScheme="auto"
     getStyleNonce={() => document.querySelector('meta[name="style-nonce"]')?.content}
   >
-    <App />
+    <ToastProvider>
+      <App />
+    </ToastProvider>
   </MantineProvider>,
 );

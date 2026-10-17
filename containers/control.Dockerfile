@@ -4,6 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY index.html vite.config.js ./
 COPY ui ./ui
+COPY public ./public
 RUN npm run build && npm prune --omit=dev --ignore-scripts
 
 FROM node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019

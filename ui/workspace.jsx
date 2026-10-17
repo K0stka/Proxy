@@ -1,6 +1,6 @@
 import { Button } from './controls.jsx';
 import { Alert, Paper, NavLink, Menu, Switch } from '@mantine/core';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Waypoints,
   ShieldCheck,
@@ -11,13 +11,13 @@ import {
   Cable,
   Radio,
   RefreshCw,
-  X,
   LogOut,
   Trash2,
   Pencil,
   ChevronRight,
 } from 'lucide-react';
 import { api } from './api.js';
+import { useToast } from './toasts.jsx';
 import { byName } from './order.js';
 import {
   freshRoute,
@@ -50,21 +50,14 @@ export default function Workspace({ onLogout, onRecovery }) {
   const { page, setPage, wizard, setWizard } = useNavigation();
   const [state, setState] = useState(null),
     [filter, setFilter] = useState('all'),
-    [notice, setNotice] = useState(null),
     [confirmation, setConfirmation] = useState(null),
     [working, setWorking] = useState(false),
     [catalog, setCatalog] = useState({
       folders: [],
       error: null,
     });
-  const report = (message, error = false) =>
-    setNotice(
-      error
-        ? {
-            message,
-          }
-        : null,
-    );
+  const report = useToast();
+  const content = useRef(null);
   async function refresh() {
     try {
       const next = await api('/state');
@@ -101,12 +94,12 @@ export default function Workspace({ onLogout, onRecovery }) {
     return () => clearInterval(timer);
   }, []);
   useEffect(() => {
-    window.scrollTo({
+    content.current?.scrollTo({
       top: 0,
       behavior: 'instant',
     });
     if (page === 'Files') loadFiles();
-  }, [page]);
+  }, [page, wizard]);
   async function action(route, op) {
     setWorking(true);
     try {
@@ -114,13 +107,7 @@ export default function Workspace({ onLogout, onRecovery }) {
         method: 'POST',
       });
       await refresh();
-      report(
-        op === 'sync'
-          ? 'Files synced'
-          : op === 'disable'
-            ? 'Disabled · connections may drain for 30s'
-            : 'Done',
-      );
+      report(op === 'disable' ? 'Proxy disabled' : 'Proxy enabled');
     } catch (e) {
       report(e.message, true);
     } finally {
@@ -166,7 +153,7 @@ export default function Workspace({ onLogout, onRecovery }) {
     setWizard(null);
     await refresh();
     report(message);
-    window.scrollTo({
+    content.current?.scrollTo({
       top: 0,
       behavior: 'instant',
     });
@@ -175,11 +162,12 @@ export default function Workspace({ onLogout, onRecovery }) {
     return (
       <div className="loading">
         <Waypoints />
-        Loading…{notice && <p role="alert">{notice.message}</p>}
+        Loading…
       </div>
     );
+  let flow = null;
   if (wizard?.kind === 'route')
-    return (
+    flow = (
       <RouteWizard
         initial={wizard.initial ?? freshRoute(state)}
         state={state}
@@ -189,7 +177,7 @@ export default function Workspace({ onLogout, onRecovery }) {
       />
     );
   if (wizard?.kind === 'folder')
-    return (
+    flow = (
       <FolderWizard
         initial={wizard.initial}
         onClose={() => setWizard(null)}
@@ -200,7 +188,7 @@ export default function Workspace({ onLogout, onRecovery }) {
       />
     );
   if (wizard?.kind === 'pages')
-    return (
+    flow = (
       <ErrorPagesWizard
         code={wizard.code ?? 404}
         state={state}
@@ -209,7 +197,7 @@ export default function Workspace({ onLogout, onRecovery }) {
       />
     );
   if (wizard?.kind === 'domains')
-    return (
+    flow = (
       <DomainWizard
         initial={wizard.initial ?? state.settings.domains.find((d) => d.name === wizard.domainName)}
         emailConfigured={Boolean(state.settings.certificates.email)}
@@ -226,7 +214,7 @@ export default function Workspace({ onLogout, onRecovery }) {
       <aside className="sidebar">
         <div className="brand">
           <Waypoints />
-          proxy
+          Proxy
         </div>
         <nav aria-label="Main navigation">
           {[
@@ -267,196 +255,171 @@ export default function Workspace({ onLogout, onRecovery }) {
           </Button>
         </div>
       </aside>
-      <div className="workspace">
-        <main>
-          <div className="page-heading">
-            <h1>{page}</h1>
-            {page === 'Routes' && (
-              <Button
-                className="primary"
-                onClick={() =>
-                  setWizard({
-                    kind: 'route',
-                    initial: freshRoute(state),
-                  })
-                }
-              >
-                <Plus size={17} />
-                New route
-              </Button>
+      <div className="workspace" ref={content}>
+        {flow ?? (
+          <main>
+            <div className="page-heading">
+              <h1>{page}</h1>
+              {page === 'Routes' && (
+                <Button
+                  className="primary"
+                  onClick={() =>
+                    setWizard({
+                      kind: 'route',
+                      initial: freshRoute(state),
+                    })
+                  }
+                >
+                  <Plus size={17} />
+                  New route
+                </Button>
+              )}
+              {page === 'Domains' && (
+                <Button
+                  className="primary"
+                  onClick={() =>
+                    setWizard({
+                      kind: 'domains',
+                    })
+                  }
+                >
+                  <Plus size={17} />
+                  Add domain
+                </Button>
+              )}
+              {['Services', 'Files'].includes(page) && (
+                <Button
+                  className="secondary"
+                  disabled={working}
+                  onClick={async () => {
+                    setWorking(true);
+                    try {
+                      if (page === 'Files') await loadFiles();
+                      else {
+                        await api('/discovery/refresh', {
+                          method: 'POST',
+                        });
+                        await refresh();
+                      }
+                    } catch (e) {
+                      report(e.message, true);
+                    } finally {
+                      setWorking(false);
+                    }
+                  }}
+                >
+                  <RefreshCw size={15} />
+                  Refresh
+                </Button>
+              )}
+            </div>
+            {state.edge.error && (
+              <Alert className="notice error" role="alert" color="red" variant="light">
+                {state.edge.error}
+              </Alert>
             )}
-            {page === 'Domains' && (
-              <Button
-                className="primary"
-                onClick={() =>
-                  setWizard({
-                    kind: 'domains',
-                  })
-                }
-              >
-                <Plus size={17} />
-                Add domain
-              </Button>
+            {!edgeReady && !state.edge.error && (
+              <Alert className="notice error" role="alert" color="red" variant="light">
+                Edge unavailable
+              </Alert>
             )}
-            {['Services', 'Files'].includes(page) && (
-              <Button
-                className="secondary"
-                disabled={working}
-                onClick={async () => {
-                  setWorking(true);
-                  try {
-                    if (page === 'Files') await loadFiles();
-                    else {
-                      await api('/discovery/refresh', {
+            {edgeReady && !state.edge.inSync && (
+              <Alert className="notice error" role="alert" color="red" variant="light">
+                Configuration out of sync.
+                <Button
+                  className="secondary"
+                  disabled={working}
+                  onClick={async () => {
+                    setWorking(true);
+                    try {
+                      await api('/reconcile', {
                         method: 'POST',
                       });
                       await refresh();
+                    } catch (e) {
+                      report(e.message, true);
+                    } finally {
+                      setWorking(false);
                     }
-                  } catch (e) {
-                    report(e.message, true);
-                  } finally {
-                    setWorking(false);
-                  }
-                }}
-              >
-                <RefreshCw size={15} />
-                Refresh
-              </Button>
+                  }}
+                >
+                  Retry
+                </Button>
+              </Alert>
             )}
-          </div>
-          {notice && (
-            <Alert className="notice dismissible error" role="alert" color="red" variant="light">
-              <span>{notice.message}</span>
-              <Button
-                className="icon-button"
-                onClick={() => setNotice(null)}
-                aria-label="Dismiss notice"
-              >
-                <X size={16} />
-              </Button>
-            </Alert>
-          )}
-          {state.edge.error && (
-            <Alert className="notice error" role="alert" color="red" variant="light">
-              {state.edge.error}
-            </Alert>
-          )}
-          {!edgeReady && !state.edge.error && (
-            <Alert className="notice error" role="alert" color="red" variant="light">
-              Edge unavailable
-            </Alert>
-          )}
-          {edgeReady && !state.edge.inSync && (
-            <Alert className="notice error" role="alert" color="red" variant="light">
-              Configuration out of sync.
-              <Button
-                className="secondary"
-                disabled={working}
-                onClick={async () => {
-                  setWorking(true);
-                  try {
-                    await api('/reconcile', {
-                      method: 'POST',
-                    });
-                    await refresh();
-                  } catch (e) {
-                    report(e.message, true);
-                  } finally {
-                    setWorking(false);
-                  }
-                }}
-              >
-                Retry
-              </Button>
-            </Alert>
-          )}
-          {page === 'Routes' && (
-            <>
-              <div className="routes-toolbar">
-                <div className="filter-tabs" aria-label="Route filter">
-                  {[
-                    ['all', 'All'],
-                    ['http', 'Services'],
-                    ['static', 'Static'],
-                    ['tcp', 'TCP'],
-                    ['udp', 'UDP'],
-                  ].map(([value, label]) => (
-                    <Button
-                      key={value}
-                      aria-pressed={filter === value}
-                      onClick={() => setFilter(value)}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-              <div className="route-list">
-                {state.routes
-                  .filter((r) => filter === 'all' || r.kind === filter)
-                  .map((route) => {
-                    const Icon = icons[route.kind];
-                    return (
-                      <Paper
-                        className={`route-row ${route.published ? 'proxy-enabled' : 'proxy-disabled'}`}
-                        key={route.id}
-                        component="article"
-                        withBorder={true}
-                        p="md"
+            {page === 'Routes' && (
+              <>
+                <div className="routes-toolbar">
+                  <div className="filter-tabs" aria-label="Route filter">
+                    {[
+                      ['all', 'All'],
+                      ['http', 'Services'],
+                      ['static', 'Static'],
+                      ['tcp', 'TCP'],
+                      ['udp', 'UDP'],
+                    ].map(([value, label]) => (
+                      <Button
+                        key={value}
+                        aria-pressed={filter === value}
+                        onClick={() => setFilter(value)}
                       >
-                        <Switch
-                          checked={route.published}
-                          disabled={working || !edgeReady}
-                          aria-label={`${route.published ? 'Disable' : 'Enable'} ${route.name}`}
-                          onChange={() => action(route, route.published ? 'disable' : 'publish')}
-                        />
-                        <div className="service-icon">
-                          <Icon size={20} />
-                        </div>
-                        <Button
-                          className="route-info"
-                          onClick={() =>
-                            setWizard({
-                              kind: 'route',
-                              initial: route,
-                            })
-                          }
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="route-list">
+                  {state.routes
+                    .filter((r) => filter === 'all' || r.kind === filter)
+                    .map((route) => {
+                      const Icon = icons[route.kind];
+                      return (
+                        <Paper
+                          className={`route-row ${route.published ? 'proxy-enabled' : 'proxy-disabled'}`}
+                          key={route.id}
+                          component="article"
+                          withBorder={true}
+                          p="md"
                         >
-                          <strong>{listener(route)}</strong>
-                          <span>
-                            {route.name}
-                            <span className="inline-arrow">→</span>
-                            {destination(route)}
-                          </span>
-                        </Button>
-                        <div className="route-actions">
+                          <Switch
+                            checked={route.published}
+                            disabled={working || !edgeReady}
+                            aria-label={`${route.published ? 'Disable' : 'Enable'} ${route.name}`}
+                            onChange={() => action(route, route.published ? 'disable' : 'publish')}
+                          />
+                          <div className="service-icon">
+                            <Icon size={20} />
+                          </div>
                           <Button
-                            className="secondary small"
+                            className="route-info"
                             onClick={() =>
                               setWizard({
                                 kind: 'route',
                                 initial: route,
                               })
                             }
-                            aria-label={`Edit ${route.name}`}
                           >
-                            <Pencil size={14} />
+                            <strong>{listener(route)}</strong>
+                            <span>
+                              {route.name}
+                              <span className="inline-arrow">→</span>
+                              {destination(route)}
+                            </span>
                           </Button>
-                          {route.published ? (
-                            <>
-                              {route.kind === 'static' && (
-                                <Button
-                                  className="secondary small"
-                                  disabled={!edgeReady || working}
-                                  onClick={() => action(route, 'sync')}
-                                >
-                                  <RefreshCw size={13} />
-                                  Sync files
-                                </Button>
-                              )}
-                            </>
-                          ) : (
-                            <>
+                          <div className="route-actions">
+                            <Button
+                              className="secondary small"
+                              onClick={() =>
+                                setWizard({
+                                  kind: 'route',
+                                  initial: route,
+                                })
+                              }
+                              aria-label={`Edit ${route.name}`}
+                            >
+                              <Pencil size={14} />
+                            </Button>
+                            {!route.published && (
                               <Button
                                 className="icon-button"
                                 onClick={() => setConfirmation(route)}
@@ -464,298 +427,303 @@ export default function Workspace({ onLogout, onRecovery }) {
                               >
                                 <Trash2 size={15} />
                               </Button>
-                            </>
-                          )}
-                        </div>
-                      </Paper>
-                    );
-                  })}
-                {!state.routes.some((r) => filter === 'all' || r.kind === filter) && (
+                            )}
+                          </div>
+                        </Paper>
+                      );
+                    })}
+                  {!state.routes.some((r) => filter === 'all' || r.kind === filter) && (
+                    <div className="empty-state">
+                      <Waypoints size={28} />
+                      <h2>No routes</h2>
+                      <Button
+                        className="secondary"
+                        onClick={() =>
+                          setWizard({
+                            kind: 'route',
+                            initial: freshRoute(state),
+                          })
+                        }
+                      >
+                        <Plus size={15} />
+                        Create route
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+            {page === 'Services' && (
+              <>
+                {state.discovery.error && (
+                  <Alert className="notice" color="blue" variant="light">
+                    {state.discovery.error}
+                  </Alert>
+                )}
+                <div className="inventory-status">
+                  {state.discovery.stale && <span>Discovery out of date</span>}
+                  <span>Updated {when(state.discovery.lastSuccess)}</span>
+                </div>
+                {state.discovery.servers
+                  .filter(
+                    (server) => server.error || portServices.some((s) => s.server === server.id),
+                  )
+                  .map((server) => (
+                    <section className="server-group" key={server.id}>
+                      <h2>
+                        <Server size={18} />
+                        {server.name}
+                        <code>{server.address}</code>
+                      </h2>
+                      {server.error && (
+                        <Alert className="notice" color="blue" variant="light">
+                          {server.error}
+                        </Alert>
+                      )}
+                      <div className="service-grid">
+                        {portServices
+                          .filter((s) => s.server === server.id)
+                          .map((service) => (
+                            <Paper
+                              className={`discovered-service${service.ports.some((port) => serviceProxies(state.routes, service, port).length) ? ' proxied' : ''}${service.ports.some((port) => serviceProxies(state.routes, service, port).some((route) => route.published)) ? ' proxy-enabled' : ''}`}
+                              key={`${service.server}:${service.containerId}:${service.name}`}
+                              component="article"
+                              withBorder={true}
+                              p="lg"
+                            >
+                              <div className="service-heading">
+                                <strong>{service.name}</strong>
+                                {service.state !== 'running' && (
+                                  <span className="status-text">{service.state}</span>
+                                )}
+                              </div>
+                              {service.ports.map((port, i) => {
+                                const proxies = serviceProxies(state.routes, service, port);
+                                const edit = (route) =>
+                                  setWizard({ kind: 'route', initial: route });
+                                const button = (
+                                  <Button
+                                    className="secondary small"
+                                    disabled={!proxies.length && service.state !== 'running'}
+                                    onClick={
+                                      proxies.length > 1
+                                        ? undefined
+                                        : () =>
+                                            proxies.length
+                                              ? edit(proxies[0])
+                                              : connect(service, port)
+                                    }
+                                  >
+                                    {proxies.length ? 'Edit proxy' : 'Create proxy'}
+                                    <ChevronRight size={14} />
+                                  </Button>
+                                );
+                                return (
+                                  <div className="port-row" key={i}>
+                                    <code>{portLabel(port)}</code>
+                                    {!port.usable && <span className="hint">{port.reason}</span>}
+                                    {proxies.length > 1 ? (
+                                      <Menu position="bottom-end" withinPortal>
+                                        <Menu.Target>{button}</Menu.Target>
+                                        <Menu.Dropdown>
+                                          {proxies.map((route) => (
+                                            <Menu.Item key={route.id} onClick={() => edit(route)}>
+                                              {route.name} · {listener(route)}
+                                            </Menu.Item>
+                                          ))}
+                                        </Menu.Dropdown>
+                                      </Menu>
+                                    ) : (
+                                      button
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </Paper>
+                          ))}
+                      </div>
+                    </section>
+                  ))}
+                {!portServices.length && !state.discovery.error && (
                   <div className="empty-state">
-                    <Waypoints size={28} />
-                    <h2>No routes</h2>
-                    <Button
-                      className="secondary"
-                      onClick={() =>
-                        setWizard({
-                          kind: 'route',
-                          initial: freshRoute(state),
-                        })
-                      }
-                    >
-                      <Plus size={15} />
-                      Create route
-                    </Button>
+                    <Server size={28} />
+                    <h2>No services with published ports</h2>
                   </div>
                 )}
-              </div>
-            </>
-          )}
-          {page === 'Services' && (
-            <>
-              {state.discovery.error && (
-                <Alert className="notice" color="blue" variant="light">
-                  {state.discovery.error}
-                </Alert>
-              )}
-              <div className="inventory-status">
-                {state.discovery.stale && <span>Discovery out of date</span>}
-                <span>Updated {when(state.discovery.lastSuccess)}</span>
-              </div>
-              {state.discovery.servers
-                .filter(
-                  (server) => server.error || portServices.some((s) => s.server === server.id),
-                )
-                .map((server) => (
-                  <section className="server-group" key={server.id}>
-                    <h2>
-                      <Server size={18} />
-                      {server.name}
-                      <code>{server.address}</code>
-                    </h2>
-                    {server.error && (
-                      <Alert className="notice" color="blue" variant="light">
-                        {server.error}
-                      </Alert>
-                    )}
-                    <div className="service-grid">
-                      {portServices
-                        .filter((s) => s.server === server.id)
-                        .map((service) => (
-                          <Paper
-                            className={`discovered-service${service.ports.some((port) => serviceProxies(state.routes, service, port).length) ? ' proxied' : ''}${service.ports.some((port) => serviceProxies(state.routes, service, port).some((route) => route.published)) ? ' proxy-enabled' : ''}`}
-                            key={`${service.server}:${service.containerId}:${service.name}`}
-                            component="article"
-                            withBorder={true}
-                            p="lg"
+              </>
+            )}
+            {page === 'Files' && (
+              <>
+                <section className="error-pages-section" aria-label="Error pages">
+                  <h2>Error pages</h2>
+                  <div className="error-pages-grid">
+                    {[
+                      ['404', state.pages.notFoundSite, state.pages.notFoundDocument],
+                      ['502', state.pages.badGatewaySite, state.pages.badGatewayDocument],
+                    ].map(([code, site, document]) => (
+                      <Paper
+                        className="error-page-card"
+                        key={code}
+                        component="article"
+                        withBorder={true}
+                        p="lg"
+                      >
+                        <div className="error-page-heading">
+                          <div>
+                            <span className="error-page-code">{code}</span>
+                            <h3>{code === '404' ? 'Not found' : 'Service unavailable'}</h3>
+                          </div>
+                          <Button
+                            className="secondary"
+                            aria-label={`Edit ${code} page`}
+                            onClick={() =>
+                              setWizard({
+                                kind: 'pages',
+                                code: Number(code),
+                              })
+                            }
                           >
-                            <div className="service-heading">
-                              <strong>{service.name}</strong>
-                              {service.state !== 'running' && (
-                                <span className="status-text">{service.state}</span>
-                              )}
-                            </div>
-                            {service.ports.map((port, i) => {
-                              const proxies = serviceProxies(state.routes, service, port);
-                              const edit = (route) => setWizard({ kind: 'route', initial: route });
-                              const button = (
-                                <Button
-                                  className="secondary small"
-                                  disabled={!proxies.length && service.state !== 'running'}
-                                  onClick={
-                                    proxies.length > 1
-                                      ? undefined
-                                      : () =>
-                                          proxies.length ? edit(proxies[0]) : connect(service, port)
-                                  }
-                                >
-                                  {proxies.length ? 'Edit proxy' : 'Create proxy'}
-                                  <ChevronRight size={14} />
-                                </Button>
-                              );
-                              return (
-                                <div className="port-row" key={i}>
-                                  <code>{portLabel(port)}</code>
-                                  {!port.usable && <span className="hint">{port.reason}</span>}
-                                  {proxies.length > 1 ? (
-                                    <Menu position="bottom-end" withinPortal>
-                                      <Menu.Target>{button}</Menu.Target>
-                                      <Menu.Dropdown>
-                                        {proxies.map((route) => (
-                                          <Menu.Item key={route.id} onClick={() => edit(route)}>
-                                            {route.name} · {listener(route)}
-                                          </Menu.Item>
-                                        ))}
-                                      </Menu.Dropdown>
-                                    </Menu>
-                                  ) : (
-                                    button
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </Paper>
-                        ))}
-                    </div>
-                  </section>
-                ))}
-              {!portServices.length && !state.discovery.error && (
-                <div className="empty-state">
-                  <Server size={28} />
-                  <h2>No services with published ports</h2>
-                </div>
-              )}
-            </>
-          )}
-          {page === 'Files' && (
-            <>
-              <section className="error-pages-section" aria-label="Error pages">
-                <h2>Error pages</h2>
-                <div className="error-pages-grid">
-                  {[
-                    ['404', state.pages.notFoundSite, state.pages.notFoundDocument],
-                    ['502', state.pages.badGatewaySite, state.pages.badGatewayDocument],
-                  ].map(([code, site, document]) => (
-                    <Paper
-                      className="error-page-card"
-                      key={code}
-                      component="article"
-                      withBorder={true}
-                      p="lg"
-                    >
-                      <div className="error-page-heading">
-                        <div>
-                          <span className="error-page-code">{code}</span>
-                          <h3>{code === '404' ? 'Not found' : 'Service unavailable'}</h3>
+                            <Pencil size={14} /> Edit
+                          </Button>
                         </div>
-                        <Button
-                          className="secondary"
-                          aria-label={`Edit ${code} page`}
-                          onClick={() =>
-                            setWizard({
-                              kind: 'pages',
-                              code: Number(code),
-                            })
-                          }
-                        >
-                          <Pencil size={14} /> Edit
-                        </Button>
+                        <code>
+                          {site ? `/sites/${site.directory}/${document}` : 'Built-in page'}
+                        </code>
+                      </Paper>
+                    ))}
+                  </div>
+                </section>
+                <Folders
+                  catalog={catalog}
+                  onCreate={() =>
+                    setWizard({
+                      kind: 'folder',
+                    })
+                  }
+                  onEdit={(initial) =>
+                    setWizard({
+                      kind: 'folder',
+                      initial,
+                    })
+                  }
+                  onSaved={async (message) => {
+                    await refresh();
+                    await loadFiles();
+                    report(message);
+                  }}
+                />
+              </>
+            )}
+            {page === 'Domains' && !state.domains.length && (
+              <div className="empty-state">
+                <Globe size={28} />
+                <h2>No domains</h2>
+              </div>
+            )}
+            {page === 'Domains' && (
+              <div className="domain-grid">
+                {state.domains.map((d) => (
+                  <Paper
+                    className="domain-card"
+                    key={d.name}
+                    component="section"
+                    withBorder={true}
+                    p="lg"
+                  >
+                    <div className="section-title">
+                      <Globe size={22} />
+                      <span className="status-text">
+                        {d.staging ? 'Staging' : d.ready ? 'Ready' : 'Pending'}
+                      </span>
+                    </div>
+                    <h2>{d.name}</h2>
+                    <code>{d.subdomains ? `${d.name}, *.${d.name}` : d.name}</code>
+                    <div className="domain-facts">
+                      <div>
+                        <span>Expires</span>
+                        <strong>{when(d.expires)}</strong>
                       </div>
-                      <code>{site ? `/sites/${site.directory}/${document}` : 'Built-in page'}</code>
-                    </Paper>
-                  ))}
-                </div>
-              </section>
-              <Folders
-                catalog={catalog}
-                onCreate={() =>
-                  setWizard({
-                    kind: 'folder',
-                  })
-                }
-                onEdit={(initial) =>
-                  setWizard({
-                    kind: 'folder',
-                    initial,
-                  })
-                }
-                onSaved={async (message) => {
-                  await refresh();
-                  await loadFiles();
-                  report(message);
-                }}
-              />
-            </>
-          )}
-          {page === 'Domains' && !state.domains.length && (
-            <div className="empty-state">
-              <Globe size={28} />
-              <h2>No domains</h2>
-            </div>
-          )}
-          {page === 'Domains' && (
-            <div className="domain-grid">
-              {state.domains.map((d) => (
-                <Paper
-                  className="domain-card"
-                  key={d.name}
-                  component="section"
-                  withBorder={true}
-                  p="lg"
-                >
-                  <div className="section-title">
-                    <Globe size={22} />
-                    <span className="status-text">
-                      {d.staging ? 'Staging' : d.ready ? 'Ready' : 'Pending'}
-                    </span>
-                  </div>
-                  <h2>{d.name}</h2>
-                  <code>{d.subdomains ? `${d.name}, *.${d.name}` : d.name}</code>
-                  <div className="domain-facts">
-                    <div>
-                      <span>Expires</span>
-                      <strong>{when(d.expires)}</strong>
+                      <div>
+                        <span>Last check</span>
+                        <strong>{when(d.lastCheck)}</strong>
+                      </div>
                     </div>
-                    <div>
-                      <span>Last check</span>
-                      <strong>{when(d.lastCheck)}</strong>
-                    </div>
-                  </div>
-                  {d.staging && (
-                    <p className="hint">
-                      Test certificate. Disable staging in Settings to enable routes.
-                    </p>
-                  )}
-                  {d.error && (
-                    <p className="error-text" role="alert">
-                      {d.error}
-                    </p>
-                  )}
-                  <div className="domain-actions">
-                    <Button
-                      className="secondary"
-                      onClick={() =>
-                        setWizard({
-                          kind: 'domains',
-                          initial: {
-                            name: d.name,
-                            subdomains: d.subdomains,
-                          },
-                        })
-                      }
-                    >
-                      <Pencil size={15} /> Edit
-                    </Button>
-                    <Button
-                      className="secondary"
-                      onClick={async () => {
-                        try {
-                          await api('/certificates/retry', {
-                            method: 'POST',
-                            body: {
-                              domain: d.name,
+                    {d.staging && (
+                      <p className="hint">
+                        Test certificate. Disable staging in Settings to enable routes.
+                      </p>
+                    )}
+                    {d.error && (
+                      <p className="error-text" role="alert">
+                        {d.error}
+                      </p>
+                    )}
+                    <div className="domain-actions">
+                      <Button
+                        className="secondary"
+                        onClick={() =>
+                          setWizard({
+                            kind: 'domains',
+                            initial: {
+                              name: d.name,
+                              subdomains: d.subdomains,
                             },
-                          });
-                          report('Check queued');
-                        } catch (e) {
-                          report(e.message, true);
+                          })
                         }
-                      }}
-                    >
-                      <RefreshCw size={15} />
-                      Check
-                    </Button>
-                    <Button
-                      className="icon-button"
-                      aria-label={`Delete ${d.name}`}
-                      onClick={async () => {
-                        try {
-                          await api(`/domains/${encodeURIComponent(d.name)}`, {
-                            method: 'DELETE',
-                          });
-                          await refresh();
-                        } catch (e) {
-                          report(e.message, true);
-                        }
-                      }}
-                    >
-                      <Trash2 size={15} />
-                    </Button>
-                  </div>
-                </Paper>
-              ))}
-            </div>
-          )}
-          {page === 'Settings' && (
-            <Settings
-              state={state}
-              refresh={refresh}
-              report={report}
-              onRecovery={onRecovery}
-              onLogout={onLogout}
-            />
-          )}
-        </main>
+                      >
+                        <Pencil size={15} /> Edit
+                      </Button>
+                      <Button
+                        className="secondary"
+                        onClick={async () => {
+                          try {
+                            await api('/certificates/retry', {
+                              method: 'POST',
+                              body: {
+                                domain: d.name,
+                              },
+                            });
+                            report('Check queued');
+                          } catch (e) {
+                            report(e.message, true);
+                          }
+                        }}
+                      >
+                        <RefreshCw size={15} />
+                        Check
+                      </Button>
+                      <Button
+                        className="icon-button"
+                        aria-label={`Delete ${d.name}`}
+                        onClick={async () => {
+                          try {
+                            await api(`/domains/${encodeURIComponent(d.name)}`, {
+                              method: 'DELETE',
+                            });
+                            await refresh();
+                          } catch (e) {
+                            report(e.message, true);
+                          }
+                        }}
+                      >
+                        <Trash2 size={15} />
+                      </Button>
+                    </div>
+                  </Paper>
+                ))}
+              </div>
+            )}
+            {page === 'Settings' && (
+              <Settings
+                state={state}
+                refresh={refresh}
+                report={report}
+                onRecovery={onRecovery}
+                onLogout={onLogout}
+              />
+            )}
+          </main>
+        )}
       </div>
       {confirmation && (
         <Modal title="Delete route?" onClose={() => !working && setConfirmation(null)}>

@@ -3,7 +3,6 @@ import { TagsInput, Stepper, Group, Alert, TextInput, Switch, Checkbox } from '@
 import React, { useState, useEffect, useRef } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
 import {
-  Waypoints,
   ArrowLeft,
   ArrowRight,
   Check,
@@ -48,20 +47,11 @@ export function Wizard({
     [validationError, setValidationError] = useState('');
   const disabled = busy || validating;
   useEffect(() => {
-    window.scrollTo({
-      top: 0,
-      behavior: 'instant',
-    });
-    heading.current?.focus();
+    heading.current?.focus({ preventScroll: true });
+    heading.current?.closest('.workspace')?.scrollTo({ top: 0, behavior: 'instant' });
   }, [step]);
   return (
-    <div className="wizard-shell">
-      <header className="wizard-top">
-        <div className="brand">
-          <Waypoints />
-          proxy
-        </div>
-      </header>
+    <main className="wizard-shell">
       <div className={`wizard-body${steps.length === 1 ? ' single-page' : ''}`}>
         {steps.length > 1 && (
           <nav className="wizard-steps" aria-label="Progress">
@@ -78,7 +68,7 @@ export function Wizard({
             </Stepper>
           </nav>
         )}
-        <main className="wizard-main">
+        <section className="wizard-main">
           <div className="wizard-heading">
             <span className="hint">{title}</span>
             <h1 ref={heading} tabIndex={-1}>
@@ -141,9 +131,9 @@ export function Wizard({
               </Group>
             </div>
           </form>
-        </main>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }
 export function SitePicker({

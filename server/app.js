@@ -518,11 +518,14 @@ export function createApp({
       if (file !== distDir && !file.startsWith(`${distDir}${sep}`))
         throw new Problem(403, 'Invalid path');
       const isAsset = decoded.startsWith('/assets/'),
-        destination = isAsset ? file : join(distDir, 'index.html');
+        isAppFile = ['/favicon.svg', '/manifest.webmanifest', '/icons/proxy-180.png',
+          '/icons/proxy-192.png', '/icons/proxy-512.png', '/icons/proxy-maskable-512.png'].includes(decoded),
+        isDocument = !isAsset && !isAppFile,
+        destination = isDocument ? join(distDir, 'index.html') : file;
       let bytes;
       try {
         bytes = await readFile(destination);
-        if (!isAsset) bytes = Buffer.from(bytes.toString('utf8').replaceAll('__PROXY_STYLE_NONCE__', styleNonce));
+        if (isDocument) bytes = Buffer.from(bytes.toString('utf8').replaceAll('__PROXY_STYLE_NONCE__', styleNonce));
       } catch {
         throw new Problem(404, 'Build the interface with npm run build first');
       }
@@ -532,6 +535,8 @@ export function createApp({
             '.js': 'text/javascript',
             '.css': 'text/css',
             '.svg': 'image/svg+xml',
+            '.png': 'image/png',
+            '.webmanifest': 'application/manifest+json',
             '.html': 'text/html; charset=utf-8',
           }[extname(destination)] ?? 'application/octet-stream',
         'cache-control': isAsset ? 'public, max-age=31536000, immutable' : 'no-store',

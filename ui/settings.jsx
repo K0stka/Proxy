@@ -15,7 +15,6 @@ const when = (value) =>
 export default function Settings({ state, refresh, report, onRecovery, onLogout }) {
   const { settingsSection: section, setSettingsSection } = useNavigation();
   const [preferences, setPreferences] = useState(state.settings);
-  const [saved, setSaved] = useState(false);
   const [renaming, setRenaming] = useState(null),
     [nameError, setNameError] = useState(''),
     [savingName, setSavingName] = useState(false);
@@ -90,7 +89,6 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
   async function savePreferences(e) {
     e.preventDefault();
     setBusy(true);
-    setSaved(false);
     try {
       await api('/preferences', {
         method: 'PUT',
@@ -104,7 +102,7 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
               },
       });
       await refresh();
-      setSaved(true);
+      report('Settings saved');
     } catch (e) {
       report(e.message, true);
     } finally {
@@ -112,7 +110,6 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
     }
   }
   function certificate(key, value) {
-    setSaved(false);
     setPreferences((p) => ({
       ...p,
       certificates: {
@@ -125,7 +122,6 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
     <Tabs
       value={section}
       onChange={(next) => {
-        setSaved(false);
         setSettingsSection(next);
       }}
       className="settings-tabs"
@@ -148,7 +144,6 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
                 value={preferences.adminHostname}
                 description="Leave empty for private access only. The hostname needs a configured domain and certificate."
                 onChange={(e) => {
-                  setSaved(false);
                   setPreferences((p) => ({ ...p, adminHostname: e.target.value }));
                 }}
               />
@@ -162,7 +157,7 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
               </div>
               <Group justify="flex-end">
                 <Button className="primary" type="submit" loading={busy}>
-                  {saved ? 'Saved' : 'Save changes'}
+                  Save changes
                 </Button>
               </Group>
             </Stack>
@@ -204,7 +199,7 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
               </Disclosure>
               <Group justify="flex-end">
                 <Button className="primary" type="submit" loading={busy}>
-                  {saved ? 'Saved' : 'Save changes'}
+                  Save changes
                 </Button>
               </Group>
             </Stack>
