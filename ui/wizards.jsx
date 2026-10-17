@@ -87,7 +87,7 @@ export function Wizard({
               </div>
             )}
             <div className="wizard-actions">
-              {step > 0 ? (
+              {step > 0 && (
                 <button
                   type="button"
                   className="secondary"
@@ -97,8 +97,6 @@ export function Wizard({
                   <ArrowLeft size={16} />
                   Back
                 </button>
-              ) : (
-                <span />
               )}
               <button className="primary" disabled={busy || !canContinue}>
                 {busy ? 'Applying…' : step === steps.length - 1 ? submitLabel : 'Continue'}

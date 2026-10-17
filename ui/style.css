@@ -1034,7 +1034,7 @@ dialog > p {
   background: var(--bg);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 14px;
   border-top: 1px solid var(--line);
   padding: 20px 0;
