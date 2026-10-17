@@ -31,6 +31,39 @@ for (const [name, service] of Object.entries(configuration.services)) {
   );
 }
 
+const hostStorage = JSON.parse(
+  execFileSync(
+    'docker',
+    ['compose', '-f', 'compose.yaml', '-f', 'compose.paths.yaml', 'config', '--format', 'json'],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PROXY_DATA_PATH: '/srv/proxy/data',
+        PROXY_SITES_PATH: '/srv/proxy/sites',
+      },
+    },
+  ),
+);
+for (const [name, service] of Object.entries(hostStorage.services)) {
+  for (const mount of service.volumes) {
+    if (mount.target === '/ipc') {
+      assert.equal(mount.type, 'volume');
+      continue;
+    }
+    assert.equal(mount.type, 'bind');
+    assert.equal(mount.source.startsWith('/srv/proxy/'), true);
+    if (mount.target !== '/sites') assert.equal(mount.bind.create_host_path, false);
+    assert.equal(
+      Boolean(mount.read_only),
+      (name === 'edge' && ['/sites', '/tls'].includes(mount.target)) ||
+        (name === 'control' && mount.target === '/cert-status') ||
+        (name === 'certificates' && mount.target === '/cert-policy'),
+    );
+  }
+  assert(!service.volumes.some((mount) => mount.source === '/srv/proxy/data'));
+}
+
 const run = (args, input) =>
   execFileSync('docker', args, {
     stdio: input ? ['pipe', 'inherit', 'inherit'] : 'inherit',
@@ -38,6 +71,22 @@ const run = (args, input) =>
   });
 const smoke = ['compose', '-p', 'proxy-smoke', '-f', 'test/compose.yaml'];
 run(['compose', '-p', 'proxy', '--progress', 'quiet', 'build']);
+run([
+  'run',
+  '--rm',
+  '-i',
+  '--network',
+  'none',
+  '--read-only',
+  '--tmpfs',
+  '/tmp:rw,noexec,nosuid,size=8m',
+  '--mount',
+  `type=bind,source=${resolve('.')},target=/checks,readonly`,
+  '--entrypoint',
+  'sh',
+  'proxy-edge',
+  '/checks/test/storage.sh',
+]);
 run(['build', '-q', '-f', 'test/linux.Dockerfile', '-t', 'proxy-linux-test', '.']);
 run([
   'run',

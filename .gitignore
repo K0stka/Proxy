@@ -11,3 +11,4 @@ coverage/
 __pycache__/
 sites/*
 !sites/.gitkeep
+data/

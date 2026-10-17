@@ -8,3 +8,4 @@ config.json
 .env.*
 sites
 *.db*
+data/

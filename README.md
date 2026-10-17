@@ -42,12 +42,51 @@ Paste the variables from [.env.example](.env.example) into the stack's **Environ
 | `PROXY_ORIGIN`                             | Exact lowercase private HTTPS management origin, e.g. your VPS Tailscale Serve URL, without a trailing slash |
 | `PROXY_INGRESS_IPS`                        | Comma-separated IPs actually assigned to the VPS interface, with no wildcard binds                           |
 | `PROXY_SITES_PATH`                         | Absolute VPS directory containing your website folders; create it before deployment                          |
+| `PROXY_DATA_PATH`                          | Optional private data directory; requires `compose.paths.yaml` as described below                            |
 | `PROXY_BOOTSTRAP_TOKEN`                    | Random enrollment token of at least 32 characters                                                            |
 | `PROXY_KOMODO_KEY` / `PROXY_KOMODO_SECRET` | Dedicated Core account with Read access to the two servers                                                   |
 | `PROXY_CLOUDFLARE_TOKEN`                   | Cloudflare token with Zone Read and DNS Edit for the required zones                                          |
 | `PROXY_CLOUDFLARE_TOKENS`                  | Optional JSON token overrides per domain; leave `'{}'` for a single token                                    |
 
 Only deployment values and credentials belong here. Configure the Core URL, server mappings, approved destinations and ports, public TCP/UDP blocks, domains and certificate preferences in **Settings → Connections & routing → Configure**. These settings are stored in SQLite and apply without recreating containers. Changes to environment variables require a stack recreation.
+
+### Choose host directories (optional)
+
+Set these in the Komodo stack Environment:
+
+```dotenv
+PROXY_SITES_PATH=/srv/proxy/sites
+PROXY_DATA_PATH=/srv/proxy/data
+```
+
+In Komodo's Compose file list, add **both files in this order**: `compose.yaml`, then `compose.paths.yaml`. The second file replaces persistent volume mounts with host directories; setting `PROXY_DATA_PATH` alone does not enable it.
+
+Before deploying, run from this project's checkout **on the VPS**:
+
+```sh
+sudo sh scripts/prepare-storage.sh /srv/proxy/data /srv/proxy/sites
+```
+
+The helper creates separate directories with the required container UIDs/GID and permissions. It changes directory ownership/modes, but never recursively changes existing files. Websites must be readable by UID 10002. Keep these directories on local Linux storage; SQLite uses WAL files and locking.
+
+```text
+/srv/proxy/
+  sites/                       your website and error-page folders (read-only in edge)
+  data/
+    control/proxy.db           settings, routes and authentication
+    edge/edge.db               last working proxy state and generated files
+    certificate-policy/policy.db  sanitized certificate settings cache
+    certificates/             Certbot account and renewal state
+    tls/                      exported certificates and private keys
+    cert-status/              certificate status
+    cert-requests/            pending certificate checks
+```
+
+Only the internal IPC socket remains in a Docker-managed volume. Each container receives only its required subdirectories; the certificate worker cannot read the authentication database. Back up the private data directory and sites together, along with Komodo's environment; stop the stack before copying SQLite files.
+
+**Existing deployment:** stop it and copy the contents of the existing named volumes into the corresponding subdirectories, preserving numeric ownership, before switching Compose files. This option does not migrate data automatically. Keep the old volumes until the restored configuration and passkey login are verified; do not deploy against an empty data directory expecting the previous configuration.
+
+For direct Compose, use `docker compose -f compose.yaml -f compose.paths.yaml up -d --build`.
 
 Publish home container ports on its Tailscale address, and VPS-local backends on loopback. Home loopback and Docker bridge addresses are not reachable from the VPS. Limit Tailscale grants to the intended management and backend connections. For provider 1:1 NAT, use the ingress IP assigned to the interface and configure public forwarding separately.
 
