@@ -31,7 +31,7 @@ In Komodo, create a Stack named `proxy`, select the **VPS server**, and choose *
 - Run directory: repository root (`.`).
 - Compose file: `compose.yaml`.
 
-Keep image builds enabled; use Komodo's Build action before Deploy if your deployment settings skip builds. All three images build on the VPS. Pasting the Compose file alone is insufficient: its `build: context: .` needs the Dockerfiles and application source. Alternatively, copy the entire project to a directory on the VPS and select **Files on host**, with that directory as the run directory. No Node/Python installation is required on the host. See [Komodo Stack documentation](https://komo.do/docs/deploy/compose).
+Enable **Run Build**, disable **Auto Pull** and **Destroy Before Deploy**, and leave Build Extra Args empty. Set deployment Extra Args to `--no-build`; remove `--force-recreate`, `--always-recreate-deps` and `--wait` if present. Komodo runs the cached build once, then Compose updates only containers whose image or configuration changed. Do not use `--no-cache`. Pasting the Compose file alone is insufficient: its `build: context: .` needs the Dockerfiles and application source. Alternatively, copy the entire project to a directory on the VPS and select **Files on host**, with that directory as the run directory. No Node/Python installation is required on the host. See [Komodo Stack documentation](https://komo.do/docs/deploy/compose).
 
 ### 2. Set deployment values and credentials
 
@@ -51,7 +51,7 @@ Paste the variables from [.env.example](.env.example) into the stack's **Environ
 
 Deployment values, the Core URL and credentials belong here. The proxy discovers every server visible to the Core account and its published container ports automatically. Use **Domains → Add domain / Edit** for individual domain coverage and **Settings → Certificates** for the shared email and certificate preferences; routes, UDP blocks, static sites and error pages stay in the app/SQLite. There are no separate server mappings, destination allowlists or preapproved public port blocks. Environment changes require a stack recreation.
 
-The Compose file uses `pull_policy: build` so a normal deployment rebuilds the images from the checked-out source, including when an image already exists ([Docker reference](https://docs.docker.com/reference/compose-file/services/#pull_policy)). Komodo's deployed commit label alone does not identify the code inside an existing running image. If an older UI persists, check that the deployment built and recreated `control` from this checkout and that Tailscale Serve targets that container's port.
+Builds use Docker's layer cache: unchanged steps are reused, source changes rebuild only affected steps, and UI-only changes do not rebuild the edge or certificate worker. Docker still checks build inputs during each deployment; disabling Run Build would leave existing images stale after source updates. Compose leaves unchanged containers running. There are no health-dependent startup gates; health checks continue in the background for status reporting. A deployment can finish before all services are ready. Komodo's deployed commit label alone does not identify the code inside an existing running image. If an older UI persists, check that Run Build is enabled and that Tailscale Serve targets the current control container's port.
 
 ### Choose host directories (optional)
 

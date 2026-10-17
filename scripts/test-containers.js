@@ -7,6 +7,8 @@ const configuration = JSON.parse(
   execFileSync('docker', ['compose', 'config', '--format', 'json'], { encoding: 'utf8' }),
 );
 for (const [name, service] of Object.entries(configuration.services)) {
+  assert.notEqual(service.pull_policy, 'build');
+  assert(!service.depends_on || Object.keys(service.depends_on).length === 0);
   const env = service.environment ?? {};
   for (const secret of ['PROXY_CLOUDFLARE_TOKEN', 'PROXY_CLOUDFLARE_TOKENS'])
     assert.equal(secret in env, name === 'certificates');
