@@ -23,6 +23,7 @@ import Settings from './settings.jsx';
 import Modal from './dialog.jsx';
 import Folders, { FolderWizard } from './folders.jsx';
 import DomainsWizard from './domains-wizard.jsx';
+import { useNavigation } from './navigation.js';
 
 const when = (value) =>
   value
@@ -31,9 +32,8 @@ const when = (value) =>
 const icons = { http: Globe, static: FolderOpen, tcp: Cable, udp: Radio };
 
 export default function Workspace({ onLogout, onRecovery }) {
+  const { page, setPage, wizard, setWizard } = useNavigation();
   const [state, setState] = useState(null),
-    [page, setPage] = useState('Routes'),
-    [wizard, setWizard] = useState(null),
     [filter, setFilter] = useState('all'),
     [notice, setNotice] = useState(null),
     [confirmation, setConfirmation] = useState(null),
@@ -142,7 +142,7 @@ export default function Workspace({ onLogout, onRecovery }) {
   if (wizard?.kind === 'route')
     return (
       <RouteWizard
-        initial={wizard.initial}
+        initial={wizard.initial ?? freshRoute(state)}
         state={state}
         publishOnly={wizard.publishOnly}
         onClose={() => setWizard(null)}

@@ -12,6 +12,7 @@ import {
   Server as ServerIcon,
 } from 'lucide-react';
 import { api } from './api.js';
+import { useNavigation, useWizardField } from './navigation.js';
 import {
   blankSite,
   folderRules,
@@ -341,23 +342,24 @@ function Summary({ route }) {
   );
 }
 export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = false }) {
-  const [route, setRoute] = useState({ ...initial, staticSite: initial.staticSite ?? null }),
-    [step, setStep] = useState(0),
-    [busy, setBusy] = useState(false),
+  const { step, setStep } = useNavigation();
+  const [route, setRoute] = useWizardField('route', {
+    ...initial, staticSite: initial.staticSite ?? null,
+  });
+  const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
-    [check, setCheck] = useState(null),
-    [udpBlock, setUDPBlock] = useState(
-      initial.kind === 'udp' && initial.portEnd > initial.portStart,
-    ),
-    [cidrs, setCIDRs] = useState(initial.sourceCIDRs.join('\n'));
+    [check, setCheck] = useState(null);
+  const [udpBlock, setUDPBlock] = useWizardField('udpBlock',
+    initial.kind === 'udp' && initial.portEnd > initial.portStart);
+  const [cidrs, setCIDRs] = useWizardField('cidrs', initial.sourceCIDRs.join('\n'));
   const initialDomain =
     state.domains.find(
       (d) => initial.hostname === d.name || initial.hostname.endsWith(`.${d.name}`),
     )?.name ??
     state.domains[0]?.name ??
     '';
-  const [domain, setDomain] = useState(initialDomain),
-    [subdomain, setSubdomain] = useState(
+  const [domain, setDomain] = useWizardField('domain', initialDomain),
+    [subdomain, setSubdomain] = useWizardField('subdomain',
       initial.hostname
         ? initial.hostname === initialDomain
           ? ''
@@ -794,9 +796,9 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
 
 export function ErrorPagesWizard({ state, onClose, onSaved }) {
   const pages = state.pages;
-  const [value, setValue] = useState(pages),
-    [step, setStep] = useState(0),
-    [busy, setBusy] = useState(false),
+  const { step, setStep } = useNavigation();
+  const [value, setValue] = useWizardField('pages', pages);
+  const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [check, setCheck] = useState(null);
   const selections = [

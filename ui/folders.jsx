@@ -3,11 +3,12 @@ import { ArrowUpRight, FolderOpen, Plus, Pencil, Trash2 } from 'lucide-react';
 import { api } from './api.js';
 import { blankSite } from './routes.js';
 import { SitePicker, Wizard } from './wizards.jsx';
+import { useNavigation, useWizardField } from './navigation.js';
 
 export function FolderWizard({ initial, onClose, onSaved }) {
-  const [value, setValue] = useState(initial ?? blankSite('')),
-    [step, setStep] = useState(0),
-    [check, setCheck] = useState(null),
+  const { step, setStep } = useNavigation();
+  const [value, setValue] = useWizardField('folder', initial ?? blankSite(''));
+  const [check, setCheck] = useState(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   async function save() {
@@ -36,7 +37,7 @@ export function FolderWizard({ initial, onClose, onSaved }) {
       onSubmit={save}
       submitLabel="Save folder"
       error={error}
-      canContinue={Boolean(check) && check.directory === value.directory}
+      canContinue={step > 0 || (Boolean(check) && check.directory === value.directory)}
     >
       {step === 0 ? (
         <>

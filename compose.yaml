@@ -10,6 +10,7 @@ x-deployment: &deployment
 
 services:
   control:
+    pull_policy: build
     build: { context: ., dockerfile: containers/control.Dockerfile }
     environment:
       <<: *deployment
@@ -49,6 +50,7 @@ services:
       retries: 3
 
   edge:
+    pull_policy: build
     build: { context: ., dockerfile: containers/edge.Dockerfile }
     environment: *deployment
     restart: unless-stopped
@@ -89,6 +91,7 @@ services:
       retries: 3
 
   certificates:
+    pull_policy: build
     build: { context: ., dockerfile: containers/certificates.Dockerfile }
     environment:
       PROXY_CLOUDFLARE_TOKEN: ${PROXY_CLOUDFLARE_TOKEN:-}

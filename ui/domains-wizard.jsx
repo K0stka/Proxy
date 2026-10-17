@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Wizard } from './wizards.jsx';
 import { api } from './api.js';
+import { useNavigation, useWizardField } from './navigation.js';
 export default function DomainsWizard({ state, onClose, onSaved }) {
-  const [value, setValue] = useState(state.settings),
-    [step, setStep] = useState(0),
-    [error, setError] = useState(''),
+  const { step, setStep } = useNavigation();
+  const [value, setValue] = useWizardField('domains', state.settings);
+  const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   async function save() {
     setError('');

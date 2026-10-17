@@ -51,6 +51,8 @@ Paste the variables from [.env.example](.env.example) into the stack's **Environ
 
 Deployment values, the Core URL and credentials belong here. The proxy discovers every server visible to the Core account and its published container ports automatically. Configure domains and certificate preferences through **Domains → Manage domains**; routes, UDP blocks, static sites and error pages stay in the app/SQLite. There are no separate server mappings, destination allowlists or preapproved public port blocks. Environment changes require a stack recreation.
 
+The Compose file uses `pull_policy: build` so a normal deployment rebuilds the images from the checked-out source, including when an image already exists ([Docker reference](https://docs.docker.com/reference/compose-file/services/#pull_policy)). Komodo's deployed commit label alone does not identify the code inside an existing running image. If an older UI persists, check that the deployment built and recreated `control` from this checkout and that Tailscale Serve targets that container's port.
+
 ### Choose host directories (optional)
 
 Set these in the Komodo stack Environment:
@@ -124,6 +126,8 @@ Upgrading from the earlier manual setup preserves routes, domains, file rules an
 ## Everyday use
 
 **Routes** is the main workspace: connect a public hostname or port to a destination. **Domains** shows shared certificate coverage. **Services** lists Komodo endpoints, and **Files** manages explicitly configured folders; both are optional shortcuts into the route wizard. You can create either type directly through Routes → New route.
+
+Pages and wizard steps have URLs. Browser Back/Forward navigate them; refresh restores the current wizard step and its unsaved fields from the tab's history. This does not publish or save changes to the server. Credentials and recovery codes are never placed in navigation history.
 
 - **UDP blocks:** choose UDP → Address → Port block, then enter start/end ports. Every public port forwards to the identical destination port. Enter the destination IP and public start/end ports once in the route wizard. No separate port approval is required; the fixed total limit is 1,024 published stream ports.
 
