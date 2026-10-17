@@ -29,7 +29,7 @@ import {
 } from '../shared/model.js';
 import { bodyJSON, json } from '../shared/http.js';
 import { render } from './render.js';
-import { siteCatalog, inspectSite, prepareSites } from './sites.js';
+import { inspectSite, prepareSites } from './sites.js';
 import { readDeployment } from '../shared/env.js';
 import { Store } from '../shared/store.js';
 
@@ -273,10 +273,6 @@ const server = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {
           .filter(Boolean)
           .map((item) => item.address),
       });
-      return;
-    }
-    if (req.url === '/sites' && req.method === 'GET') {
-      json(res, await siteCatalog());
       return;
     }
     if (req.url === '/sites/inspect' && req.method === 'POST') {

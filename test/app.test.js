@@ -49,8 +49,6 @@ async function fixture(t, { empty = false } = {}) {
         assert.equal(options.body.port, 3000);
         return { reachable: true };
       }
-      if (path === '/sites')
-        return { folders: [{ directory: 'public', hasIndex: true }], error: null };
       if (path === '/sites/inspect') {
         const exposed = ['index.html', 'app.js'].filter(fileFilter(options.body));
         return {
@@ -630,7 +628,7 @@ test('Files rules persist per folder, update every use atomically and survive fa
         body: { ...spec, exclude: ['index.html'] },
       })
     ).status,
-    400,
+    200,
   );
   assert.equal((await f.request('/api/sites/config', { method: 'PUT', body: spec })).status, 200);
   for (const route of f.store.snapshot().routes) assert.deepEqual(route.staticSite, spec);
@@ -659,8 +657,92 @@ test('Files rules persist per folder, update every use atomically and survive fa
   );
   assert.equal(f.applies.length, count);
   assert(
-    (await (await f.request('/api/sites')).json()).sites.some(
+    (await (await f.request('/api/sites')).json()).folders.some(
       (site) => site.directory === 'unused',
     ),
+  );
+});
+
+test('folder definitions are explicit, permit no index or exposed files, and move references atomically', async (t) => {
+  const f = await fixture(t);
+  assert.deepEqual((await (await f.request('/api/sites')).json()).folders, []);
+  const spec = { directory: 'assets', include: ['*.svg'], exclude: ['private/**'] };
+  assert.equal((await f.request('/api/sites/config', { method: 'PUT', body: spec })).status, 200);
+  assert.deepEqual((await (await f.request('/api/sites')).json()).folders, [spec]);
+  const created = await (
+    await f.request('/api/routes', {
+      method: 'POST',
+      body: route({ kind: 'static', staticSite: spec }),
+    })
+  ).json();
+  assert.equal(
+    (
+      await f.request('/api/pages', {
+        method: 'PUT',
+        body: { ...defaultPages, notFoundSite: spec, notFoundDocument: 'notice.html' },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await f.request('/api/sites/config', { method: 'DELETE', body: { directory: 'assets' } }))
+      .status,
+    409,
+  );
+  const moved = { ...spec, directory: 'moved' };
+  f.setFail(true);
+  assert.equal(
+    (
+      await f.request('/api/sites/config', {
+        method: 'PUT',
+        body: { ...moved, previousDirectory: 'assets' },
+      })
+    ).status,
+    502,
+  );
+  assert.equal(
+    f.store.snapshot().routes.find((route) => route.id === created.id).staticSite.directory,
+    'assets',
+  );
+  f.setFail(false);
+  assert.equal(
+    (
+      await f.request('/api/sites/config', {
+        method: 'PUT',
+        body: { ...moved, previousDirectory: 'assets' },
+      })
+    ).status,
+    200,
+  );
+  assert.deepEqual(
+    f.store.snapshot().routes.find((route) => route.id === created.id).staticSite,
+    moved,
+  );
+  assert.deepEqual(f.store.snapshot().pages.notFoundSite, moved);
+  assert.equal(f.store.snapshot().pages.notFoundDocument, 'notice.html');
+  assert.deepEqual(f.store.snapshot().sites, [moved]);
+  assert.equal(
+    (
+      await f.request('/api/sites/config', {
+        method: 'PUT',
+        body: { directory: 'unused', include: [], exclude: [] },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await f.request('/api/sites/config', {
+        method: 'DELETE',
+        body: { directory: 'unused' },
+        authenticated: false,
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (await f.request('/api/sites/config', { method: 'DELETE', body: { directory: 'unused' } }))
+      .status,
+    200,
   );
 });

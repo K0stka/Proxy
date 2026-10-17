@@ -12,6 +12,7 @@ import {
   validateSnapshot,
   snapshotHash,
   staticSiteSchema,
+  siteDirectory,
   settingsSchema,
   settingsFromPolicy,
   effectivePolicy,
@@ -201,25 +202,72 @@ export function createApp({
           return;
         }
         if (path === '/api/sites' && req.method === 'GET') {
-          json(res, { ...(await edge('/sites')), sites: store.snapshot().sites });
+          const snapshot = store.snapshot(),
+            folders = new Map(snapshot.sites.map((site) => [site.directory, site]));
+          for (const site of [
+            ...snapshot.routes.map((route) => route.staticSite),
+            snapshot.pages.notFoundSite,
+            snapshot.pages.badGatewaySite,
+          ])
+            if (site && !folders.has(site.directory)) folders.set(site.directory, site);
+          json(res, { folders: [...folders.values()] });
           return;
         }
         if (path === '/api/sites/config' && req.method === 'PUT') {
-          const spec = parse(staticSiteSchema, await bodyJSON(req));
+          const { previousDirectory, ...raw } = (await bodyJSON(req)) ?? {},
+            spec = parse(staticSiteSchema, raw);
+          const previous =
+            previousDirectory === undefined
+              ? spec.directory
+              : parse(siteDirectory, previousDirectory);
           const result = await serial(async () => {
-            const inspection = await edge('/sites/inspect', { method: 'POST', body: spec });
-            if (!inspection.exposed.includes('index.html'))
-              throw new Problem(400, 'index.html must be exposed');
+            await edge('/sites/inspect', { method: 'POST', body: spec });
             const old = store.snapshot();
+            if (
+              previous !== spec.directory &&
+              old.sites.some((site) => site.directory === spec.directory)
+            )
+              throw new Problem(409, 'That folder is already configured');
+            const update = (site) => (site?.directory === previous ? spec : site);
             const next = validateSnapshot(policy, {
               ...old,
-              sites: [...old.sites.filter((site) => site.directory !== spec.directory), spec],
+              routes: old.routes.map((route) => ({
+                ...route,
+                staticSite: update(route.staticSite),
+              })),
+              pages: {
+                ...old.pages,
+                notFoundSite: update(old.pages.notFoundSite),
+                badGatewaySite: update(old.pages.badGatewaySite),
+              },
+              sites: [...old.sites.filter((site) => site.directory !== previous), spec],
             });
             if (snapshotHash(next) !== snapshotHash(old)) await apply(next);
             else store.set('snapshot', next);
             return spec;
           });
           json(res, result);
+          return;
+        }
+        if (path === '/api/sites/config' && req.method === 'DELETE') {
+          const directory = parse(siteDirectory, (await bodyJSON(req))?.directory);
+          await serial(() => {
+            const old = store.snapshot();
+            if (
+              old.routes.some((route) => route.staticSite?.directory === directory) ||
+              [old.pages.notFoundSite, old.pages.badGatewaySite].some(
+                (site) => site?.directory === directory,
+              )
+            )
+              throw new Problem(409, 'Folder is still used by a route or error page');
+            if (!old.sites.some((site) => site.directory === directory))
+              throw new Problem(404, 'Folder not found');
+            store.set('snapshot', {
+              ...old,
+              sites: old.sites.filter((site) => site.directory !== directory),
+            });
+          });
+          json(res, { ok: true });
           return;
         }
         if (path === '/api/sites/inspect' && req.method === 'POST') {

@@ -1,6 +1,6 @@
 import { open } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { Problem, parse, staticSiteSchema, siteDirectory } from '../shared/model.js';
+import { Problem, parse, staticSiteSchema, siteDocument } from '../shared/model.js';
 
 export const MAX_SITE_FILES = 5000;
 const ROOT = '/sites';
@@ -64,45 +64,7 @@ async function entries(handle) {
     a.name.localeCompare(b.name),
   );
 }
-export async function siteCatalog() {
-  let root;
-  try {
-    root = await open(ROOT, directoryFlags);
-  } catch {
-    return { folders: [], error: 'Mount a readable folder at /sites' };
-  }
-  const folders = [];
-  let visited = 0;
-  async function walk(handle, prefix = '', depth = 0) {
-    for (const entry of await entries(handle)) {
-      if (++visited > 10000 || folders.length >= 300) return;
-      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules')
-        continue;
-      const path = prefix + entry.name;
-      if (!siteDirectory.safeParse(path).success) continue;
-      let child;
-      try {
-        child = await open(`${descriptorPath(handle)}/${entry.name}`, directoryFlags);
-        const contents = await entries(child);
-        folders.push({
-          directory: path,
-          hasIndex: contents.some((e) => e.name === 'index.html' && e.isFile()),
-        });
-        if (depth < 4) await walk(child, `${path}/`, depth + 1);
-      } catch {
-      } finally {
-        await child?.close();
-      }
-    }
-  }
-  try {
-    await walk(root);
-  } finally {
-    await root.close();
-  }
-  return { folders, error: null };
-}
-export async function inspectSite(raw, { requireIndex = false } = {}) {
+export async function inspectSite(raw) {
   const spec = parse(staticSiteSchema, raw),
     allowed = fileFilter(spec),
     files = [];
@@ -156,15 +118,14 @@ export async function inspectSite(raw, { requireIndex = false } = {}) {
     await root.close();
   }
   const exposed = files.filter((f) => f.allowed).map((f) => f.path);
-  if (requireIndex && !exposed.includes('index.html'))
-    throw new Problem(400, 'index.html must exist and be exposed');
   return { directory: spec.directory, files, exposed, count: exposed.length };
 }
-export async function readSiteIndex(spec) {
+export async function readSiteDocument(spec, document) {
   const parsed = parse(staticSiteSchema, spec);
+  document = parse(siteDocument, document);
   let handle;
   try {
-    handle = await openPath(`${parsed.directory}/index.html`, false);
+    handle = await openPath(`${parsed.directory}/${document}`, false);
     const info = await handle.stat();
     if (!info.isFile() || info.size > 1_000_000) throw Error();
     const buffer = Buffer.alloc(1_000_001);
@@ -177,13 +138,14 @@ export async function readSiteIndex(spec) {
     if (size > 1_000_000) throw Error();
     return buffer.subarray(0, size).toString('utf8');
   } catch {
-    throw new Problem(400, 'Error page index.html is unreadable or too large');
+    throw new Problem(400, 'Error page document is unreadable or too large');
   } finally {
     await handle?.close();
   }
 }
-export function errorDocument(html, code) {
-  const base = `<base href="/_proxy/errors/${code}/">`;
+export function errorDocument(html, code, document = 'index.html') {
+  const parent = document.includes('/') ? document.slice(0, document.lastIndexOf('/') + 1) : '';
+  const base = `<base href="/_proxy/errors/${code}/${parent.split('/').map(encodeURIComponent).join('/')}">`;
   // First base wins, including over any base already present in the selected bundle.
   if (/<head\b[^>]*>/i.test(html)) return html.replace(/<head\b[^>]*>/i, (match) => match + base);
   if (/<!doctype[^>]*>/i.test(html))
@@ -195,19 +157,23 @@ export async function prepareSites(snapshot) {
     errors = {};
   let count = 0;
   for (const route of snapshot.routes.filter((r) => r.published && r.kind === 'static')) {
-    sites[route.id] = await inspectSite(route.staticSite, { requireIndex: true });
+    sites[route.id] = await inspectSite(route.staticSite);
     count += sites[route.id].count;
   }
-  for (const [code, key] of [
-    [404, 'notFoundSite'],
-    [502, 'badGatewaySite'],
+  for (const [code, key, documentKey] of [
+    [404, 'notFoundSite', 'notFoundDocument'],
+    [502, 'badGatewaySite', 'badGatewayDocument'],
   ]) {
     if (!snapshot.pages[key]) continue;
-    const manifest = await inspectSite(snapshot.pages[key], { requireIndex: true });
+    const manifest = await inspectSite(snapshot.pages[key]);
+    const document = snapshot.pages[documentKey];
+    if (!manifest.exposed.includes(document))
+      throw new Problem(400, 'Error page document must be exposed by its folder rules');
     count += manifest.count;
     errors[code] = {
       ...manifest,
-      html: errorDocument(await readSiteIndex(snapshot.pages[key]), code),
+      document,
+      html: errorDocument(await readSiteDocument(snapshot.pages[key], document), code, document),
     };
   }
   if (count > 10000) throw new Problem(400, 'Too many exposed files across sites');

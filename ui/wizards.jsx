@@ -202,9 +202,8 @@ export function SitePicker({
           >
             <option value="">Choose a folder</option>
             {catalog.folders.map((folder) => (
-              <option key={folder.directory} value={folder.directory} disabled={!folder.hasIndex}>
+              <option key={folder.directory} value={folder.directory}>
                 /sites/{folder.directory}
-                {folder.hasIndex ? '' : ' — no index.html'}
               </option>
             ))}
           </select>
@@ -215,6 +214,9 @@ export function SitePicker({
           {catalog.error}
         </p>
       )}
+      {!fixedDirectory && !catalog.error && !catalog.folders.length && (
+        <p className="hint">No folders configured. Add one in Files.</p>
+      )}
       {editRules && (
         <>
           <div className="field-pair file-patterns">
@@ -223,7 +225,7 @@ export function SitePicker({
               <textarea
                 rows={3}
                 value={includeText}
-                placeholder={'index.html\nassets/**'}
+                placeholder={'*.svg\nassets/**'}
                 onChange={(e) => {
                   setIncludeText(e.target.value);
                   patterns('include', e.target.value);
@@ -310,9 +312,6 @@ export function SitePicker({
             </>
           ) : (
             <p className="hint">File rules are managed in Files.</p>
-          )}
-          {!inspection.exposed.includes('index.html') && (
-            <p className="error-text">Expose index.html to continue.</p>
           )}
         </>
       )}
@@ -436,7 +435,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
           e.port.hostPort === route.targetPort,
       )?.key ?? '')
     : '';
-  const validFiles = route.kind !== 'static' || Boolean(check?.exposed.includes('index.html'));
+  const validFiles = route.kind !== 'static' || Boolean(check);
   return (
     <Wizard
       title={publishOnly ? 'Publish route' : initial.id ? 'Edit route' : 'New route'}
@@ -809,11 +808,12 @@ export function ErrorPagesWizard({ state, onClose, onSaved }) {
     [error, setError] = useState(''),
     [check, setCheck] = useState(null);
   const selections = [
-    ['notFoundSite', '404 page'],
-    ['badGatewaySite', '502 page'],
+    ['notFoundSite', '404 page', 'notFoundDocument'],
+    ['badGatewaySite', '502 page', 'badGatewayDocument'],
   ];
   const key = selections[step]?.[0],
-    site = value[key];
+    site = value[key],
+    documentKey = selections[step]?.[2];
   async function save() {
     setBusy(true);
     setError('');
@@ -842,7 +842,7 @@ export function ErrorPagesWizard({ state, onClose, onSaved }) {
       submitLabel="Apply pages"
       error={error}
       canContinue={
-        step === selections.length || !site || Boolean(check?.exposed.includes('index.html'))
+        step === selections.length || !site || Boolean(check?.exposed.includes(value[documentKey]))
       }
     >
       {step < selections.length ? (
@@ -876,6 +876,23 @@ export function ErrorPagesWizard({ state, onClose, onSaved }) {
                 }
                 onStatus={setCheck}
               />
+              <label>
+                Page document
+                <input
+                  required
+                  value={value[documentKey]}
+                  list="error-page-documents"
+                  onChange={(e) => setValue((v) => ({ ...v, [documentKey]: e.target.value }))}
+                />
+              </label>
+              <datalist id="error-page-documents">
+                {check?.exposed.map((path) => (
+                  <option key={path} value={path} />
+                ))}
+              </datalist>
+              {check && !check.exposed.includes(value[documentKey]) && (
+                <p className="error-text">Choose a document exposed by the folder rules.</p>
+              )}
               <p className="hint">Use relative asset URLs, such as ./style.css.</p>
             </>
           ) : (
@@ -887,10 +904,12 @@ export function ErrorPagesWizard({ state, onClose, onSaved }) {
         </>
       ) : (
         <dl className="review-list">
-          {selections.map(([key, label]) => (
+          {selections.map(([key, label, documentKey]) => (
             <div key={key}>
               <dt>{label}</dt>
-              <dd>{value[key] ? `/sites/${value[key].directory}` : 'Built-in'}</dd>
+              <dd>
+                {value[key] ? `/sites/${value[key].directory}/${value[documentKey]}` : 'Built-in'}
+              </dd>
             </div>
           ))}
         </dl>

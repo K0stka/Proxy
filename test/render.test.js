@@ -32,7 +32,7 @@ test('HTTPS sanitizes headers, verifies TLS and always uses shared gateway error
     'proxy_set_header Upgrade $http_upgrade;',
     'proxy_buffering off;',
     'proxy_intercept_errors on;',
-    'error_page 502 504 /_proxy/errors/502/index.html;',
+    'error_page 502 504 /_proxy/error-documents/502;',
   ])
     assert(output.includes(directive));
   assert(!output.includes('$proxy_add_x_forwarded_for'));

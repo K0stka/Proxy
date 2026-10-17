@@ -7,10 +7,21 @@ import {
   pagesSchema,
   defaultPages,
   snapshotSchema,
+  siteDocument,
 } from '../shared/model.js';
 import { fileFilter, errorDocument } from '../edge/sites.js';
 import { render } from '../edge/render.js';
 import { route, snapshot, policy } from './fixtures.js';
+
+test('error documents are explicit paths and retain the selected document directory for assets', () => {
+  assert(siteDocument.safeParse('nested/notice.htm').success);
+  for (const path of ['/etc/passwd', '../notice.html', '**/*.html', 'file\\name'])
+    assert(!siteDocument.safeParse(path).success);
+  assert.match(
+    errorDocument('<head></head>', 502, 'nested/notice.htm'),
+    /href="\/_proxy\/errors\/502\/nested\/"/,
+  );
+});
 
 test('static folder validation and filters cannot opt in dotfiles or escape the mount', () => {
   for (const directory of [
@@ -111,7 +122,7 @@ test('old separate timeout settings migrate away; all gateway errors share the 5
       },
     },
   );
-  assert.match(output.config, /error_page 502 504 \/_proxy\/errors\/502\/index.html/);
+  assert.match(output.config, /error_page 502 504 \/_proxy\/error-documents\/502/);
   assert.equal(output.pages['502.html'], 'Shared gateway page');
   assert(!('504.html' in output.pages));
   assert(!output.config.includes('/errors/504/'));

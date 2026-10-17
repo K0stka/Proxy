@@ -23,12 +23,8 @@ const errorLocations = (dir, errors, include404 = true) =>
   (include404 ? [404, 502] : [502])
     .map((code) => {
       const prefix = `/_proxy/errors/${code}/`;
-      return `error_page ${code === 502 ? '502 504' : code} ${prefix}index.html;\n${assetLocation(`${prefix}index.html`, `${dir}/${code}.html`, { internal: true })}\n${(
-        errors[code]?.exposed ?? []
-      )
-        .filter((path) => path !== 'index.html')
-        .map((path) => assetLocation(prefix + path, `/sites/${errors[code].directory}/${path}`))
-        .join('\n')}`;
+      const documentUri = `/_proxy/error-documents/${code}`;
+      return `error_page ${code === 502 ? '502 504' : code} ${documentUri};\n${assetLocation(documentUri, `${dir}/${code}.html`, { internal: true })}\n${(errors[code]?.exposed ?? []).map((path) => assetLocation(prefix + path, `/sites/${errors[code].directory}/${path}`)).join('\n')}`;
     })
     .join('\n');
 

@@ -22,7 +22,7 @@ import { freshRoute, folderRules, listener, destination, portLabel } from './rou
 import { RouteWizard, ErrorPagesWizard } from './wizards.jsx';
 import Settings from './settings.jsx';
 import Modal from './dialog.jsx';
-import Files from './files.jsx';
+import Folders, { FolderWizard } from './folders.jsx';
 import DomainsWizard from './domains-wizard.jsx';
 
 const when = (value) =>
@@ -148,6 +148,17 @@ export default function Workspace({ onLogout, onRecovery }) {
         publishOnly={wizard.publishOnly}
         onClose={() => setWizard(null)}
         onSaved={saved}
+      />
+    );
+  if (wizard?.kind === 'folder')
+    return (
+      <FolderWizard
+        initial={wizard.initial}
+        onClose={() => setWizard(null)}
+        onSaved={async (message) => {
+          await saved(message);
+          await loadFiles();
+        }}
       />
     );
   if (wizard?.kind === 'pages')
@@ -457,10 +468,11 @@ export default function Workspace({ onLogout, onRecovery }) {
             </>
           )}
           {page === 'Files' && (
-            <Files
+            <Folders
               catalog={catalog}
-              state={state}
               onHost={hostFolder}
+              onCreate={() => setWizard({ kind: 'folder' })}
+              onEdit={(initial) => setWizard({ kind: 'folder', initial })}
               onSaved={async (message) => {
                 await refresh();
                 await loadFiles();

@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { defaultPages, settingsFromPolicy } from '../shared/model.js';
 import { unixRequest } from '../shared/http.js';
 import { route, policyEnv } from './fixtures.js';
-import { inspectSite, readSiteIndex } from '../edge/sites.js';
+import { inspectSite, readSiteDocument } from '../edge/sites.js';
 
 test(
   'Linux NGINX: real HTTPS, unknown hosts, error pages, WebSocket, TCP, UDP range, failed reload and restart',
@@ -260,6 +260,65 @@ test(
       }),
     ];
     const snapshot = { routes, pages: defaultPages };
+    await t.test(
+      'folders need no index; explicit non-index error documents and relative assets work',
+      async () => {
+        await mkdir('/sites/assets-only');
+        await mkdir('/sites/empty');
+        await mkdir('/sites/error-docs/nested', { recursive: true });
+        await writeFile('/sites/assets-only/logo.svg', '<svg/>');
+        await writeFile('/sites/assets-only/private.txt', 'private');
+        await writeFile(
+          '/sites/error-docs/nested/notice.htm',
+          '<head></head><h1>Explicit document</h1>',
+        );
+        await writeFile('/sites/error-docs/nested/style.css', 'body{color:blue}');
+        await writeFile('/sites/error-docs/index.html', 'Unused index');
+        assert.equal((await inspectSite({ directory: 'empty' })).count, 0);
+        const site = route({
+          kind: 'static',
+          hostname: 'assets.krychlic.com',
+          published: true,
+          ingressIP: '127.0.0.1',
+          staticSite: { directory: 'assets-only', include: ['*.svg'], exclude: [] },
+        });
+        const next = {
+          routes: [...routes, site],
+          pages: {
+            ...defaultPages,
+            notFoundSite: { directory: 'error-docs' },
+            badGatewaySite: { directory: 'error-docs' },
+            notFoundDocument: 'nested/notice.htm',
+            badGatewayDocument: 'nested/notice.htm',
+          },
+        };
+        await edgeRequest('/apply', { method: 'POST', body: next, timeout: 20000 });
+        assert.equal((await request(site.hostname, '/logo.svg')).body, '<svg/>');
+        for (const path of ['/', '/private.txt']) {
+          const result = await request(site.hostname, path);
+          assert.equal(result.status, 404);
+          assert.match(result.body, /Explicit document/);
+        }
+        const gateway = await request('app.krychlic.com', '/api-error');
+        assert.equal(gateway.status, 502);
+        assert.match(gateway.body, /Explicit document/);
+        assert.match(gateway.body, /_proxy\/errors\/502\/nested\//);
+        assert.equal(
+          (await request(site.hostname, '/_proxy/errors/502/nested/style.css')).body,
+          'body{color:blue}',
+        );
+        await assert.rejects(
+          edgeRequest('/apply', {
+            method: 'POST',
+            body: { ...next, pages: { ...next.pages, badGatewayDocument: 'missing.html' } },
+            timeout: 20000,
+          }),
+          /document/,
+        );
+        assert.equal((await request(site.hostname, '/logo.svg')).status, 200);
+        await edgeRequest('/apply', { method: 'POST', body: snapshot, timeout: 20000 });
+      },
+    );
     await mkdir('/sites/public/docs', { recursive: true });
     await mkdir('/sites/public/.git', { recursive: true });
     await mkdir('/sites/errors', { recursive: true });
@@ -288,11 +347,11 @@ test(
       await assert.rejects(inspectSite({ directory: 'linked' }), /symlink/);
       await mkdir('/sites/linked-index');
       await symlink('/etc/passwd', '/sites/linked-index/index.html');
-      await assert.rejects(readSiteIndex({ directory: 'linked-index' }), /unreadable/);
       await assert.rejects(
-        inspectSite({ directory: 'linked-index' }, { requireIndex: true }),
-        /index.html/,
+        readSiteDocument({ directory: 'linked-index' }, 'index.html'),
+        /unreadable/,
       );
+      assert.deepEqual((await inspectSite({ directory: 'linked-index' })).exposed, []);
     });
     await t.test(
       'static sites expose selected files; secrets, symlinks and new files stay private',
@@ -354,7 +413,7 @@ test(
           '/swap.txt',
           '/new.txt',
           '/../etc/passwd',
-          '/_proxy/errors/404/index.html',
+          '/_proxy/error-documents/404',
         ])
           assert.notEqual((await request(site.hostname, path)).status, 200, path);
         const missing = await request(site.hostname, '/missing');

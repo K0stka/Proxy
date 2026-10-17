@@ -1346,26 +1346,6 @@ dialog > p {
   }
 }
 
-.files-editor {
-  max-width: 840px;
-  min-width: 0;
-}
-.files-heading {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  margin-bottom: 18px;
-}
-.files-heading h2,
-.folder-card strong {
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-.folder-uses {
-  margin-bottom: 24px;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
 .folder-actions {
   display: flex;
   gap: 8px;
@@ -1379,19 +1359,6 @@ dialog > p {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-}
-.files-actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-top: 24px;
-  padding: 20px 0;
-  background: var(--bg);
-  border-top: 1px solid var(--line);
 }
 .selected-endpoint {
   display: flex;
@@ -1431,17 +1398,6 @@ dialog > p {
 @media (max-width: 760px) {
   .wizard-steps {
     position: static;
-  }
-  .files-heading {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .files-actions {
-    flex-wrap: wrap;
-  }
-  .files-actions .primary {
-    margin-left: auto;
   }
 }
 @media (max-width: 700px) {

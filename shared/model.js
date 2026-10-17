@@ -69,6 +69,10 @@ export const defaultExcludedFiles = [
   '**/*.map',
   '**/*~',
 ];
+export const siteDocument = filePattern.refine(
+  (value) => !/[?*]/.test(value),
+  'Choose a relative document path without wildcards',
+);
 export const staticSiteSchema = z
   .object({
     directory: siteDirectory,
@@ -164,6 +168,8 @@ export const pagesSchema = z
     notFoundText: z.string().max(240),
     badGatewayTitle: z.string().trim().min(1).max(100),
     badGatewayText: z.string().max(240),
+    notFoundDocument: siteDocument.default('index.html'),
+    badGatewayDocument: siteDocument.default('index.html'),
     notFoundSite: staticSiteSchema.nullable().default(null),
     badGatewaySite: staticSiteSchema.nullable().default(null),
     // Accept older saved configurations, but discard the removed page setting.
@@ -176,6 +182,8 @@ export const defaultPages = {
   notFoundText: 'This address has no website connected to it.',
   badGatewayTitle: 'Back soon.',
   badGatewayText: 'This service is temporarily unavailable. Please try again shortly.',
+  notFoundDocument: 'index.html',
+  badGatewayDocument: 'index.html',
   notFoundSite: null,
   badGatewaySite: null,
 };
