@@ -1,28 +1,9 @@
 # Optional host storage: use after compose.yaml in Komodo Compose files.
 services:
-  storage-init:
-    build: { context: ., dockerfile: containers/storage.Dockerfile }
+  control:
     environment:
       PROXY_DATA_PATH: ${PROXY_DATA_PATH:?Set PROXY_DATA_PATH}
       PROXY_SITES_PATH: ${PROXY_SITES_PATH:?Set PROXY_SITES_PATH}
-    restart: 'no'
-    network_mode: none
-    read_only: true
-    cap_drop: [ALL]
-    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
-    security_opt: [no-new-privileges:true]
-    volumes:
-      - type: bind
-        source: ${PROXY_DATA_PATH:?Set PROXY_DATA_PATH}
-        target: /data
-        bind: { create_host_path: true }
-    pids_limit: 16
-    mem_limit: 64m
-    cpus: 0.25
-    logging: { driver: json-file, options: { max-size: '1m', max-file: '1' } }
-  control:
-    depends_on:
-      storage-init: { condition: service_completed_successfully }
     volumes:
       - type: bind
         source: ${PROXY_DATA_PATH:?Set PROXY_DATA_PATH}/control
@@ -42,8 +23,6 @@ services:
         target: /cert-requests
         bind: { create_host_path: true }
   edge:
-    depends_on:
-      storage-init: { condition: service_completed_successfully }
     volumes:
       - type: bind
         source: ${PROXY_DATA_PATH:?Set PROXY_DATA_PATH}/edge
@@ -55,8 +34,6 @@ services:
         read_only: true
         bind: { create_host_path: true }
   certificates:
-    depends_on:
-      storage-init: { condition: service_completed_successfully }
     volumes:
       - type: bind
         source: ${PROXY_DATA_PATH:?Set PROXY_DATA_PATH}/certificate-policy

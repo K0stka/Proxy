@@ -49,21 +49,8 @@ const hostStorage = JSON.parse(
     },
   ),
 );
+assert.deepEqual(Object.keys(hostStorage.services).sort(), ['certificates', 'control', 'edge']);
 for (const [name, service] of Object.entries(hostStorage.services)) {
-  if (name === 'storage-init') {
-    assert.equal(service.network_mode, 'none');
-    assert.equal(service.restart, 'no');
-    assert(service.read_only);
-    assert.equal(service.volumes.length, 1);
-    assert.equal(service.volumes[0].target, '/data');
-    assert.equal(service.volumes[0].source, '/srv/proxy/data');
-    assert.deepEqual(Object.keys(service.environment).sort(), [
-      'PROXY_DATA_PATH',
-      'PROXY_SITES_PATH',
-    ]);
-    continue;
-  }
-  assert.equal(service.depends_on['storage-init'].condition, 'service_completed_successfully');
   for (const mount of service.volumes) {
     if (mount.target === '/ipc') {
       assert.equal(mount.type, 'volume');
@@ -89,58 +76,13 @@ const run = (args, input) =>
   });
 const smoke = ['compose', '-p', 'proxy-smoke', '-f', 'test/compose.yaml'];
 run(['compose', '-p', 'proxy', '--progress', 'quiet', 'build']);
-run(['build', '-q', '-f', 'containers/storage.Dockerfile', '-t', 'proxy-storage-init', '.']);
-const storageSmoke = ['compose', '-p', 'proxy-storage-smoke', '-f', 'test/storage-compose.yaml'];
-try {
-  run([...storageSmoke, 'up', '--abort-on-container-exit', '--exit-code-from', 'check']);
-} finally {
-  run([...storageSmoke, 'down', '--volumes']);
-}
 run([
-  'run',
-  '--rm',
-  '-i',
-  '--network',
-  'none',
-  '--read-only',
-  '--cap-drop',
-  'ALL',
-  '--cap-add',
-  'CHOWN',
-  '--cap-add',
-  'FOWNER',
-  '--cap-add',
-  'DAC_OVERRIDE',
-  '--tmpfs',
-  '/tmp:rw,noexec,nosuid,size=8m',
-  '--mount',
-  `type=bind,source=${resolve('.')},target=/checks,readonly`,
-  'proxy-storage-init',
-  'node',
-  '--test',
-  '/checks/test/storage.test.js',
-]);
-run([
-  'run',
-  '--rm',
-  '--network',
-  'none',
-  '--read-only',
-  '--cap-drop',
-  'ALL',
-  '--cap-add',
-  'CHOWN',
-  '--cap-add',
-  'FOWNER',
-  '--cap-add',
-  'DAC_OVERRIDE',
-  '--tmpfs',
-  '/data:rw,noexec,nosuid,size=8m',
-  '--env',
-  'PROXY_DATA_PATH=/srv/proxy/data',
-  '--env',
-  'PROXY_SITES_PATH=/srv/proxy/sites',
-  'proxy-storage-init',
+  'run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL',
+  ...['NET_BIND_SERVICE', 'CHOWN', 'FOWNER', 'SETUID', 'SETGID', 'SETPCAP'].flatMap(cap => ['--cap-add', cap]),
+  ...['/state', '/cert-policy', '/cert-requests', '/runtime', '/ipc', '/certbot', '/tls', '/cert-status'].flatMap(path => ['--tmpfs', path + ':rw,nosuid,size=1m']),
+  '--mount', `type=bind,source=${resolve('test/startup.test.js')},target=/checks/startup.test.js,readonly`,
+  '--env', 'PROXY_STARTUP_TEST=true', '--entrypoint', 'node',
+  'proxy-edge', '--test', '/checks/startup.test.js',
 ]);
 run(['build', '-q', '-f', 'test/linux.Dockerfile', '-t', 'proxy-linux-test', '.']);
 run([
@@ -153,6 +95,10 @@ run([
   'ALL',
   '--cap-add',
   'NET_BIND_SERVICE',
+  '--cap-add',
+  'CHOWN',
+  '--cap-add',
+  'FOWNER',
   '--cap-add',
   'SETUID',
   '--cap-add',
@@ -203,13 +149,15 @@ run([
 try {
   run([...smoke, 'up', '-d', '--wait', '--wait-timeout', '45']);
   run(
-    [...smoke, 'exec', '-T', 'control', 'node', '--input-type=module'],
+    [...smoke, 'exec', '-T', '--user', '10001:10000', 'control', 'node', '--input-type=module'],
     readFileSync('test/smoke-client.js'),
   );
   run([
     ...smoke,
     'exec',
     '-T',
+    '--user',
+    '10003:10000',
     '-w',
     '/app',
     'certificates',

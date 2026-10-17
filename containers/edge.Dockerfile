@@ -9,7 +9,8 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY edge ./edge
 COPY shared ./shared
 COPY containers/edge-entrypoint.sh /usr/local/bin/proxy-as-edge
+COPY --chmod=755 containers/start.sh /usr/local/bin/proxy-start
 RUN chmod 755 /usr/local/bin/proxy-as-edge
 USER 0:10000
-ENTRYPOINT ["proxy-as-edge"]
+ENTRYPOINT ["proxy-start", "edge"]
 CMD ["node", "edge/main.js"]

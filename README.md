@@ -1,6 +1,6 @@
 # Proxy
 
-A private routing workspace for a public VPS and home services connected through Tailscale. One Komodo stack: **NGINX edge + management UI + Certbot**, with a one-shot storage initializer when host paths are enabled.
+A private routing workspace for a public VPS and home services connected through Tailscale. One Komodo stack: **NGINX edge + management UI + Certbot**.
 
 - Websites, WebSockets, streaming, custom TCP, and UDP ranges preserving destination ports.
 - Static websites from mounted folders, file filters and full-page setup wizards.
@@ -62,11 +62,11 @@ PROXY_DATA_PATH=/srv/proxy/data
 
 In Komodo's Compose file list, add **both files in this order**: `compose.yaml`, then `compose.paths.yaml`. The second file replaces persistent volume mounts with host directories; setting `PROXY_DATA_PATH` alone does not enable it.
 
-Deploy normally. Compose creates missing host directories automatically. A one-shot **storage-init** container prepares the private data subdirectories and permissions, then exits successfully before control, edge or certificates can start. No host setup command is required.
+Deploy normally. Compose creates missing host directories automatically. Each container runs its storage setup script, prepares its writable directory permissions, drops setup privileges, then starts its application. There are only three long-running services and no separate initialization job or host setup command.
 
-Use absolute, non-overlapping data/sites paths on local Linux storage. The initializer has no network, API credentials or Docker socket. It mounts only the private data directory and uses root with only the capabilities needed to set directory ownership/modes. It rejects symlinked data subdirectories, leaves existing file contents and file ownership alone, and never walks the tree recursively. Websites must be readable by UID 10002; existing sites permissions are not rewritten. SQLite uses WAL files and locking.
+Use canonical absolute, non-overlapping data/sites paths on local Linux storage, without symlink aliases or dot segments. Each startup script touches only its writable mount roots, leaves existing file contents and file ownership alone, and never walks the tree recursively. Containers receive only their required subdirectories; none mounts the whole data root. Websites must be readable by UID 10002; sites permissions are not rewritten. SQLite uses WAL files and locking.
 
-`storage-init` exiting with code 0 is normal. If Komodo includes completed initialization jobs in its health status, add it to the stack's ignored services for health checks.
+When upgrading from the previous four-service version, remove the obsolete `storage-init` container in Komodo if it remains listed as an orphan. Keep your data directories and volumes.
 
 ```text
 /srv/proxy/
@@ -164,7 +164,7 @@ Generated NGINX configuration/error HTML, certificate status/request files, ACME
 
 The controller uses Node's built-in SQLite; React is compiled into static files served by that controller. NGINX handles the public data path. The edge independently validates typed requests over a group-restricted Unix socket. There is no arbitrary configuration editor, shell execution endpoint, public admin API, Docker socket, privileged container, or NET_ADMIN capability.
 
-The edge launcher briefly uses identity/capability setup permissions, drops to UID 10002, and removes everything from the capability bounding set except NET_BIND_SERVICE before starting Node or NGINX. Control runs as UID 10001 and Certbot as UID 10003. Root filesystems are read-only. Host networking is used only by the edge to support dynamic listeners; destination safety checks and host firewall rules remain necessary boundaries.
+Startup scripts briefly use directory ownership and identity/capability setup permissions, then exec the applications as unprivileged users. The edge drops to UID 10002 and removes everything from the capability bounding set except NET_BIND_SERVICE before starting Node or NGINX. Control runs as UID 10001 and Certbot as UID 10003, both with empty capability sets. Root filesystems are read-only. Host networking is used only by the edge to support dynamic listeners; destination safety checks and host firewall rules remain necessary boundaries.
 
 Back up `control_state`, `edge_state`, `certbot_state`, `tls`, `sites/` and the Komodo stack environment to encrypted storage. Stop the stack before a raw volume copy so SQLite's database/WAL are consistent, or use SQLite's online backup facility. **Export configuration is not a full backup:** it excludes passkeys, sessions, recovery data, certificates and secrets. Restore the matching state volumes together, preserve UIDs/GID, then verify routing and renewal. Do not run `docker compose down --volumes` on your deployed stack.
 
