@@ -472,7 +472,9 @@ test(
       assert.equal((await request('example.net')).status, 200);
     });
     await t.test('covered unknown hostname gets 404; uncovered TLS fails', async () => {
-      assert.equal((await request('missing.krychlic.com')).status, 404);
+      const missing = await request('missing.krychlic.com');
+      assert.equal(missing.status, 404);
+      assert.match(missing.headers['content-type'], /^text\/html/);
       assert.equal((await request('whatever.invalid', '/', false)).status, 404);
       await assert.rejects(request('unrelated.invalid'));
       await assert.rejects(request('deep.app.krychlic.com'));

@@ -17,7 +17,7 @@ const acl = (r) =>
   r.sourceCIDRs.length ? `${r.sourceCIDRs.map((c) => `allow ${c};`).join('\n')}\ndeny all;` : '';
 const quote = (value) => `"${value.replace(/[\\"$]/g, (c) => `\\${c}`)}"`;
 function assetLocation(uri, file, { internal = false } = {}) {
-  return `location = ${quote(uri)} { ${internal ? 'internal;' : ''} alias ${quote(file)}; disable_symlinks on; add_header X-Content-Type-Options nosniff always; limit_except GET { deny all; } }`;
+  return `location = ${quote(uri)} { ${internal ? 'internal; types {} default_type text/html; charset utf-8;' : ''} alias ${quote(file)}; disable_symlinks on; add_header X-Content-Type-Options nosniff always; limit_except GET { deny all; } }`;
 }
 const errorLocations = (dir, errors, include404 = true) =>
   (include404 ? [404, 502] : [502])

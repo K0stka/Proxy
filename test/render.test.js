@@ -68,6 +68,13 @@ test('unknown TLS rejects; covered catchall is a regex so apex routes retain exa
     /not ready/,
   );
 });
+
+test('shared error documents have an explicit HTML content type despite extensionless internal URLs', () => {
+  const output = render(policy(), snapshot([]), options).config;
+  for (const code of [404, 502]) {
+    assert.ok(output.includes(`location = "/_proxy/error-documents/${code}" { internal; types {} default_type text/html; charset utf-8;`));
+  }
+});
 test('page text is escaped and draft changes do not change applied-state hash', () => {
   const page = errorPage(502, '<script>alert(1)</script>', '<img src=x onerror=alert(1)>');
   assert(!page.includes('<script>'));
