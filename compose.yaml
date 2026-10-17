@@ -1,0 +1,120 @@
+name: proxy
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: '10m', max-file: '3' }
+
+x-deployment: &deployment
+  PROXY_ORIGIN: ${PROXY_ORIGIN:-}
+  PROXY_INGRESS_IPS: ${PROXY_INGRESS_IPS:-}
+
+services:
+  control:
+    build: { context: ., dockerfile: containers/control.Dockerfile }
+    environment:
+      <<: *deployment
+      PROXY_CERT_POLICY: /cert-policy/policy.db
+      PROXY_BOOTSTRAP_TOKEN: ${PROXY_BOOTSTRAP_TOKEN:-}
+      PROXY_KOMODO_KEY: ${PROXY_KOMODO_KEY:-}
+      PROXY_KOMODO_SECRET: ${PROXY_KOMODO_SECRET:-}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports: ['127.0.0.1:3001:3001']
+    volumes:
+      - control_state:/state
+      - certificate_policy:/cert-policy
+      - edge_ipc:/ipc
+      - cert_status:/cert-status:ro
+      - cert_requests:/cert-requests
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=32m']
+    pids_limit: 100
+    mem_limit: 256m
+    cpus: 1
+    logging: *logging
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  edge:
+    build: { context: ., dockerfile: containers/edge.Dockerfile }
+    environment: *deployment
+    restart: unless-stopped
+    # Node supervises NGINX and handles shutdown directly; no root init process.
+    init: false
+    network_mode: host
+    read_only: true
+    cap_drop: [ALL]
+    # setpriv uses the identity/capability permissions only at startup, then drops
+    # them from every application process's bounding set. Runtime keeps NET_BIND_SERVICE.
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, SETPCAP]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - edge_ipc:/ipc
+      - edge_state:/runtime
+      - tls:/tls:ro
+      - ${PROXY_SITES_PATH:-./sites}:/sites:ro
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=128m,uid=10002,gid=10000']
+    pids_limit: 200
+    mem_limit: 512m
+    cpus: 2
+    ulimits: { nofile: { soft: 65536, hard: 65536 } }
+    stop_grace_period: 35s
+    logging: *logging
+    healthcheck:
+      test:
+        [
+          CMD,
+          proxy-as-edge,
+          node,
+          -e,
+          "require('http').get({socketPath:'/ipc/edge.sock',path:'/status'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  certificates:
+    build: { context: ., dockerfile: containers/certificates.Dockerfile }
+    environment:
+      PROXY_CLOUDFLARE_TOKEN: ${PROXY_CLOUDFLARE_TOKEN:-}
+      PROXY_CLOUDFLARE_TOKENS: ${PROXY_CLOUDFLARE_TOKENS:-{}}
+    depends_on:
+      control: { condition: service_healthy }
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - certificate_policy:/cert-policy:ro
+      - certbot_state:/certbot
+      - tls:/tls
+      - cert_status:/cert-status
+      - cert_requests:/cert-requests
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m,uid=10003,gid=10000']
+    pids_limit: 50
+    mem_limit: 256m
+    cpus: 0.5
+    stop_grace_period: 11m
+    logging: *logging
+
+volumes:
+  control_state:
+  edge_ipc:
+  edge_state:
+  certbot_state:
+  tls:
+  cert_status:
+  cert_requests:
+  certificate_policy:

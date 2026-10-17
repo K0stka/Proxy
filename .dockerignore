@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+.local
+secrets
+config.json
+.env
+.env.*
+sites
+*.db*

@@ -1,0 +1,84 @@
+name: proxy-smoke
+x-deployment: &deployment
+  PROXY_ORIGIN: https://proxy.example.net
+  PROXY_INGRESS_IPS: 127.0.0.1
+services:
+  edge:
+    environment: *deployment
+    image: proxy-edge:latest
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, SETPCAP]
+    security_opt: [no-new-privileges:true]
+    sysctls: { net.ipv4.ip_unprivileged_port_start: '1024' }
+    volumes:
+      - ipc:/ipc
+      - edge_state:/runtime
+      - tls:/tls:ro
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m,uid=10002,gid=10000']
+    healthcheck:
+      test:
+        [
+          CMD,
+          proxy-as-edge,
+          node,
+          -e,
+          "require('http').get({socketPath:'/ipc/edge.sock',path:'/status'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 1s
+      timeout: 3s
+      retries: 15
+  control:
+    environment:
+      <<: *deployment
+      PROXY_CERT_POLICY: /cert-policy/policy.db
+      PROXY_BOOTSTRAP_TOKEN: smoke-test-only-enrollment-token-12345
+      PROXY_KOMODO_KEY: smoke-test-key
+      PROXY_KOMODO_SECRET: smoke-test-secret
+    image: proxy-control:latest
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - state:/state
+      - policy:/cert-policy
+      - ipc:/ipc
+      - status:/cert-status:ro
+      - requests:/cert-requests
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=32m']
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 1s
+      timeout: 3s
+      retries: 15
+  certificates:
+    depends_on:
+      control: { condition: service_healthy }
+    image: proxy-certificates:latest
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - policy:/cert-policy:ro
+      - certbot:/certbot
+      - tls:/tls
+      - status:/cert-status
+      - requests:/cert-requests
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m,uid=10003,gid=10000']
+networks:
+  default: { internal: true }
+volumes:
+  state:
+  ipc:
+  edge_state:
+  certbot:
+  tls:
+  status:
+  requests:
+  policy:
