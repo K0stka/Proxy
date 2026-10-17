@@ -9,7 +9,7 @@ export const destination = (route) =>
     : `${route.targetHost.includes(':') ? `[${route.targetHost}]` : route.targetHost}:${route.kind === 'udp' ? (route.portStart === route.portEnd ? route.portStart : `${route.portStart}–${route.portEnd}`) : route.targetPort}`;
 export const kindName = { http: 'Website', static: 'Static site', tcp: 'TCP', udp: 'UDP' };
 export const portLabel = (port) =>
-  `${port.hostPort || 'Unpublished'} (${port.containerPort}) / ${port.protocol.toUpperCase()}`;
+  `${port.hostPort || 'Container only'} (${port.containerPort}) / ${port.protocol.toUpperCase()}`;
 export function serviceEndpoints(services, kind) {
   const protocol = kind === 'udp' ? 'udp' : 'tcp';
   return services.flatMap((service) =>

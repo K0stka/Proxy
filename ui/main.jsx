@@ -1,3 +1,4 @@
+import { Button } from './controls.jsx';
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
@@ -5,15 +6,17 @@ import { Waypoints, Check, KeyRound, Fingerprint, CircleAlert } from 'lucide-rea
 import { api, setCSRF } from './api.js';
 import Modal from './dialog.jsx';
 import Workspace from './workspace.jsx';
+import { MantineProvider, createTheme, PasswordInput, Alert } from '@mantine/core';
+import '@mantine/core/styles.css';
 import './style.css';
 function Recovery({ code, onClose }) {
   return (
     <Modal title="Save your recovery code" onClose={onClose}>
       <p>Save this code in your password manager. It is shown once.</p>
       <code className="recovery-code">{code}</code>
-      <button className="primary full" onClick={onClose}>
+      <Button className="primary full" onClick={onClose}>
         <Check size={16} /> I've saved it
-      </button>
+      </Button>
     </Modal>
   );
 }
@@ -29,27 +32,57 @@ function AuthScreen({ status, onAuth }) {
     setError('');
     try {
       let result;
-      if (recover) result = await api('/auth/recover', { method: 'POST', body: { code } });
+      if (recover)
+        result = await api('/auth/recover', {
+          method: 'POST',
+          body: {
+            code,
+          },
+        });
       else if (!status.enrolled) {
         const optionsJSON = await api('/auth/register/options', {
           method: 'POST',
-          body: { token },
+          body: {
+            token,
+          },
         });
-        const response = await startRegistration({ optionsJSON });
-        result = await api('/auth/register/verify', { method: 'POST', body: response });
+        const response = await startRegistration({
+          optionsJSON,
+        });
+        result = await api('/auth/register/verify', {
+          method: 'POST',
+          body: response,
+        });
       } else {
-        const optionsJSON = await api('/auth/login/options', { method: 'POST' });
-        const response = await startAuthentication({ optionsJSON });
-        result = await api('/auth/login/verify', { method: 'POST', body: response });
+        const optionsJSON = await api('/auth/login/options', {
+          method: 'POST',
+        });
+        const response = await startAuthentication({
+          optionsJSON,
+        });
+        result = await api('/auth/login/verify', {
+          method: 'POST',
+          body: response,
+        });
       }
       setCSRF(result.csrf);
       if (recover && status.originEnrolled === false) {
         try {
-          const optionsJSON = await api('/auth/register/options', { method: 'POST' });
-          const response = await startRegistration({ optionsJSON });
-          const registered = await api('/auth/register/verify', { method: 'POST', body: response });
+          const optionsJSON = await api('/auth/register/options', {
+            method: 'POST',
+          });
+          const response = await startRegistration({
+            optionsJSON,
+          });
+          const registered = await api('/auth/register/verify', {
+            method: 'POST',
+            body: response,
+          });
           setCSRF(registered.csrf);
-          result = { ...registered, recoveryCode: result.recoveryCode };
+          result = {
+            ...registered,
+            recoveryCode: result.recoveryCode,
+          };
         } catch {
           // Recovery already rotated the code; show it even if passkey setup was cancelled.
           onAuth(result);
@@ -75,40 +108,36 @@ function AuthScreen({ status, onAuth }) {
         <h1>{recover ? 'Recovery' : status.enrolled ? 'Sign in' : 'Set up Proxy'}</h1>
         <form onSubmit={submit}>
           {recover ? (
-            <label>
-              Recovery code
-              {status.originEnrolled === false && status.enrolled && (
-                <span className="hint">Authorize a passkey for this hostname.</span>
-              )}
-              <input
-                type="password"
-                autoComplete="off"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                required
-              />
-            </label>
+            <PasswordInput
+              autoComplete="off"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              required
+              label="Recovery code"
+              description={
+                status.originEnrolled === false && status.enrolled
+                  ? 'Authorize a passkey for this hostname.'
+                  : undefined
+              }
+            />
           ) : (
             !status.enrolled && (
-              <label>
-                Enrollment token
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  required
-                />
-                <span className="hint">PROXY_BOOTSTRAP_TOKEN from Komodo.</span>
-              </label>
+              <PasswordInput
+                autoComplete="off"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                required
+                label={'Enrollment token'}
+                description={'PROXY_BOOTSTRAP_TOKEN from Komodo.'}
+              />
             )
           )}
           {error && (
-            <div className="notice error" role="alert">
+            <Alert className="notice error" role="alert" color="red" variant="light">
               {error}
-            </div>
+            </Alert>
           )}
-          <button className="primary full" disabled={busy}>
+          <Button className="primary full" disabled={busy} type="submit">
             <KeyRound size={17} />
             {busy
               ? 'Waiting…'
@@ -117,10 +146,10 @@ function AuthScreen({ status, onAuth }) {
                 : status.enrolled
                   ? 'Sign in with a passkey'
                   : 'Create passkey'}
-          </button>
+          </Button>
         </form>
         {status.enrolled && (
-          <button
+          <Button
             className="text-button"
             onClick={() => {
               setRecover(!recover);
@@ -128,13 +157,12 @@ function AuthScreen({ status, onAuth }) {
             }}
           >
             {recover ? 'Back to sign in' : 'Lost your passkey?'}
-          </button>
+          </Button>
         )}
       </div>
     </div>
   );
 }
-
 function App() {
   const [status, setStatus] = useState(null),
     [error, setError] = useState(''),
@@ -159,9 +187,9 @@ function App() {
           <CircleAlert />
           <h1>Cannot reach Proxy.</h1>
           <p role="alert">{error}</p>
-          <button className="secondary" onClick={load}>
+          <Button className="secondary" onClick={load}>
             Try again
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -178,7 +206,10 @@ function App() {
         <Workspace
           onLogout={() => {
             setCSRF('');
-            setStatus({ ...status, authenticated: false });
+            setStatus({
+              ...status,
+              authenticated: false,
+            });
           }}
           onRecovery={setRecovery}
         />
@@ -186,7 +217,10 @@ function App() {
         <AuthScreen
           status={status}
           onAuth={(result) => {
-            setStatus({ enrolled: true, authenticated: true });
+            setStatus({
+              enrolled: true,
+              authenticated: true,
+            });
             if (result.recoveryCode) setRecovery(result.recoveryCode);
           }}
         />
@@ -195,4 +229,43 @@ function App() {
     </>
   );
 }
-createRoot(document.getElementById('root')).render(<App />);
+const theme = createTheme({
+  primaryColor: 'indigo',
+  defaultRadius: 'md',
+  fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  headings: {
+    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    fontWeight: '600',
+  },
+  components: {
+    Button: {
+      defaultProps: {
+        fw: 550,
+      },
+    },
+    TextInput: {
+      defaultProps: {
+        size: 'sm',
+      },
+    },
+    Select: {
+      defaultProps: {
+        size: 'sm',
+      },
+    },
+    TagsInput: {
+      defaultProps: {
+        size: 'sm',
+      },
+    },
+  },
+});
+createRoot(document.getElementById('root')).render(
+  <MantineProvider
+    theme={theme}
+    defaultColorScheme="auto"
+    getStyleNonce={() => document.querySelector('meta[name="style-nonce"]')?.content}
+  >
+    <App />
+  </MantineProvider>,
+);

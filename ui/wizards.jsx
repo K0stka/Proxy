@@ -1,4 +1,7 @@
+import { Button, SelectField, NumberField, Disclosure } from './controls.jsx';
+import { TagsInput, Stepper, Group, Alert, TextInput, Switch, Checkbox } from '@mantine/core';
 import React, { useState, useEffect, useRef } from 'react';
+import { useMediaQuery } from '@mantine/hooks';
 import {
   Waypoints,
   ArrowLeft,
@@ -23,7 +26,6 @@ import {
   portLabel,
   serviceEndpoints,
 } from './routes.js';
-
 export function Wizard({
   title,
   steps,
@@ -39,11 +41,15 @@ export function Wizard({
   onValidate,
 }) {
   const heading = useRef(null);
+  const mobile = useMediaQuery('(max-width: 760px)');
   const [validating, setValidating] = useState(false),
     [validationError, setValidationError] = useState('');
   const disabled = busy || validating;
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    window.scrollTo({
+      top: 0,
+      behavior: 'instant',
+    });
     heading.current?.focus();
   }, [step]);
   return (
@@ -56,16 +62,17 @@ export function Wizard({
       </header>
       <div className="wizard-body">
         <nav className="wizard-steps" aria-label="Progress">
-          {steps.map((label, i) => (
-            <div
-              key={label}
-              aria-current={i === step ? 'step' : undefined}
-              className={i < step ? 'complete' : ''}
-            >
-              <span>{i < step ? <Check size={14} /> : i + 1}</span>
-              {label}
-            </div>
-          ))}
+          <Stepper
+            active={step}
+            orientation={mobile ? 'horizontal' : 'vertical'}
+            size="sm"
+            iconSize={28}
+            allowNextStepsSelect={false}
+          >
+            {steps.map((label) => (
+              <Stepper.Step key={label} label={label} allowStepSelect={false} />
+            ))}
+          </Stepper>
         </nav>
         <main className="wizard-main">
           <div className="wizard-heading">
@@ -85,35 +92,49 @@ export function Wizard({
               try {
                 await onValidate?.(step);
                 onStep(step + 1);
-              } catch (e) { setValidationError(e.message); }
-              finally { setValidating(false); }
+              } catch (e) {
+                setValidationError(e.message);
+              } finally {
+                setValidating(false);
+              }
             }}
           >
             <fieldset disabled={disabled}>{children}</fieldset>
             {(validationError || error) && (
-              <div className="notice error" role="alert">
+              <Alert className="notice error" role="alert" color="red" variant="light">
                 {validationError || error}
-              </div>
+              </Alert>
             )}
             <div className="wizard-actions">
-              <button type="button" className="text-button" disabled={disabled} onClick={onClose}>
+              <Button type="button" className="text-button" disabled={disabled} onClick={onClose}>
                 Cancel
-              </button>
-              {step > 0 && (
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={disabled}
-                  onClick={() => { setValidationError(''); onStep(step - 1); }}
-                >
-                  <ArrowLeft size={16} />
-                  Back
-                </button>
-              )}
-              <button className="primary" disabled={disabled || !canContinue}>
-                {validating ? 'Checking…' : busy ? 'Applying…' : step === steps.length - 1 ? submitLabel : 'Continue'}
-                {step === steps.length - 1 ? <Check size={16} /> : <ArrowRight size={16} />}
-              </button>
+              </Button>
+              <Group gap="sm">
+                {step > 0 && (
+                  <Button
+                    type="button"
+                    className="secondary"
+                    disabled={disabled}
+                    onClick={() => {
+                      setValidationError('');
+                      onStep(step - 1);
+                    }}
+                  >
+                    <ArrowLeft size={16} />
+                    Back
+                  </Button>
+                )}
+                <Button className="primary" disabled={disabled || !canContinue} type="submit">
+                  {validating
+                    ? 'Checking…'
+                    : busy
+                      ? 'Applying…'
+                      : step === steps.length - 1
+                        ? submitLabel
+                        : 'Continue'}
+                  {step === steps.length - 1 ? <Check size={16} /> : <ArrowRight size={16} />}
+                </Button>
+              </Group>
             </div>
           </form>
         </main>
@@ -121,7 +142,6 @@ export function Wizard({
     </div>
   );
 }
-
 export function SitePicker({
   value,
   onChange,
@@ -129,14 +149,15 @@ export function SitePicker({
   editRules = false,
   fixedDirectory = false,
 }) {
-  const [catalog, setCatalog] = useState({ folders: [], error: null }),
+  const [catalog, setCatalog] = useState({
+      folders: [],
+      error: null,
+    }),
     [inspection, setInspection] = useState(null),
     [error, setError] = useState(''),
     [pending, setPending] = useState(false),
     [showAll, setShowAll] = useState(false),
     [search, setSearch] = useState('');
-  const [includeText, setIncludeText] = useState((value?.include ?? []).join('\n')),
-    [excludeText, setExcludeText] = useState((value?.exclude ?? []).join('\n'));
   const callback = useRef(onStatus);
   callback.current = onStatus;
   const key = JSON.stringify(value);
@@ -148,7 +169,11 @@ export function SitePicker({
         if (current) setCatalog(data);
       })
       .catch((e) => {
-        if (current) setCatalog({ folders: [], error: e.message });
+        if (current)
+          setCatalog({
+            folders: [],
+            error: e.message,
+          });
       });
     return () => {
       current = false;
@@ -162,7 +187,10 @@ export function SitePicker({
     callback.current?.(null);
     if (!value?.directory) return;
     const timer = setTimeout(() => {
-      api('/sites/inspect', { method: 'POST', body: value })
+      api('/sites/inspect', {
+        method: 'POST',
+        body: value,
+      })
         .then((data) => {
           if (!current) return;
           setInspection(data);
@@ -180,43 +208,38 @@ export function SitePicker({
       clearTimeout(timer);
     };
   }, [key]);
-  function patterns(which, text) {
-    const next = {
-      ...value,
-      [which]: text
-        .split('\n')
-        .map((s) => s.trim())
-        .filter(Boolean),
-    };
-    onChange(next);
-  }
   function toggle(file) {
     const hidden = value.exclude.includes(file.path);
     const exclude = hidden
       ? value.exclude.filter((p) => p !== file.path)
       : [...value.exclude, file.path];
-    setExcludeText(exclude.join('\n'));
-    onChange({ ...value, exclude });
+    onChange({
+      ...value,
+      exclude,
+    });
   }
   const files = inspection?.files ?? [];
   return (
     <div className="site-picker">
       {!fixedDirectory && (
-        <label>
-          Folder
-          <select
-            value={value?.directory ?? ''}
-            required
-            onChange={(e) => onChange({ ...value, directory: e.target.value })}
-          >
-            <option value="">Choose a folder</option>
-            {catalog.folders.map((folder) => (
-              <option key={folder.directory} value={folder.directory}>
-                /sites/{folder.directory}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SelectField
+          value={value?.directory ?? ''}
+          required
+          onChange={(e) =>
+            onChange({
+              ...value,
+              directory: e.target.value,
+            })
+          }
+          label={'Folder'}
+        >
+          <option value="">Choose a folder</option>
+          {catalog.folders.map((folder) => (
+            <option key={folder.directory} value={folder.directory}>
+              /sites/{folder.directory}
+            </option>
+          ))}
+        </SelectField>
       )}
       {catalog.error && (
         <p className="error-text" role="alert">
@@ -228,32 +251,32 @@ export function SitePicker({
       )}
       {editRules && (
         <>
-          <div className="field-pair file-patterns">
-            <label>
-              Only expose
-              <textarea
-                rows={3}
-                value={includeText}
-                placeholder={'*.svg\nassets/**'}
-                onChange={(e) => {
-                  setIncludeText(e.target.value);
-                  patterns('include', e.target.value);
-                }}
-              />
-              <span className="hint">Empty = all files</span>
-            </label>
-            <label>
-              Hide
-              <textarea
-                rows={3}
-                value={excludeText}
-                onChange={(e) => {
-                  setExcludeText(e.target.value);
-                  patterns('exclude', e.target.value);
-                }}
-                placeholder={'private/**\n**/*.map'}
-              />
-            </label>
+          <div className="file-patterns">
+            <TagsInput
+              label="Include patterns"
+              description="Leave empty to include all files."
+              value={value.include}
+              placeholder="*.html or assets/**"
+              splitChars={['\n']}
+              onChange={(include) =>
+                onChange({
+                  ...value,
+                  include,
+                })
+              }
+            />
+            <TagsInput
+              label="Exclude patterns"
+              value={value.exclude}
+              placeholder="private/** or **/*.map"
+              splitChars={['\n']}
+              onChange={(exclude) =>
+                onChange({
+                  ...value,
+                  exclude,
+                })
+              }
+            />
           </div>
         </>
       )}
@@ -263,9 +286,9 @@ export function SitePicker({
         </p>
       )}
       {error && (
-        <div className="notice error" role="alert">
+        <Alert className="notice error" role="alert" color="red" variant="light">
           {error}
-        </div>
+        </Alert>
       )}
       {inspection && (
         <>
@@ -275,44 +298,43 @@ export function SitePicker({
           </div>
           {editRules ? (
             <>
-              <label className="file-search">
-                Find a file
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search paths"
-                />
-              </label>
+              <TextInput
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search paths"
+                label={'Find a file'}
+                className="file-search"
+              />
               <div className="file-list">
                 {files
                   .filter((file) => file.path.toLowerCase().includes(search.toLowerCase()))
                   .slice(0, showAll || search ? files.length : 10)
                   .map((file) => (
-                    <label
-                      className={`file-row ${file.allowed ? '' : 'file-hidden'}`}
+                    <Checkbox
                       key={file.path}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={file.allowed}
-                        disabled={
-                          file.reason === 'Dotfile' ||
-                          file.reason === 'Symlink' ||
-                          (!file.allowed && !value.exclude.includes(file.path))
-                        }
-                        onChange={() => toggle(file)}
-                      />
-                      <File size={14} />
-                      <code>{file.path}</code>
-                      {file.reason && <small>{file.reason}</small>}
-                    </label>
+                      checked={file.allowed}
+                      disabled={
+                        file.reason === 'Dotfile' ||
+                        file.reason === 'Symlink' ||
+                        (!file.allowed && !value.exclude.includes(file.path))
+                      }
+                      onChange={() => toggle(file)}
+                      label={
+                        <>
+                          <File size={14} />
+                          <code>{file.path}</code>
+                          {file.reason && <small>{file.reason}</small>}
+                        </>
+                      }
+                      className={`file-row ${file.allowed ? '' : 'file-hidden'}`}
+                    />
                   ))}
               </div>
               {files.length > 10 && !search && (
-                <button type="button" className="text-button" onClick={() => setShowAll(!showAll)}>
+                <Button type="button" className="text-button" onClick={() => setShowAll(!showAll)}>
                   {showAll ? 'Show less' : `Show all ${files.length} files`}
-                </button>
+                </Button>
               )}
             </>
           ) : null}
@@ -321,7 +343,6 @@ export function SitePicker({
     </div>
   );
 }
-
 function Summary({ route }) {
   return (
     <dl className="review-list">
@@ -355,13 +376,16 @@ function Summary({ route }) {
 export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = false }) {
   const { step, setStep } = useNavigation();
   const [route, setRoute] = useWizardField('route', {
-    ...initial, staticSite: initial.staticSite ?? null,
+    ...initial,
+    staticSite: initial.staticSite ?? null,
   });
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [check, setCheck] = useState(null);
-  const [udpBlock, setUDPBlock] = useWizardField('udpBlock',
-    initial.kind === 'udp' && initial.portEnd > initial.portStart);
+  const [udpBlock, setUDPBlock] = useWizardField(
+    'udpBlock',
+    initial.kind === 'udp' && initial.portEnd > initial.portStart,
+  );
   const [cidrs, setCIDRs] = useWizardField('cidrs', initial.sourceCIDRs.join('\n'));
   const initialDomain =
     state.domains.find(
@@ -370,21 +394,28 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
     state.domains[0]?.name ??
     '';
   const [domain, setDomain] = useWizardField('domain', initialDomain),
-    [subdomain, setSubdomain] = useWizardField('subdomain',
+    [subdomain, setSubdomain] = useWizardField(
+      'subdomain',
       initial.hostname
         ? initial.hostname === initialDomain
           ? ''
           : initial.hostname.slice(0, -initialDomain.length - 1)
         : 'app',
     );
-  const set = (key, value) => setRoute((r) => ({ ...r, [key]: value }));
+  const set = (key, value) =>
+    setRoute((r) => ({
+      ...r,
+      [key]: value,
+    }));
   const steps = publishOnly
     ? ['Review & publish']
     : ['Route type', 'Destination', 'Address', 'Review'];
   const endpoints = serviceEndpoints(state.discovery.services, route.kind);
   const reviewed = {
     ...route,
-    hostname: isWebsite(route) ? `${subdomain && state.domains.find((d) => d.name === domain)?.subdomains ? subdomain + '.' : ''}${domain}` : '',
+    hostname: isWebsite(route)
+      ? `${subdomain && state.domains.find((d) => d.name === domain)?.subdomains ? subdomain + '.' : ''}${domain}`
+      : '',
     portEnd:
       route.kind === 'tcp' || (route.kind === 'udp' && !udpBlock) ? route.portStart : route.portEnd,
     sourceCIDRs: cidrs.split(/[\s,]+/).filter(Boolean),
@@ -393,7 +424,10 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
     setBusy(true);
     setError('');
     try {
-      if (publishOnly) await api(`/routes/${initial.id}/publish`, { method: 'POST' });
+      if (publishOnly)
+        await api(`/routes/${initial.id}/publish`, {
+          method: 'POST',
+        });
       else
         await api(initial.id ? `/routes/${initial.id}` : '/routes', {
           method: initial.id ? 'PUT' : 'POST',
@@ -453,7 +487,16 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
       onClose={onClose}
       busy={busy}
       onSubmit={save}
-      onValidate={(step) => api('/validate', { method: 'POST', body: { kind: 'route', step, value: reviewed } })}
+      onValidate={(step) =>
+        api('/validate', {
+          method: 'POST',
+          body: {
+            kind: 'route',
+            step,
+            value: reviewed,
+          },
+        })
+      }
       submitLabel={
         publishOnly
           ? 'Publish publicly'
@@ -475,7 +518,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
               ['tcp', 'TCP', Cable, 'Forward a TCP port'],
               ['udp', 'UDP', Radio, 'Forward a port or block'],
             ].map(([kind, label, Icon, hint]) => (
-              <button
+              <Button
                 key={kind}
                 className="type-choice"
                 type="button"
@@ -501,20 +544,18 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                 <strong>{label}</strong>
                 <span>{hint}</span>
                 {route.kind === kind && <Check size={15} />}
-              </button>
+              </Button>
             ))}
           </div>
-          <label>
-            Name
-            <input
-              required
-              maxLength={80}
-              autoComplete="off"
-              value={route.name}
-              onChange={(e) => set('name', e.target.value)}
-              placeholder="Portfolio"
-            />
-          </label>
+          <TextInput
+            required
+            maxLength={80}
+            autoComplete="off"
+            value={route.name}
+            onChange={(e) => set('name', e.target.value)}
+            placeholder="Portfolio"
+            label={'Name'}
+          />
         </>
       )}
       {!publishOnly &&
@@ -527,24 +568,22 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
           />
         ) : (
           <>
-            <label>
-              Service
-              <select
-                value={route.source && !selected ? 'saved' : selected}
-                onChange={(e) => sourceChange(e.target.value)}
-              >
-                <option value="">Custom endpoint</option>
-                {route.source && !selected && (
-                  <option value="saved">{route.source.container} · saved endpoint</option>
-                )}
-                {endpoints.map((e) => (
-                  <option value={e.key} key={e.key} disabled={Boolean(e.reason)}>
-                    {e.service.serverName} / {e.service.name} · {portLabel(e.port)}
-                    {e.reason ? ` · ${e.reason}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <SelectField
+              value={route.source && !selected ? 'saved' : selected}
+              onChange={(e) => sourceChange(e.target.value)}
+              label={'Service'}
+            >
+              <option value="">Custom endpoint</option>
+              {route.source && !selected && (
+                <option value="saved">{route.source.container} · saved endpoint</option>
+              )}
+              {endpoints.map((e) => (
+                <option value={e.key} key={e.key} disabled={Boolean(e.reason)}>
+                  {e.service.serverName} / {e.service.name} · {portLabel(e.port)}
+                  {e.reason ? ` · ${e.reason}` : ''}
+                </option>
+              ))}
+            </SelectField>
             {!endpoints.length && (
               <p className="hint">
                 No {route.kind === 'udp' ? 'UDP' : 'TCP'} ports discovered. Check Services or use a
@@ -554,35 +593,34 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
             {!route.source && (
               <>
                 <div className="field-pair">
-                  <label>
-                    Destination IP
-                    <input
-                      required
-                      value={route.targetHost}
-                      onChange={(e) =>
-                        setRoute((r) => ({ ...r, targetHost: e.target.value, source: null }))
-                      }
-                      list="discovered-servers"
-                    />
-                  </label>
+                  <TextInput
+                    required
+                    value={route.targetHost}
+                    onChange={(e) =>
+                      setRoute((r) => ({
+                        ...r,
+                        targetHost: e.target.value,
+                        source: null,
+                      }))
+                    }
+                    list="discovered-servers"
+                    label={'Destination IP'}
+                  />
                   {route.kind !== 'udp' && (
-                    <label>
-                      Host port
-                      <input
-                        required
-                        type="number"
-                        min={1}
-                        max={65535}
-                        value={route.targetPort}
-                        onChange={(e) =>
-                          setRoute((r) => ({
-                            ...r,
-                            targetPort: Number(e.target.value),
-                            source: null,
-                          }))
-                        }
-                      />
-                    </label>
+                    <NumberField
+                      required
+                      min={1}
+                      max={65535}
+                      value={route.targetPort}
+                      onChange={(e) =>
+                        setRoute((r) => ({
+                          ...r,
+                          targetPort: Number(e.target.value),
+                          source: null,
+                        }))
+                      }
+                      label={'Host port'}
+                    />
                   )}
                 </div>
                 <datalist id="discovered-servers">
@@ -610,23 +648,19 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
             )}
             {route.kind === 'http' && (
               <>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={route.upstreamTLS}
-                    onChange={(e) => set('upstreamTLS', e.target.checked)}
-                  />
-                  HTTPS backend
-                </label>
+                <Switch
+                  checked={route.upstreamTLS}
+                  onChange={(e) => set('upstreamTLS', e.target.checked)}
+                  label={'HTTPS backend'}
+                  className="checkbox"
+                />
                 {route.upstreamTLS && (
-                  <label>
-                    Certificate hostname
-                    <input
-                      required
-                      value={route.upstreamServerName}
-                      onChange={(e) => set('upstreamServerName', e.target.value)}
-                    />
-                  </label>
+                  <TextInput
+                    required
+                    value={route.upstreamServerName}
+                    onChange={(e) => set('upstreamServerName', e.target.value)}
+                    label={'Certificate hostname'}
+                  />
                 )}
               </>
             )}
@@ -636,114 +670,105 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
         <>
           {isWebsite(route) ? (
             <div className="field-pair">
-              {state.domains.find((d) => d.name === domain)?.subdomains && <label>
-                Subdomain
-                <input
+              {state.domains.find((d) => d.name === domain)?.subdomains && (
+                <TextInput
                   value={subdomain}
                   onChange={(e) => setSubdomain(e.target.value.toLowerCase())}
                   pattern="[a-zA-Z0-9-]*"
                   placeholder="Leave empty for apex"
+                  label={'Subdomain'}
                 />
-              </label>}
-              <label>
-                Domain
-                <select value={domain} required onChange={(e) => setDomain(e.target.value)}>
-                  <option value="">Choose domain</option>
-                  {state.domains.map((d) => (
-                    <option key={d.name}>{d.name}</option>
-                  ))}
-                </select>
-              </label>
+              )}
+              <SelectField
+                value={domain}
+                required
+                onChange={(e) => setDomain(e.target.value)}
+                label={'Domain'}
+              >
+                <option value="">Choose domain</option>
+                {state.domains.map((d) => (
+                  <option key={d.name}>{d.name}</option>
+                ))}
+              </SelectField>
             </div>
           ) : (
             <>
               {state.policy.ingressIPs.length > 1 && (
-                <label>
-                  Ingress IP
-                  <select value={route.ingressIP} onChange={(e) => set('ingressIP', e.target.value)}>
-                    {state.policy.ingressIPs.map((ip) => (
-                      <option key={ip}>{ip}</option>
-                    ))}
-                  </select>
-                </label>
+                <SelectField
+                  value={route.ingressIP}
+                  onChange={(e) => set('ingressIP', e.target.value)}
+                  label={'Ingress IP'}
+                >
+                  {state.policy.ingressIPs.map((ip) => (
+                    <option key={ip}>{ip}</option>
+                  ))}
+                </SelectField>
               )}
               {route.kind === 'udp' && (
                 <div className="segmented">
-                  <button type="button" aria-pressed={!udpBlock} onClick={() => setUDPBlock(false)}>
+                  <Button type="button" aria-pressed={!udpBlock} onClick={() => setUDPBlock(false)}>
                     Single port
-                  </button>
-                  <button type="button" aria-pressed={udpBlock} onClick={() => setUDPBlock(true)}>
+                  </Button>
+                  <Button type="button" aria-pressed={udpBlock} onClick={() => setUDPBlock(true)}>
                     Port block
-                  </button>
+                  </Button>
                 </div>
               )}
               <div className="field-pair">
-                <label>
-                  {route.kind === 'udp' && udpBlock ? 'Start port' : 'Public port'}
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    max={65535}
-                    value={route.portStart}
-                    onChange={(e) => set('portStart', Number(e.target.value))}
-                  />
-                </label>
+                <NumberField
+                  required
+                  min={1}
+                  max={65535}
+                  value={route.portStart}
+                  onChange={(e) => set('portStart', Number(e.target.value))}
+                  label={route.kind === 'udp' && udpBlock ? 'Start port' : 'Public port'}
+                />
                 {route.kind === 'udp' && udpBlock && (
-                  <label>
-                    End port
-                    <input
-                      type="number"
-                      required
-                      min={route.portStart}
-                      max={65535}
-                      value={route.portEnd}
-                      onChange={(e) => set('portEnd', Number(e.target.value))}
-                    />
-                  </label>
+                  <NumberField
+                    required
+                    min={route.portStart}
+                    max={65535}
+                    value={route.portEnd}
+                    onChange={(e) => set('portEnd', Number(e.target.value))}
+                    label={'End port'}
+                  />
                 )}
               </div>
             </>
           )}
-          <details className="route-options">
-            <summary>{route.kind === 'static' ? 'Access restrictions' : 'More options'}</summary>
+          <Disclosure
+            className="route-options"
+            title={route.kind === 'static' ? 'Access restrictions' : 'More options'}
+          >
             <section className="option-group">
               <h3>Access</h3>
-              <label>
-                Allowed networks
-                <textarea
-                  rows={2}
-                  value={cidrs}
-                  onChange={(e) => setCIDRs(e.target.value)}
-                  placeholder="Public · or enter one CIDR per line"
-                />
-              </label>
+              <TagsInput
+                label="Allowed networks"
+                description="Leave empty for public access."
+                value={cidrs.split(/[\s,]+/).filter(Boolean)}
+                placeholder="100.64.0.0/10"
+                onChange={(values) => setCIDRs(values.join('\n'))}
+              />
             </section>
             {route.kind !== 'static' && (
               <section className="option-group">
                 <h3>Limits</h3>
                 <div className="field-pair">
-                  <label>
-                    Timeout (seconds)
-                    <input
-                      type="number"
-                      min={5}
-                      max={86400}
-                      value={route.timeout}
-                      onChange={(e) => set('timeout', Number(e.target.value))}
-                    />
-                  </label>
+                  <NumberField
+                    min={5}
+                    max={86400}
+                    value={route.timeout}
+                    onChange={(e) => set('timeout', Number(e.target.value))}
+                    label={'Timeout (seconds)'}
+                  />
                   {route.kind === 'http' && (
-                    <label>
-                      Upload size (MB)
-                      <input
-                        type="number"
-                        min={1}
-                        max={1024}
-                        value={route.uploadMB}
-                        onChange={(e) => set('uploadMB', Number(e.target.value))}
-                      />
-                    </label>
+                    <NumberField
+                      min={1}
+                      max={1024}
+                      value={route.uploadMB}
+                      onChange={(e) => set('uploadMB', Number(e.target.value))}
+                      label={'Upload size (MB)'}
+                    />
                   )}
                 </div>
               </section>
@@ -751,41 +776,35 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
             {route.kind === 'tcp' && (
               <section className="option-group">
                 <h3>TCP options</h3>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={route.streamTLS}
-                    onChange={(e) => set('streamTLS', e.target.checked)}
-                  />
-                  Terminate TLS
-                </label>
+                <Switch
+                  checked={route.streamTLS}
+                  onChange={(e) => set('streamTLS', e.target.checked)}
+                  label={'Terminate TLS'}
+                  className="checkbox"
+                />
                 {route.streamTLS && (
-                  <label>
-                    Certificate
-                    <select
-                      required
-                      value={route.tlsDomain}
-                      onChange={(e) => set('tlsDomain', e.target.value)}
-                    >
-                      <option value="">Choose certificate</option>
-                      {state.domains.map((d) => (
-                        <option key={d.name}>{d.name}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <SelectField
+                    required
+                    value={route.tlsDomain}
+                    onChange={(e) => set('tlsDomain', e.target.value)}
+                    label={'Certificate'}
+                  >
+                    <option value="">Choose certificate</option>
+                    {state.domains.map((d) => (
+                      <option key={d.name}>{d.name}</option>
+                    ))}
+                  </SelectField>
                 )}
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={route.proxyProtocol}
-                    onChange={(e) => set('proxyProtocol', e.target.checked)}
-                  />
-                  Send client address with PROXY protocol
-                </label>
+                <Switch
+                  checked={route.proxyProtocol}
+                  onChange={(e) => set('proxyProtocol', e.target.checked)}
+                  label={'Send client address with PROXY protocol'}
+                  className="checkbox"
+                />
                 <p className="hint">Enable only if the backend supports it.</p>
               </section>
             )}
-          </details>
+          </Disclosure>
         </>
       )}
       {(publishOnly || step === 3) && (
@@ -799,61 +818,154 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                 : 'Saved as a draft. Publish it when ready.'}
           </p>
           {!state.edge.available && (publishOnly || initial.published) && (
-            <div className="notice error">Edge unavailable</div>
+            <Alert className="notice error" color="red" variant="light">
+              Edge unavailable
+            </Alert>
           )}
         </>
       )}
     </Wizard>
   );
 }
-
 export function ErrorPagesWizard({ state, code = 404, onClose, onSaved }) {
   const { step, setStep } = useNavigation();
   const siteKey = code === 404 ? 'notFoundSite' : 'badGatewaySite';
   const documentKey = code === 404 ? 'notFoundDocument' : 'badGatewayDocument';
   const [value, setValue] = useWizardField('errorPage', {
-    site: state.pages[siteKey], document: state.pages[documentKey],
+    site: state.pages[siteKey],
+    document: state.pages[documentKey],
   });
-  const [busy, setBusy] = useState(false), [error, setError] = useState(''),
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState(''),
     [check, setCheck] = useState(null);
   async function save() {
     setBusy(true);
     setError('');
     try {
-      await api('/pages/' + code, { method: 'PUT', body: value });
+      await api('/pages/' + code, {
+        method: 'PUT',
+        body: value,
+      });
       await onSaved('Error page saved');
-    } catch (e) { if ([400, 409].includes(e.status)) setStep(0); setError(e.message); }
-    finally { setBusy(false); }
+    } catch (e) {
+      if ([400, 409].includes(e.status)) setStep(0);
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
   }
   return (
-    <Wizard title={'Edit ' + code + ' page'} steps={['Page', 'Review']}
-      step={step} onStep={(next) => { setError(''); setStep(next); }}
-      onClose={onClose} onSubmit={save} submitLabel="Save page" busy={busy} error={error}
-      onValidate={() => api('/validate', { method: 'POST', body: { kind: 'page', code, value } })}
-      canContinue={step > 0 || !value.site || (check?.directory === value.site.directory && Boolean(check?.exposed.includes(value.document)))}>
-      {step === 0 ? <>
-        <div className="segmented">
-          <button type="button" aria-pressed={!value.site}
-            onClick={() => setValue((v) => ({ ...v, site: null }))}>Built-in</button>
-          <button type="button" aria-pressed={Boolean(value.site)}
-            onClick={() => setValue((v) => ({ ...v, site: v.site ?? blankSite('') }))}>Folder</button>
-        </div>
-        {value.site ? <>
-          <SitePicker key={code} value={value.site} onStatus={setCheck}
-            onChange={(spec) => setValue((v) => ({ ...v, site: folderRules(state, spec.directory) }))} />
-          <label>Page document
-            <input required value={value.document} placeholder="index.html" list="error-page-documents"
-              onChange={(e) => setValue((v) => ({ ...v, document: e.target.value }))} />
-          </label>
-          <datalist id="error-page-documents">{check?.exposed.map((path) => <option key={path} value={path} />)}</datalist>
-          {check && !check.exposed.includes(value.document) && <p className="error-text">Choose a document exposed by the folder rules.</p>}
-          <p className="hint">Use relative asset URLs, such as ./style.css.</p>
-        </> : <div className="builtin-page">
-          <span>{code}</span><h2>{code === 404 ? state.pages.notFoundTitle : state.pages.badGatewayTitle}</h2>
-        </div>}
-      </> : <dl className="review-list">
-        <div><dt>{code} page</dt><dd>{value.site ? '/sites/' + value.site.directory + '/' + value.document : 'Built-in'}</dd></div>
-      </dl>}
+    <Wizard
+      title={'Edit ' + code + ' page'}
+      steps={['Page', 'Review']}
+      step={step}
+      onStep={(next) => {
+        setError('');
+        setStep(next);
+      }}
+      onClose={onClose}
+      onSubmit={save}
+      submitLabel="Save page"
+      busy={busy}
+      error={error}
+      onValidate={() =>
+        api('/validate', {
+          method: 'POST',
+          body: {
+            kind: 'page',
+            code,
+            value,
+          },
+        })
+      }
+      canContinue={
+        step > 0 ||
+        !value.site ||
+        (check?.directory === value.site.directory &&
+          Boolean(check?.exposed.includes(value.document)))
+      }
+    >
+      {step === 0 ? (
+        <>
+          <div className="segmented">
+            <Button
+              type="button"
+              aria-pressed={!value.site}
+              onClick={() =>
+                setValue((v) => ({
+                  ...v,
+                  site: null,
+                }))
+              }
+            >
+              Built-in
+            </Button>
+            <Button
+              type="button"
+              aria-pressed={Boolean(value.site)}
+              onClick={() =>
+                setValue((v) => ({
+                  ...v,
+                  site: v.site ?? blankSite(''),
+                }))
+              }
+            >
+              Folder
+            </Button>
+          </div>
+          {value.site ? (
+            <>
+              <SitePicker
+                key={code}
+                value={value.site}
+                onStatus={setCheck}
+                onChange={(spec) =>
+                  setValue((v) => ({
+                    ...v,
+                    site: folderRules(state, spec.directory),
+                  }))
+                }
+              />
+              <TextInput
+                required
+                value={value.document}
+                placeholder="index.html"
+                list="error-page-documents"
+                onChange={(e) =>
+                  setValue((v) => ({
+                    ...v,
+                    document: e.target.value,
+                  }))
+                }
+                label={'Page document'}
+              />
+              <datalist id="error-page-documents">
+                {check?.exposed.map((path) => (
+                  <option key={path} value={path} />
+                ))}
+              </datalist>
+              {check && !check.exposed.includes(value.document) && (
+                <p className="error-text">Choose a document exposed by the folder rules.</p>
+              )}
+              <p className="hint">Use relative asset URLs, such as ./style.css.</p>
+            </>
+          ) : (
+            <div className="builtin-page">
+              <span>{code}</span>
+              <h2>{code === 404 ? state.pages.notFoundTitle : state.pages.badGatewayTitle}</h2>
+            </div>
+          )}
+        </>
+      ) : (
+        <dl className="review-list">
+          <div>
+            <dt>{code} page</dt>
+            <dd>
+              {value.site ? '/sites/' + value.site.directory + '/' + value.document : 'Built-in'}
+            </dd>
+          </div>
+        </dl>
+      )}
     </Wizard>
   );
 }

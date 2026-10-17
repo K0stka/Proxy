@@ -29,8 +29,8 @@ test('destination picker offers normalized running services and explains unavail
   assert.equal(options.length, 3);
   assert.equal(options[0].reason, '');
   assert.equal(portLabel(options[0].port), '9000 (8080) / TCP');
-  assert.equal(options[1].reason, 'Not published on host');
-  assert.equal(portLabel(options[1].port), 'Unpublished (5432) / TCP');
+  assert.equal(options[1].reason, 'No Docker host-port mapping');
+  assert.equal(portLabel(options[1].port), 'Container only (5432) / TCP');
   assert.equal(options[2].reason, 'Container is exited');
   const udp = serviceEndpoints(services, 'udp');
   assert.equal(udp.length, 1);

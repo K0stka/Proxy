@@ -1,10 +1,11 @@
+import { Button } from './controls.jsx';
+import { TextInput, Alert, Paper } from '@mantine/core';
 import React, { useState } from 'react';
 import { ArrowUpRight, FolderOpen, Plus, Pencil, Trash2 } from 'lucide-react';
 import { api } from './api.js';
 import { blankSite } from './routes.js';
 import { SitePicker, Wizard } from './wizards.jsx';
 import { useNavigation, useWizardField } from './navigation.js';
-
 export function FolderWizard({ initial, onClose, onSaved }) {
   const { step, setStep } = useNavigation();
   const [value, setValue] = useWizardField('folder', initial ?? blankSite(''));
@@ -17,7 +18,14 @@ export function FolderWizard({ initial, onClose, onSaved }) {
     try {
       await api('/sites/config', {
         method: 'PUT',
-        body: { ...value, ...(initial ? { previousDirectory: initial.directory } : {}) },
+        body: {
+          ...value,
+          ...(initial
+            ? {
+                previousDirectory: initial.directory,
+              }
+            : {}),
+        },
       });
       await onSaved('Folder saved');
     } catch (e) {
@@ -36,24 +44,34 @@ export function FolderWizard({ initial, onClose, onSaved }) {
       onClose={onClose}
       busy={busy}
       onSubmit={save}
-      onValidate={() => api('/validate', { method: 'POST', body: {
-        kind: 'folder', value, previousDirectory: initial?.directory,
-      } })}
+      onValidate={() =>
+        api('/validate', {
+          method: 'POST',
+          body: {
+            kind: 'folder',
+            value,
+            previousDirectory: initial?.directory,
+          },
+        })
+      }
       submitLabel="Save folder"
       error={error}
       canContinue={step > 0 || (Boolean(check) && check.directory === value.directory)}
     >
       {step === 0 ? (
         <>
-          <label>
-            Path inside /sites
-            <input
-              required
-              value={value.directory}
-              onChange={(e) => setValue((v) => ({ ...v, directory: e.target.value }))}
-              placeholder="websites/portfolio (no leading or trailing /)"
-            />
-          </label>
+          <TextInput
+            required
+            value={value.directory}
+            onChange={(e) =>
+              setValue((v) => ({
+                ...v,
+                directory: e.target.value,
+              }))
+            }
+            placeholder="websites/portfolio (no leading or trailing /)"
+            label={'Path inside /sites'}
+          />
           <SitePicker
             value={value}
             onChange={setValue}
@@ -88,7 +106,6 @@ export function FolderWizard({ initial, onClose, onSaved }) {
     </Wizard>
   );
 }
-
 export default function Folders({ catalog, onHost, onEdit, onCreate, onSaved }) {
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
@@ -96,7 +113,12 @@ export default function Folders({ catalog, onHost, onEdit, onCreate, onSaved }) 
     setBusy(true);
     setError('');
     try {
-      await api('/sites/config', { method: 'DELETE', body: { directory } });
+      await api('/sites/config', {
+        method: 'DELETE',
+        body: {
+          directory,
+        },
+      });
       await onSaved('Folder removed');
     } catch (e) {
       setError(e.message);
@@ -108,41 +130,47 @@ export default function Folders({ catalog, onHost, onEdit, onCreate, onSaved }) 
     <>
       <div className="section-title">
         <h2>Folders</h2>
-        <button className="primary" onClick={onCreate}>
+        <Button className="primary" onClick={onCreate}>
           <Plus size={15} />
           Add folder
-        </button>
+        </Button>
       </div>
       {(error || catalog.error) && (
-        <div className="notice error" role="alert">
+        <Alert className="notice error" role="alert" color="red" variant="light">
           {error || catalog.error}
-        </div>
+        </Alert>
       )}
       <div className="folder-grid">
         {catalog.folders.map((folder) => (
-          <article className="folder-card" key={folder.directory}>
+          <Paper
+            className="folder-card"
+            key={folder.directory}
+            component="article"
+            withBorder={true}
+            p="lg"
+          >
             <FolderOpen size={23} />
             <strong>{folder.directory}</strong>
             <code>/sites/{folder.directory}</code>
             <div className="folder-actions">
-              <button className="secondary" onClick={() => onEdit(folder)}>
+              <Button className="secondary" onClick={() => onEdit(folder)}>
                 <Pencil size={15} />
                 Edit
-              </button>
-              <button className="secondary" onClick={() => onHost(folder.directory)}>
+              </Button>
+              <Button className="secondary" onClick={() => onHost(folder.directory)}>
                 Host folder
                 <ArrowUpRight size={15} />
-              </button>
-              <button
+              </Button>
+              <Button
                 className="icon-button"
                 disabled={busy}
                 aria-label={`Remove folder definition ${folder.directory}`}
                 onClick={() => remove(folder.directory)}
               >
                 <Trash2 size={15} />
-              </button>
+              </Button>
             </div>
-          </article>
+          </Paper>
         ))}
       </div>
       {!catalog.folders.length && !catalog.error && (

@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { join, resolve, extname, sep } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import { Auth } from './auth.js';
 import { Discovery } from './komodo.js';
 import {
@@ -169,12 +169,13 @@ export function createApp({
     );
   }
   const server = http.createServer({ maxHeaderSize: 16384 }, async (req, res) => {
+    const styleNonce = randomBytes(18).toString('base64');
     res.setHeader('x-content-type-options', 'nosniff');
     res.setHeader('referrer-policy', 'no-referrer');
     res.setHeader('x-frame-options', 'DENY');
     res.setHeader(
       'content-security-policy',
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      `default-src 'self'; script-src 'self'; style-src 'self' 'nonce-${styleNonce}'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
     );
     if (!development) res.setHeader('strict-transport-security', 'max-age=31536000');
     try {
@@ -501,6 +502,7 @@ export function createApp({
       let bytes;
       try {
         bytes = await readFile(destination);
+        if (!isAsset) bytes = Buffer.from(bytes.toString('utf8').replaceAll('__PROXY_STYLE_NONCE__', styleNonce));
       } catch {
         throw new Problem(404, 'Build the interface with npm run build first');
       }

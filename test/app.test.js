@@ -37,6 +37,7 @@ async function fixture(t, { empty = false } = {}) {
     store,
     certificatePolicyStore,
     stateDir: directory,
+    distDir: directory,
     bootstrapToken: randomToken(),
     edgeSocket: 'unused',
     certStatusDir: directory,
@@ -106,7 +107,11 @@ async function fixture(t, { empty = false } = {}) {
             resolve({
               status: res.statusCode,
               json: async () => JSON.parse(response),
-              headers: { getSetCookie: () => res.headers['set-cookie'] ?? [] },
+              text: async () => response,
+              headers: {
+                get: (name) => res.headers[name.toLowerCase()],
+                getSetCookie: () => res.headers['set-cookie'] ?? [],
+              },
             }),
           );
         },
@@ -132,6 +137,24 @@ async function fixture(t, { empty = false } = {}) {
     setFail: (value) => (fail = value),
   };
 }
+test('interface styles use a fresh CSP nonce without allowing inline scripts', async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.directory, 'index.html'), '<meta name="style-nonce" content="__PROXY_STYLE_NONCE__">');
+  let previous;
+  for (let i = 0; i < 2; i++) {
+    const response = await f.request('/settings/certificates');
+    assert.equal(response.status, 200);
+    const nonce = (await response.text()).match(/content="([^"]+)"/)[1];
+    assert.match(nonce, /^[A-Za-z0-9+/]{24}$/);
+    assert.notEqual(nonce, previous);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.ok(response.headers.get('content-security-policy').includes(`style-src 'self' 'nonce-${nonce}'`));
+    assert.ok(response.headers.get('content-security-policy').includes("script-src 'self';"));
+    assert.ok(!response.headers.get('content-security-policy').includes('unsafe-inline'));
+    previous = nonce;
+  }
+});
+
 test('settings are private, SQLite-backed, independently applied and reject changes invalidating saved routes', async (t) => {
   const f = await fixture(t),
     initial = settingsFromPolicy(policy());

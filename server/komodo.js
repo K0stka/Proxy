@@ -59,7 +59,7 @@ export function normalizeContainers(containers, server) {
             targetHost,
             usable,
             reason: !hostPort
-              ? 'Not published on host'
+              ? 'No Docker host-port mapping'
               : !targetHost
                 ? 'No reachable address; check the server address in Komodo'
                 : !safeTarget(targetHost, hostPort)

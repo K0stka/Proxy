@@ -1,10 +1,15 @@
+import { Button, NumberField, Disclosure } from './controls.jsx';
+import { TextInput, Switch, Tabs, Paper, Stack, Group, Text, Anchor } from '@mantine/core';
 import React, { useState, useEffect } from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
 import { Plus, KeyRound, Trash2, Download } from 'lucide-react';
 import { api, setCSRF } from './api.js';
 import { useNavigation } from './navigation.js';
 const when = (value) =>
-  new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  new Date(value).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 export default function Settings({ state, refresh, report, onRecovery, onLogout }) {
   const { settingsSection: section, setSettingsSection } = useNavigation();
   const [preferences, setPreferences] = useState(state.settings);
@@ -13,7 +18,11 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
     [busy, setBusy] = useState(false);
   async function load() {
     try {
-      setKeys(await api('/auth/passkeys', { method: 'POST' }));
+      setKeys(
+        await api('/auth/passkeys', {
+          method: 'POST',
+        }),
+      );
     } catch (e) {
       report(e.message, true);
     }
@@ -24,9 +33,16 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
   async function addKey() {
     setBusy(true);
     try {
-      const optionsJSON = await api('/auth/register/options', { method: 'POST' });
-      const response = await startRegistration({ optionsJSON });
-      const result = await api('/auth/register/verify', { method: 'POST', body: response });
+      const optionsJSON = await api('/auth/register/options', {
+        method: 'POST',
+      });
+      const response = await startRegistration({
+        optionsJSON,
+      });
+      const result = await api('/auth/register/verify', {
+        method: 'POST',
+        body: response,
+      });
       setCSRF(result.csrf);
       if (result.recoveryCode) onRecovery(result.recoveryCode);
       await load();
@@ -39,7 +55,12 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
   }
   async function removeKey(id) {
     try {
-      await api('/auth/passkeys/remove', { method: 'POST', body: { id } });
+      await api('/auth/passkeys/remove', {
+        method: 'POST',
+        body: {
+          id,
+        },
+      });
       onLogout();
     } catch (e) {
       report(e.message, true);
@@ -50,95 +71,173 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
     setBusy(true);
     setSaved(false);
     try {
-      await api('/preferences', { method: 'PUT', body: section === 'general'
-        ? { adminHostname: preferences.adminHostname } : { certificates: preferences.certificates } });
+      await api('/preferences', {
+        method: 'PUT',
+        body:
+          section === 'general'
+            ? {
+                adminHostname: preferences.adminHostname,
+              }
+            : {
+                certificates: preferences.certificates,
+              },
+      });
       await refresh();
       setSaved(true);
-    } catch (e) { report(e.message, true); }
-    finally { setBusy(false); }
+    } catch (e) {
+      report(e.message, true);
+    } finally {
+      setBusy(false);
+    }
   }
   function certificate(key, value) {
     setSaved(false);
-    setPreferences((p) => ({ ...p, certificates: { ...p.certificates, [key]: value } }));
+    setPreferences((p) => ({
+      ...p,
+      certificates: {
+        ...p.certificates,
+        [key]: value,
+      },
+    }));
   }
   return (
-    <div className="settings-layout">
-      <nav className="settings-nav" aria-label="Settings">
-        {['general', 'certificates', 'access', 'backup'].map((name) => (
-          <button key={name} aria-current={section === name ? 'page' : undefined}
-            onClick={() => { setSaved(false); setSettingsSection(name); }}>
-            {{general:'General', certificates:'Certificates', access:'Access', backup:'Backup'}[name]}
-          </button>
-        ))}
-      </nav>
-      <div className="settings-content">
-        {section === 'general' && <section>
-          <h2>Admin panel</h2>
+    <Tabs
+      value={section}
+      onChange={(next) => {
+        setSaved(false);
+        setSettingsSection(next);
+      }}
+      className="settings-tabs"
+      keepMounted={false}
+    >
+      <Tabs.List mb="xl">
+        <Tabs.Tab value="general">General</Tabs.Tab>
+        <Tabs.Tab value="certificates">Certificates</Tabs.Tab>
+        <Tabs.Tab value="access">Access</Tabs.Tab>
+        <Tabs.Tab value="backup">Backup</Tabs.Tab>
+      </Tabs.List>
+      <Tabs.Panel value="general">
+        <Paper withBorder p="xl" radius="lg" className="settings-pane">
           <form onSubmit={savePreferences}>
-            <label>Public hostname
-              <input value={preferences.adminHostname} placeholder="proxy.example.com"
-                onChange={(e) => { setSaved(false); setPreferences((p) => ({ ...p, adminHostname: e.target.value })); }} />
-            </label>
-            <p className="hint">Leave empty to disable public access. Requires a configured domain and certificate.</p>
-            <div className="settings-row"><span>Private address</span><a href={state.policy.origin}>{state.policy.origin}</a></div>
-            <button className="primary" disabled={busy}>{saved ? 'Saved' : 'Save changes'}</button>
-          </form>
-        </section>}
-        {section === 'certificates' && <section>
-          <h2>Certificates</h2>
-          <form onSubmit={savePreferences}>
-            <label>Email
-              <input type="email" required value={preferences.certificates.email}
-                onChange={(e) => certificate('email', e.target.value)} />
-              <span className="hint">Used for every domain.</span>
-            </label>
-            <details className="route-options" open={preferences.certificates.staging || undefined}>
-              <summary>Diagnostics</summary>
-              <label className="checkbox"><input type="checkbox" checked={preferences.certificates.staging}
-                onChange={(e) => certificate('staging', e.target.checked)} />Use test certificates</label>
-              <label>DNS propagation (seconds)<input type="number" min={10} max={600} required
-                value={preferences.certificates.propagationSeconds}
-                onChange={(e) => certificate('propagationSeconds', Number(e.target.value))} /></label>
-            </details>
-            <button className="primary" disabled={busy}>{saved ? 'Saved' : 'Save changes'}</button>
-          </form>
-        </section>}
-        {section === 'access' && <section>
-          <h2>Access</h2>
-          <div className="section-title">
-            <h3>Passkeys</h3>
-            <button className="secondary" onClick={addKey} disabled={busy}>
-              <Plus size={15} />
-              Add passkey
-            </button>
-          </div>
-          {keys.map((key, i) => (
-            <div className="key-row" key={key.id}>
-              <KeyRound size={17} />
-              <div>
-                Passkey {i + 1}
-                <small>{key.hostname} · Added {when(key.created)}</small>
+            <Stack gap="lg">
+              <h2>Admin panel</h2>
+              <TextInput
+                label="Public hostname"
+                placeholder="proxy.example.com"
+                value={preferences.adminHostname}
+                description="Leave empty for private access only. The hostname needs a configured domain and certificate."
+                onChange={(e) => {
+                  setSaved(false);
+                  setPreferences((p) => ({ ...p, adminHostname: e.target.value }));
+                }}
+              />
+              <div className="settings-address">
+                <Text size="sm" c="dimmed">
+                  Private address
+                </Text>
+                <Anchor href={state.policy.origin} size="sm">
+                  {state.policy.origin}
+                </Anchor>
               </div>
-              <button
+              <Group justify="flex-end">
+                <Button className="primary" type="submit" loading={busy}>
+                  {saved ? 'Saved' : 'Save changes'}
+                </Button>
+              </Group>
+            </Stack>
+          </form>
+        </Paper>
+      </Tabs.Panel>
+      <Tabs.Panel value="certificates">
+        <Paper withBorder p="xl" radius="lg" className="settings-pane">
+          <form onSubmit={savePreferences}>
+            <Stack gap="lg">
+              <h2>Certificates</h2>
+              <TextInput
+                label="Contact email"
+                description="Shared by all domains."
+                type="email"
+                required
+                value={preferences.certificates.email}
+                onChange={(e) => certificate('email', e.target.value)}
+              />
+              <Disclosure
+                title="Certificate diagnostics"
+                defaultOpen={preferences.certificates.staging}
+              >
+                <Switch
+                  label="Use test certificates"
+                  description="Test certificates cannot publish HTTPS routes."
+                  checked={preferences.certificates.staging}
+                  onChange={(e) => certificate('staging', e.target.checked)}
+                />
+                <NumberField
+                  label="DNS propagation"
+                  description="Seconds to wait for the DNS challenge."
+                  min={10}
+                  max={600}
+                  required
+                  value={preferences.certificates.propagationSeconds}
+                  onChange={(e) => certificate('propagationSeconds', Number(e.target.value))}
+                />
+              </Disclosure>
+              <Group justify="flex-end">
+                <Button className="primary" type="submit" loading={busy}>
+                  {saved ? 'Saved' : 'Save changes'}
+                </Button>
+              </Group>
+            </Stack>
+          </form>
+        </Paper>
+      </Tabs.Panel>
+      <Tabs.Panel value="access">
+        <Paper withBorder p="xl" radius="lg" className="settings-pane">
+          <Group justify="space-between" mb="lg">
+            <h2>Passkeys</h2>
+            <Button className="secondary" onClick={addKey} loading={busy}>
+              <Plus size={16} />
+              Add passkey
+            </Button>
+          </Group>
+          {keys.map((key, index) => (
+            <div className="key-row" key={key.id}>
+              <KeyRound size={20} />
+              <div>
+                <Text size="sm" fw={500}>
+                  Passkey {index + 1}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {key.hostname} · {when(key.created)}
+                </Text>
+              </div>
+              <Button
                 className="icon-button"
                 disabled={keys.length < 2}
                 onClick={() => removeKey(key.id)}
-                aria-label={`Revoke passkey ${i + 1} and sign out all sessions`}
+                aria-label={'Revoke passkey ' + (index + 1) + ' and sign out all sessions'}
               >
                 <Trash2 size={16} />
-              </button>
+              </Button>
             </div>
           ))}
-        </section>}
-        {section === 'backup' && <section>
-          <h2>Backup</h2>
-          <p>Configuration only. Authentication, certificates and secrets are excluded.</p>
-          <a className="secondary" href="/api/export" download>
-            <Download size={15} />
-            Export configuration
-          </a>
-        </section>}
-      </div>
-    </div>
+        </Paper>
+      </Tabs.Panel>
+      <Tabs.Panel value="backup">
+        <Paper withBorder p="xl" radius="lg" className="settings-pane">
+          <Stack gap="lg">
+            <h2>Configuration backup</h2>
+            <Text size="sm" c="dimmed">
+              Routes, domains and file rules. Authentication, certificates and secrets are excluded.
+            </Text>
+            <Group>
+              <Button component="a" className="secondary" href="/api/export" download>
+                <Download size={16} />
+                Export configuration
+              </Button>
+            </Group>
+          </Stack>
+        </Paper>
+      </Tabs.Panel>
+    </Tabs>
   );
 }
