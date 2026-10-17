@@ -1,5 +1,5 @@
 import { Button } from './controls.jsx';
-import { Alert, Paper, NavLink, Menu } from '@mantine/core';
+import { Alert, Paper, NavLink, Menu, Switch } from '@mantine/core';
 import React, { useState, useEffect } from 'react';
 import {
   Waypoints,
@@ -124,7 +124,7 @@ export default function Workspace({ onLogout, onRecovery }) {
       });
       setConfirmation(null);
       await refresh();
-      report('Draft deleted');
+      report('Route deleted');
     } catch (e) {
       report(e.message, true);
     } finally {
@@ -376,7 +376,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                 <div className="filter-tabs" aria-label="Route filter">
                   {[
                     ['all', 'All'],
-                    ['http', 'Websites'],
+                    ['http', 'Services'],
                     ['static', 'Static'],
                     ['tcp', 'TCP'],
                     ['udp', 'UDP'],
@@ -404,6 +404,12 @@ export default function Workspace({ onLogout, onRecovery }) {
                         withBorder={true}
                         p="md"
                       >
+                        <Switch
+                          checked={route.published}
+                          disabled={working || !edgeReady}
+                          aria-label={`${route.published ? 'Disable' : 'Enable'} ${route.name}`}
+                          onChange={() => action(route, route.published ? 'disable' : 'publish')}
+                        />
                         <div className="service-icon">
                           <Icon size={20} />
                         </div>
@@ -424,13 +430,6 @@ export default function Workspace({ onLogout, onRecovery }) {
                           </span>
                         </Button>
                         <div className="route-actions">
-                          <span className="status-text">
-                            {route.published
-                              ? edgeReady && state.edge.inSync
-                                ? 'Published'
-                                : 'Unverified'
-                              : 'Draft'}
-                          </span>
                           <Button
                             className="secondary small"
                             onClick={() =>
@@ -455,30 +454,9 @@ export default function Workspace({ onLogout, onRecovery }) {
                                   Sync files
                                 </Button>
                               )}
-                              <Button
-                                className="secondary small"
-                                disabled={working || !edgeReady}
-                                onClick={() => action(route, 'disable')}
-                              >
-                                Disable
-                              </Button>
                             </>
                           ) : (
                             <>
-                              <Button
-                                className="secondary small"
-                                disabled={!edgeReady || working}
-                                onClick={() =>
-                                  setWizard({
-                                    kind: 'route',
-                                    initial: route,
-                                    publishOnly: true,
-                                  })
-                                }
-                              >
-                                Publish
-                                <ArrowUpRight size={14} />
-                              </Button>
                               <Button
                                 className="icon-button"
                                 onClick={() => setConfirmation(route)}
@@ -706,7 +684,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                   </div>
                   {d.staging && (
                     <p className="hint">
-                      Test certificate. Disable staging in Settings to publish.
+                      Test certificate. Disable staging in Settings to enable routes.
                     </p>
                   )}
                   {d.error && (
@@ -781,7 +759,7 @@ export default function Workspace({ onLogout, onRecovery }) {
         </main>
       </div>
       {confirmation && (
-        <Modal title="Delete draft?" onClose={() => !working && setConfirmation(null)}>
+        <Modal title="Delete route?" onClose={() => !working && setConfirmation(null)}>
           <p>{confirmation.name}</p>
           <div className="dialog-actions">
             <Button className="secondary" disabled={working} onClick={() => setConfirmation(null)}>

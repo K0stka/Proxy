@@ -60,20 +60,22 @@ export function Wizard({
           proxy
         </div>
       </header>
-      <div className="wizard-body">
-        <nav className="wizard-steps" aria-label="Progress">
-          <Stepper
-            active={step}
-            orientation={mobile ? 'horizontal' : 'vertical'}
-            size="sm"
-            iconSize={28}
-            allowNextStepsSelect={false}
-          >
-            {steps.map((label) => (
-              <Stepper.Step key={label} label={label} allowStepSelect={false} />
-            ))}
-          </Stepper>
-        </nav>
+      <div className={`wizard-body${steps.length === 1 ? ' single-page' : ''}`}>
+        {steps.length > 1 && (
+          <nav className="wizard-steps" aria-label="Progress">
+            <Stepper
+              active={step}
+              orientation={mobile ? 'horizontal' : 'vertical'}
+              size="sm"
+              iconSize={28}
+              allowNextStepsSelect={false}
+            >
+              {steps.map((label) => (
+                <Stepper.Step key={label} label={label} allowStepSelect={false} />
+              ))}
+            </Stepper>
+          </nav>
+        )}
         <main className="wizard-main">
           <div className="wizard-heading">
             <span className="hint">{title}</span>
@@ -110,7 +112,7 @@ export function Wizard({
                 Cancel
               </Button>
               <Group gap="sm">
-                {step > 0 && (
+                {step > 0 && steps.length > 1 && (
                   <Button
                     type="button"
                     className="secondary"
@@ -375,6 +377,7 @@ function Summary({ route }) {
 }
 export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = false }) {
   const { step, setStep } = useNavigation();
+  const editing = Boolean(initial.id) && !publishOnly;
   const [route, setRoute] = useWizardField('route', {
     ...initial,
     staticSite: initial.staticSite ?? null,
@@ -408,8 +411,10 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
       [key]: value,
     }));
   const steps = publishOnly
-    ? ['Review & publish']
-    : ['Route type', 'Destination', 'Address', 'Review'];
+    ? ['Review & enable']
+    : editing
+      ? ['Route settings']
+      : ['Details', 'Destination', 'Address', 'Review'];
   const endpoints = serviceEndpoints(state.discovery.services, route.kind);
   const reviewed = {
     ...route,
@@ -433,11 +438,9 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
           method: initial.id ? 'PUT' : 'POST',
           body: reviewed,
         });
-      await onSaved(
-        publishOnly ? 'Published' : initial.published ? 'Changes applied' : 'Draft saved',
-      );
+      await onSaved(publishOnly ? 'Enabled' : 'Route saved');
     } catch (e) {
-      if (!publishOnly && [400, 409].includes(e.status)) setStep(2);
+      if (!publishOnly && !editing && [400, 409].includes(e.status)) setStep(2);
       setError(e.message);
     } finally {
       setBusy(false);
@@ -477,9 +480,9 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
   const validFiles = route.kind !== 'static' || Boolean(check);
   return (
     <Wizard
-      title={publishOnly ? 'Publish route' : initial.id ? 'Edit route' : 'New route'}
+      title={publishOnly ? 'Enable route' : initial.id ? 'Edit route' : 'New route'}
       steps={steps}
-      step={step}
+      step={editing ? 0 : step}
       onStep={(s) => {
         setError('');
         setStep(s);
@@ -499,21 +502,33 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
       }
       submitLabel={
         publishOnly
-          ? 'Publish publicly'
+          ? 'Enable route'
           : initial.published
             ? 'Apply changes'
             : initial.id
               ? 'Save changes'
-              : 'Create draft'
+              : 'Create disabled route'
       }
       error={error}
-      canContinue={!(step === 1 && !validFiles) && (!publishOnly || state.edge.available)}
+      canContinue={
+        !((editing || step === 1) && !validFiles) && (!publishOnly || state.edge.available)
+      }
     >
-      {!publishOnly && step === 0 && (
+      {!publishOnly && (editing || step === 0) && (
         <>
+          <TextInput
+            required
+            maxLength={80}
+            autoComplete="off"
+            value={route.name}
+            onChange={(e) => set('name', e.target.value)}
+            placeholder="Portfolio"
+            label="Name"
+          />
+          <h2>Type</h2>
           <div className="type-grid">
             {[
-              ['http', 'Website', Globe, 'Proxy a web service'],
+              ['http', 'Service', Globe, 'Proxy a web service'],
               ['static', 'Static site', FolderOpen, 'Serve a folder'],
               ['tcp', 'TCP', Cable, 'Forward a TCP port'],
               ['udp', 'UDP', Radio, 'Forward a port or block'],
@@ -547,19 +562,10 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
               </Button>
             ))}
           </div>
-          <TextInput
-            required
-            maxLength={80}
-            autoComplete="off"
-            value={route.name}
-            onChange={(e) => set('name', e.target.value)}
-            placeholder="Portfolio"
-            label={'Name'}
-          />
         </>
       )}
       {!publishOnly &&
-        step === 1 &&
+        (editing || step === 1) &&
         (route.kind === 'static' ? (
           <SitePicker
             value={route.staticSite}
@@ -666,7 +672,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
             )}
           </>
         ))}
-      {!publishOnly && step === 2 && (
+      {!publishOnly && (editing || step === 2) && (
         <>
           {isWebsite(route) ? (
             <div className="field-pair">
@@ -674,7 +680,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                 <TextInput
                   value={subdomain}
                   onChange={(e) => setSubdomain(e.target.value.toLowerCase())}
-                  pattern="[a-zA-Z0-9-]*"
+                  pattern={'[a-zA-Z0-9\\-]*'}
                   placeholder="Leave empty for apex"
                   label={'Subdomain'}
                 />
@@ -738,6 +744,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
           )}
           <Disclosure
             className="route-options"
+            defaultOpen={editing}
             title={route.kind === 'static' ? 'Access restrictions' : 'More options'}
           >
             <section className="option-group">
@@ -807,7 +814,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
           </Disclosure>
         </>
       )}
-      {(publishOnly || step === 3) && (
+      {(publishOnly || (!editing && step === 3)) && (
         <>
           <Summary route={reviewed} />
           <p className="review-note">
@@ -815,7 +822,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
               ? 'This opens public ingress.'
               : initial.published
                 ? 'Changes apply to the live route.'
-                : 'Saved as a draft. Publish it when ready.'}
+                : 'Saved disabled. Enable it from Routes when ready.'}
           </p>
           {!state.edge.available && (publishOnly || initial.published) && (
             <Alert className="notice error" color="red" variant="light">

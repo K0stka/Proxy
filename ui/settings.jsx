@@ -187,7 +187,7 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
               >
                 <Switch
                   label="Use test certificates"
-                  description="Test certificates cannot publish HTTPS routes."
+                  description="Test certificates cannot enable HTTPS routes."
                   checked={preferences.certificates.staging}
                   onChange={(e) => certificate('staging', e.target.checked)}
                 />

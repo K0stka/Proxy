@@ -304,12 +304,10 @@ a:hover {
 .discovered-service.proxied,
 .route-row.proxy-disabled {
   border-color: var(--mantine-color-gray-6);
-  background: var(--mantine-color-gray-light);
 }
 .discovered-service.proxy-enabled,
 .route-row.proxy-enabled {
-  border-color: var(--mantine-color-cyan-6);
-  background: var(--mantine-color-cyan-light);
+  border-color: var(--mantine-primary-color-filled);
 }
 .service-heading strong {
   overflow-wrap: anywhere;
@@ -464,6 +462,14 @@ a:hover {
   margin: 0 auto;
   padding: 48px 32px;
   align-items: start;
+}
+.wizard-body.single-page {
+  grid-template-columns: minmax(0, 760px);
+  max-width: 824px;
+  gap: 0;
+}
+.single-page .wizard-actions {
+  position: static;
 }
 .wizard-steps {
   position: sticky;

@@ -7,7 +7,7 @@ export const destination = (route) =>
   route.kind === 'static'
     ? `/sites/${route.staticSite?.directory ?? ''}`
     : `${route.targetHost.includes(':') ? `[${route.targetHost}]` : route.targetHost}:${route.kind === 'udp' ? (route.portStart === route.portEnd ? route.portStart : `${route.portStart}–${route.portEnd}`) : route.targetPort}`;
-export const kindName = { http: 'Website', static: 'Static site', tcp: 'TCP', udp: 'UDP' };
+export const kindName = { http: 'Service', static: 'Static site', tcp: 'TCP', udp: 'UDP' };
 export const portLabel = (port) =>
   `${port.hostPort || 'Container only'} (${port.containerPort}) / ${port.protocol.toUpperCase()}`;
 export const visibleServicePorts = (service) =>
