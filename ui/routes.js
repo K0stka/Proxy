@@ -12,7 +12,7 @@ export const routeSubdomain = (name) =>
 export const listener = (route) =>
   isWebsite(route)
     ? route.hostname
-    : `${route.ingressIP}:${route.portStart}${route.portEnd !== route.portStart ? `–${route.portEnd}` : ''}`;
+    : `${route.ingressIP.includes(':') ? `[${route.ingressIP}]` : route.ingressIP}:${route.portStart}${route.portEnd !== route.portStart ? `–${route.portEnd}` : ''}`;
 export const destination = (route) =>
   route.kind === 'static'
     ? `/sites/${route.staticSite?.directory ?? ''}`

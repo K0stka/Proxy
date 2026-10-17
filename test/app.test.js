@@ -431,15 +431,16 @@ test('drafts stay private; failed publish and live edits preserve working state'
     502,
   );
   assert.equal(f.store.snapshot().routes[0].name, created.name);
+  assert.equal((await f.request(`/api/routes/${created.id}`, { method: 'DELETE' })).status, 502);
+  assert(f.store.snapshot().routes[0].published);
   f.setFail(false);
-  assert.equal((await f.request(`/api/routes/${created.id}`, { method: 'DELETE' })).status, 409);
-  assert.equal(
-    (await f.request(`/api/routes/${created.id}/disable`, { method: 'POST' })).status,
-    200,
-  );
-  assert(!f.store.snapshot().routes[0].published);
   assert.equal((await f.request(`/api/routes/${created.id}`, { method: 'DELETE' })).status, 200);
   assert.equal(f.store.snapshot().routes.length, 0);
+  assert.equal(f.applies.at(-1).routes.length, 0);
+  const draft = await (await f.request('/api/routes', { method: 'POST', body: route() })).json();
+  const appliesBeforeDelete = f.applies.length;
+  assert.equal((await f.request(`/api/routes/${draft.id}`, { method: 'DELETE' })).status, 200);
+  assert.equal(f.applies.length, appliesBeforeDelete);
 });
 test('persistent SQLite state survives reopen and old audit tables are removed', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'proxy-store-'));

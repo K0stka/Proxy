@@ -471,12 +471,13 @@ export function createApp({
               return replacement;
             }
             if (!operation && req.method === 'DELETE') {
-              if (route.published) throw new Problem(409, 'Disable this route before deleting it');
-              store.transaction(() => {
-                store.set('snapshot', {
-                  ...snapshot,
-                  routes: snapshot.routes.filter((r) => r.id !== id),
-                });
+              const next = {
+                ...snapshot,
+                routes: snapshot.routes.filter((r) => r.id !== id),
+              };
+              if (route.published) await apply(next);
+              else store.transaction(() => {
+                store.set('snapshot', next);
               });
               return { ok: true };
             }

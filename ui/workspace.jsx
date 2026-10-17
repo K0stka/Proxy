@@ -373,6 +373,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                     .filter((r) => filter === 'all' || r.kind === filter)
                     .map((route) => {
                       const Icon = icons[route.kind];
+                      const forwarding = ['tcp', 'udp'].includes(route.kind);
                       return (
                         <Paper
                           className={`route-row ${route.published ? 'proxy-enabled' : 'proxy-disabled'}`}
@@ -401,10 +402,13 @@ export default function Workspace({ onLogout, onRecovery }) {
                           >
                             <strong>{route.name}</strong>
                             <span>
+                              {forwarding && `${route.kind.toUpperCase()}: `}
                               {listener(route)}
                               <span className="inline-arrow">→</span>
                               <span title={destination(route)}>
-                                {route.source?.container ?? destination(route)}
+                                {forwarding
+                                  ? destination(route)
+                                  : (route.source?.container ?? destination(route))}
                               </span>
                             </span>
                           </Button>
@@ -423,18 +427,17 @@ export default function Workspace({ onLogout, onRecovery }) {
                                 <Pencil size={17} />
                               </Button>
                             </Tooltip>
-                            {!route.published && (
-                              <Tooltip label="Delete proxy">
-                                <Button
-                                  className="icon-button"
-                                  color="red.6"
-                                  onClick={() => setConfirmation(route)}
-                                  aria-label={`Delete ${route.name}`}
-                                >
-                                  <Trash2 size={17} />
-                                </Button>
-                              </Tooltip>
-                            )}
+                            <Tooltip label="Delete proxy">
+                              <Button
+                                className="icon-button"
+                                color="red.6"
+                                disabled={working || (route.published && !edgeReady)}
+                                onClick={() => setConfirmation(route)}
+                                aria-label={`Delete ${route.name}`}
+                              >
+                                <Trash2 size={17} />
+                              </Button>
+                            </Tooltip>
                           </div>
                         </Paper>
                       );
