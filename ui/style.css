@@ -1463,20 +1463,6 @@ dialog > p {
   }
 }
 
-.configuration-card {
-  padding: 20px;
-  margin: 20px 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-}
-.configuration-card .section-title {
-  margin-bottom: 18px;
-}
-.configuration-card .section-title strong {
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
 .domain-input {
   display: flex;
   gap: 12px;

@@ -15,6 +15,7 @@ services:
       <<: *deployment
       PROXY_CERT_POLICY: /cert-policy/policy.db
       PROXY_BOOTSTRAP_TOKEN: ${PROXY_BOOTSTRAP_TOKEN:-}
+      PROXY_KOMODO_URL: ${PROXY_KOMODO_URL:-}
       PROXY_KOMODO_KEY: ${PROXY_KOMODO_KEY:-}
       PROXY_KOMODO_SECRET: ${PROXY_KOMODO_SECRET:-}
     restart: unless-stopped

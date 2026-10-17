@@ -44,6 +44,11 @@ async function fixture(t, { empty = false } = {}) {
     development: true,
     edgeRequest: async (_socket, path, options) => {
       if (path === '/status') return { available: true };
+      if (path === '/probe') {
+        assert.equal(options.body.host, '100.101.102.103');
+        assert.equal(options.body.port, 3000);
+        return { reachable: true };
+      }
       if (path === '/sites')
         return { folders: [{ directory: 'public', hasIndex: true }], error: null };
       if (path === '/sites/inspect') {
@@ -126,6 +131,24 @@ test('settings are private, SQLite-backed, independently applied and reject chan
     initial = settingsFromPolicy(policy());
   assert.deepEqual((await (await f.request('/api/state')).json()).settings, initial);
   assert.equal(
+    (
+      await f.request('/api/settings', {
+        method: 'PUT',
+        body: { ...initial, komodo: { url: 'https://other.example.net', servers: [] } },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await f.request('/api/komodo/servers', {
+        method: 'POST',
+        body: { url: 'https://other.example.net' },
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
     (await f.request('/api/settings', { method: 'PUT', body: initial, authenticated: false }))
       .status,
     401,
@@ -151,8 +174,7 @@ test('settings are private, SQLite-backed, independently applied and reject chan
   );
   const changed = {
     ...initial,
-    komodo: { ...initial.komodo, url: 'http://100.101.102.104:9120' },
-    maxRangePorts: 512,
+    certificates: { ...initial.certificates, propagationSeconds: 90 },
   };
   assert.equal((await f.request('/api/settings', { method: 'PUT', body: changed })).status, 200);
   assert.deepEqual(f.store.get('settings'), changed);
@@ -161,14 +183,17 @@ test('settings are private, SQLite-backed, independently applied and reject chan
     domains: changed.domains,
     certificates: changed.certificates,
   });
-  assert.equal(f.app.discovery.policy.komodo.url, changed.komodo.url);
   f.setFail(true);
   assert.equal((await f.request('/api/settings', { method: 'PUT', body: initial })).status, 502);
   assert.deepEqual(f.store.get('settings'), changed);
   f.setFail(false);
-  assert.equal((await f.request('/api/routes', { method: 'POST', body: route() })).status, 200);
+  const created = await (await f.request('/api/routes', { method: 'POST', body: route() })).json();
+  assert(
+    (await (await f.request('/api/routes/' + created.id + '/probe', { method: 'POST' })).json())
+      .reachable,
+  );
   assert.equal(
-    (await f.request('/api/settings', { method: 'PUT', body: { ...changed, targets: [] } })).status,
+    (await f.request('/api/settings', { method: 'PUT', body: { ...changed, domains: [] } })).status,
     400,
   );
   assert.deepEqual(f.store.get('settings'), changed);
@@ -267,12 +292,19 @@ test('persistent SQLite state survives reopen and old audit tables are removed',
   t.after(() => rm(directory, { recursive: true, force: true }));
   let store = new Store(join(directory, 'state.db'));
   store.set('snapshot', { routes: [route()], pages: defaultPages });
-  store.set('settings', settingsFromPolicy(policy()));
+  store.set('settings', {
+    ...settingsFromPolicy(policy()),
+    komodo: { url: 'http://100.101.102.103:9120', servers: [{ id: 'home' }] },
+    targets: [{ address: '100.101.102.103' }],
+    ingressPorts: [],
+    maxRangePorts: 1024,
+  });
   store.db.exec("CREATE TABLE audit (detail TEXT); INSERT INTO audit VALUES ('old entry')");
   store.close();
   store = new Store(join(directory, 'state.db'));
   assert.equal(store.snapshot().routes.length, 1);
   assert.deepEqual(store.get('settings'), settingsFromPolicy(policy()));
+  assert(!JSON.stringify(store.get('settings')).includes('100.101.102.103'));
   assert.equal(
     store.db.prepare("SELECT name FROM sqlite_master WHERE name='audit'").get(),
     undefined,

@@ -550,7 +550,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                       onChange={(e) =>
                         setRoute((r) => ({ ...r, targetHost: e.target.value, source: null }))
                       }
-                      list="approved-targets"
+                      list="discovered-servers"
                     />
                   </label>
                   {route.kind !== 'udp' && (
@@ -573,12 +573,14 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                     </label>
                   )}
                 </div>
-                <datalist id="approved-targets">
-                  {state.policy.targets.map((t) => (
-                    <option key={t.address} value={t.address}>
-                      {t.name}
-                    </option>
-                  ))}
+                <datalist id="discovered-servers">
+                  {state.discovery.servers
+                    .filter((server) => server.address)
+                    .map((t) => (
+                      <option key={t.id} value={t.address}>
+                        {t.name}
+                      </option>
+                    ))}
                 </datalist>
               </>
             )}

@@ -2,7 +2,6 @@ import http from 'node:http';
 import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { join, resolve, extname, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import net from 'node:net';
 import { Auth } from './auth.js';
 import { Discovery } from './komodo.js';
 import {
@@ -11,7 +10,6 @@ import {
   routeSchema,
   pagesSchema,
   validateSnapshot,
-  allowedTarget,
   snapshotHash,
   staticSiteSchema,
   settingsSchema,
@@ -31,7 +29,9 @@ export function createApp({
   certStatusDir,
   certRequestDir,
   development = false,
-  discovery = new Discovery(policy),
+  discovery = new Discovery({
+    localAddresses: async () => (await edgeRequest(edgeSocket, '/network')).addresses,
+  }),
   edgeRequest = unixRequest,
   distDir = resolve('dist'),
 }) {
@@ -103,7 +103,6 @@ export function createApp({
       throw new Problem(503, 'Could not persist change; previous configuration restored');
     }
     policy = nextPolicy;
-    if (policyHash(oldPolicy) !== policyHash(policy)) discovery.configure(policy);
     return result;
   }
   async function certStatus() {
@@ -178,16 +177,6 @@ export function createApp({
             policy: {
               origin: policy.origin,
               ingressIPs: policy.ingressIPs,
-              ingressPorts: policy.ingressPorts,
-              targets: policy.targets,
-              maxRangePorts: policy.maxRangePorts,
-              forbiddenTargetPorts: policy.forbiddenTargetPorts,
-              servers: policy.komodo.servers.map(({ id, name, address, local }) => ({
-                id,
-                name,
-                address,
-                local,
-              })),
             },
             development,
           });
@@ -203,17 +192,6 @@ export function createApp({
               return settingsFromPolicy(policy);
             }),
           );
-          return;
-        }
-        if (path === '/api/komodo/servers' && req.method === 'POST') {
-          const input = await bodyJSON(req);
-          if (typeof input.url !== 'string') throw new Problem(400, 'Enter a Core URL');
-          const probe = effectivePolicy(
-            deployment,
-            { ...settingsFromPolicy(policy), komodo: { url: input.url, servers: [] } },
-            { development },
-          );
-          json(res, await discovery.listServers(probe));
           return;
         }
         if (path === '/api/discovery/refresh' && req.method === 'POST') {
@@ -284,28 +262,11 @@ export function createApp({
                 return edge('/sites/inspect', { method: 'POST', body: route.staticSite });
               if (route.kind === 'udp')
                 return { reachable: null, message: 'UDP needs a protocol-specific external check' };
-              if (!allowedTarget(policy, route.targetHost, route.targetPort))
-                throw new Problem(403, 'Destination is no longer approved');
-              const reachable = await new Promise((resolve) => {
-                const socket = net.connect({
-                  host: route.targetHost,
-                  port: route.targetPort,
-                  timeout: 3000,
-                });
-                const finish = (value) => {
-                  socket.destroy();
-                  resolve(value);
-                };
-                socket.once('connect', () => finish(true));
-                socket.once('error', () => finish(false));
-                socket.once('timeout', () => finish(false));
+              return edge('/probe', {
+                method: 'POST',
+                body: { host: route.targetHost, port: route.targetPort },
+                timeout: 5000,
               });
-              return {
-                reachable,
-                message: reachable
-                  ? 'Backend TCP connection succeeded; public ingress is not verified'
-                  : 'Backend TCP connection failed',
-              };
             }
             if (operation === 'sync' && req.method === 'POST') {
               if (route.kind !== 'static' || !route.published)
@@ -364,7 +325,7 @@ export function createApp({
         if (path === '/api/certificates/retry' && req.method === 'POST') {
           const input = await bodyJSON(req),
             domain = policy.domains.find((d) => d.name === input.domain);
-          if (!domain) throw new Problem(400, 'Domain is not approved in host policy');
+          if (!domain) throw new Problem(400, 'Domain is not configured');
           await mkdir(certRequestDir, { recursive: true });
           const file = join(certRequestDir, `${domain.name}.json`),
             temp = `${file}.${randomUUID()}.tmp`;

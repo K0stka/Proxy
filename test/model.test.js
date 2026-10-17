@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { policy, route, snapshot } from './fixtures.js';
-import { validateSnapshot, validatePolicy, allowedTarget } from '../shared/model.js';
+import { validateSnapshot, validatePolicy, safeTarget } from '../shared/model.js';
 
 test('HTTP route accepts apex, second zone and IDNA, but rejects nested wildcard names and injection', () => {
   for (const hostname of ['krychlic.com', 'a.example.net', 'app.krychlic.com', 'těst.krychlic.com'])
@@ -25,12 +25,13 @@ test('strict schema rejects arbitrary NGINX directives and unknown fields', () =
     validateSnapshot(policy(), snapshot([route({ sourceCIDRs: ['any; allow all'] })])),
   );
 });
-test('target policy rejects management endpoints, unapproved addresses and port gaps', () => {
+test('routes accept custom IPs and ranges without approvals but reject metadata and management ports', () => {
   const p = policy();
-  assert(!allowedTarget(p, '169.254.169.254', 80));
-  assert(!allowedTarget(p, '127.0.0.1', 3001));
-  assert(!allowedTarget(p, '100.101.102.103', 3001));
-  assert(!allowedTarget(p, '100.101.102.103', 49999, 50100));
+  assert(!safeTarget('169.254.169.254', 80));
+  assert(!safeTarget('127.0.0.1', 3001));
+  assert(!safeTarget('100.101.102.103', 3001));
+  assert(safeTarget('100.101.102.103', 49999, 50100));
+  assert(safeTarget('192.168.1.42', 8080));
   assert.throws(() =>
     validateSnapshot(p, snapshot([route({ targetHost: '127.0.0.1', targetPort: 3001 })])),
   );
@@ -71,9 +72,11 @@ test('UDP preserves range and detects overlaps independently of TCP', () => {
     2,
   );
   assert.throws(() => validateSnapshot(policy(), snapshot([route({ ...udp, portEnd: 49999 })])));
-  const p = policy();
-  p.maxRangePorts = 10;
-  assert.throws(() => validateSnapshot(p, snapshot([udp])), /budget/);
+  assert.throws(
+    () =>
+      validateSnapshot(policy(), snapshot([route({ ...udp, portStart: 20000, portEnd: 22000 })])),
+    /budget/,
+  );
 });
 test('upstream TLS requires a name; UDP cannot accept TLS or PROXY protocol', () => {
   assert.throws(() => validateSnapshot(policy(), snapshot([route({ upstreamTLS: true })])));
@@ -95,17 +98,6 @@ test('host policy denies insecure management origins and metadata addresses', ()
   ])
     assert.throws(() => validatePolicy({ ...p, origin }));
   assert.throws(() =>
-    validatePolicy({
-      ...p,
-      origin: 'https://example.net',
-      targets: [{ name: 'metadata', address: '169.254.169.254', ports: [{ from: 80, to: 80 }] }],
-    }),
-  );
-  assert.throws(() =>
-    validatePolicy({
-      ...p,
-      origin: 'https://example.net',
-      komodo: { ...p.komodo, url: 'http://example.net' },
-    }),
+    validatePolicy({ ...p, origin: 'https://example.net', ingressIPs: ['169.254.169.254'] }),
   );
 });

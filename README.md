@@ -44,11 +44,12 @@ Paste the variables from [.env.example](.env.example) into the stack's **Environ
 | `PROXY_SITES_PATH`                         | Absolute VPS directory containing your website folders; create it before deployment                          |
 | `PROXY_DATA_PATH`                          | Optional private data directory; requires `compose.paths.yaml` as described below                            |
 | `PROXY_BOOTSTRAP_TOKEN`                    | Random enrollment token of at least 32 characters                                                            |
-| `PROXY_KOMODO_KEY` / `PROXY_KOMODO_SECRET` | Dedicated Core account with Read access to the two servers                                                   |
+| `PROXY_KOMODO_URL`                         | Core URL reachable from the proxy: verified HTTPS, or HTTP over a literal Tailscale IPv4 address             |
+| `PROXY_KOMODO_KEY` / `PROXY_KOMODO_SECRET` | Dedicated Core account; every server it can Read is discovered automatically                                 |
 | `PROXY_CLOUDFLARE_TOKEN`                   | Cloudflare token with Zone Read and DNS Edit for the required zones                                          |
 | `PROXY_CLOUDFLARE_TOKENS`                  | Optional JSON token overrides per domain; leave `'{}'` for a single token                                    |
 
-Only deployment values and credentials belong here. Configure the Core URL, server mappings, approved destinations and ports, public TCP/UDP blocks, domains and certificate preferences in **Settings → Connections & routing → Configure**. These settings are stored in SQLite and apply without recreating containers. Changes to environment variables require a stack recreation.
+Deployment values, the Core URL and credentials belong here. The proxy discovers every server visible to the Core account and its published container ports automatically. Configure domains and certificate preferences through **Domains → Manage domains**; routes, UDP blocks, static sites and error pages stay in the app/SQLite. There are no separate server mappings, destination allowlists or preapproved public port blocks. Environment changes require a stack recreation.
 
 ### Choose host directories (optional)
 
@@ -102,7 +103,7 @@ Deploy/redeploy from Komodo, or run `docker compose up -d --build` with the same
 sudo tailscale serve --bg http://127.0.0.1:3001
 ```
 
-The Serve URL must match `PROXY_ORIGIN`. Limit access to administrators with Tailscale grants. Do not enable Funnel. The management port is bound to VPS loopback; NGINX binds public traffic only on approved ingress addresses. Enroll with `PROXY_BOOTSTRAP_TOKEN` and store the recovery code. Use **Set up proxy** to connect Core, load the two server IDs and set their reachable IPs, approve destination host ports and public TCP/UDP blocks, then add your domains and ACME email. Nothing is prepopulated with example services.
+The Serve URL must match `PROXY_ORIGIN`. Limit access to administrators with Tailscale grants. Do not enable Funnel. The management port is bound to VPS loopback; NGINX binds public traffic only on configured ingress addresses. Enroll with `PROXY_BOOTSTRAP_TOKEN` and store the recovery code. Open **Services** to see discovered servers and their container ports. Add your domains and ACME email through **Domains → Manage domains**, then connect services to routes.
 
 ### 4. DNS, certificates, then publish
 
@@ -110,13 +111,23 @@ Point the apex and `*` records for each domain at the VPS, initially **DNS-only*
 
 In **Domains**, confirm a successful staging check. Open **Domains → Manage**, turn off **Test certificates (staging)** and apply. The worker obtains production certificates and the edge reloads automatically. Wait for a production certificate, then use **Services → Connect → Create draft → Publish**. Staging certificates cannot be used to publish TLS routes. Keep torrent administration unpublished and access it directly through Tailscale.
 
-Open TCP 80/443 and the approved custom ingress ranges in the host and provider firewalls. The app deliberately cannot edit firewalls. Test ingress from a different network; an edge listener and a successful backend check do not verify the public path. UDP needs a real protocol-specific test.
+Open TCP 80/443 and the published custom ingress ranges in the host and provider firewalls. The app deliberately cannot edit firewalls. Test ingress from a different network; an edge listener and a successful backend check do not verify the public path. UDP needs a real protocol-specific test.
+
+## Automatic discovery
+
+Set `PROXY_KOMODO_URL`, `PROXY_KOMODO_KEY` and `PROXY_KOMODO_SECRET` in the Komodo stack environment, then recreate the containers. No server list is configured in the proxy. Komodo's Read permissions determine which servers appear. Polling discovers newly accessible servers and removes inaccessible ones after a successful list refresh; a Core outage retains the previous inventory with a stale/error indication.
+
+The proxy uses each server's Komodo address (or external address), resolves DNS to literal IPs, and prefers available Tailscale IPv4 addresses. Configure those addresses in Komodo to be reachable from the proxy host. Core-only Docker names and remote loopback addresses cannot provide a reachable backend endpoint. Explicit published IP bindings are used directly; wildcard bindings use the discovered host address. Local-host detection uses the edge's network interfaces, and only local services may use loopback bindings. API credentials are sent only to Core, never to discovered servers or DNS-selected backends.
+
+Each server's read failure is shown separately and does not hide healthy servers. Discovery never publishes anything or changes a saved route's destination automatically. Container endpoint changes require an explicit route update. Custom IP:port routes also work without adding a destination approval. The controller and edge reject unsafe metadata/link-local/multicast addresses and protected management ports, enforce listener conflict and stream-size limits, and keep failed updates from replacing active traffic. Host/Tailscale/provider firewalls still determine network reachability.
+
+Upgrading from the earlier manual setup preserves routes, domains, file rules and authentication. Obsolete connection/mapping/allowlist settings are removed from SQLite; the Core URL must now be supplied as `PROXY_KOMODO_URL`. Keep your existing data directory and volumes.
 
 ## Everyday use
 
 **Routes** is the main workspace: connect a public hostname or port to a destination. **Domains** shows shared certificate coverage. **Services** lists Komodo endpoints, and **Files** lists mounted website folders; both are optional shortcuts into the route wizard. You can create either type directly through Routes → New route.
 
-- **UDP blocks:** choose UDP → Address → Port block, then enter start/end ports. Every public port forwards to the identical destination port. Approve the block in Settings → Access first.
+- **UDP blocks:** choose UDP → Address → Port block, then enter start/end ports. Every public port forwards to the identical destination port. Enter the destination IP and public start/end ports once in the route wizard. No separate port approval is required; the fixed total limit is 1,024 published stream ports.
 
 - **Create or edit:** follow the full-page wizard, review, then save. New routes stay drafts until published. Live edits apply only after NGINX validates and activates them; failed changes retain the working configuration.
 - **Disable:** new connections stop after application. Existing connections may drain for up to 30 seconds. This is not an immediate connection kill switch.
@@ -147,7 +158,7 @@ In **Settings → Error pages**, choose a directory for the shared 404 and 502 p
 
 ## State, security and updates
 
-Routes, connections, server mappings, destination/port rules, domains, certificate preferences, folder rules, page selections, passkey public keys, sessions and recovery-code hashes live in **`/state/proxy.db`** (`control_state`). This is the source of truth.
+Routes, domains, certificate preferences, folder rules, page selections, passkey public keys, sessions and recovery-code hashes live in **`/state/proxy.db`** (`control_state`). This is the source of truth.
 
 The edge caches its last working routes and settings in **`/runtime/edge.db`** (`edge_state`) so traffic resumes without the controller. The certificate worker reads only domains and certificate preferences from **`/cert-policy/policy.db`** (`certificate_policy`, read-only in the worker), maintained by the controller. It cannot read the authentication database or Core credentials. Both caches can be reconstructed from the controller's saved configuration.
 
@@ -155,7 +166,7 @@ Generated NGINX configuration/error HTML, certificate status/request files, ACME
 
 The controller uses Node's built-in SQLite; React is compiled into static files served by that controller. NGINX handles the public data path. The edge independently validates typed requests over a group-restricted Unix socket. There is no arbitrary configuration editor, shell execution endpoint, public admin API, Docker socket, privileged container, or NET_ADMIN capability.
 
-The edge launcher briefly uses identity/capability setup permissions, drops to UID 10002, and removes everything from the capability bounding set except NET_BIND_SERVICE before starting Node or NGINX. Control runs as UID 10001 and Certbot as UID 10003. Root filesystems are read-only. Host networking is used only by the edge to support dynamic listeners; destination policy and host firewall rules remain necessary boundaries.
+The edge launcher briefly uses identity/capability setup permissions, drops to UID 10002, and removes everything from the capability bounding set except NET_BIND_SERVICE before starting Node or NGINX. Control runs as UID 10001 and Certbot as UID 10003. Root filesystems are read-only. Host networking is used only by the edge to support dynamic listeners; destination safety checks and host firewall rules remain necessary boundaries.
 
 Back up `control_state`, `edge_state`, `certbot_state`, `tls`, `sites/` and the Komodo stack environment to encrypted storage. Stop the stack before a raw volume copy so SQLite's database/WAL are consistent, or use SQLite's online backup facility. **Export configuration is not a full backup:** it excludes passkeys, sessions, recovery data, certificates and secrets. Restore the matching state volumes together, preserve UIDs/GID, then verify routing and renewal. Do not run `docker compose down --volumes` on your deployed stack.
 

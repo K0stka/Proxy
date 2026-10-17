@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { defaultPages, parse, snapshotSchema } from './model.js';
+import { defaultPages, parse, snapshotSchema, settingsFromPolicy } from './model.js';
 
 export class Store {
   constructor(file) {
@@ -10,6 +10,12 @@ export class Store {
     this.db.exec(
       'PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS data (key TEXT PRIMARY KEY, value TEXT NOT NULL); DROP TABLE IF EXISTS audit',
     );
+    const settings = this.get('settings');
+    if (
+      settings &&
+      ['targets', 'ingressPorts', 'komodo', 'maxRangePorts'].some((key) => key in settings)
+    )
+      this.set('settings', settingsFromPolicy(settings));
   }
   get(key, fallback = null) {
     const row = this.db.prepare('SELECT value FROM data WHERE key=?').get(key);

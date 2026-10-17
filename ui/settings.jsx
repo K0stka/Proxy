@@ -4,15 +4,7 @@ import { Plus, KeyRound, Trash2, Download, RefreshCw } from 'lucide-react';
 import { api, setCSRF } from './api.js';
 const when = (value) =>
   new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-export default function Settings({
-  state,
-  refresh,
-  report,
-  onRecovery,
-  onLogout,
-  onEditPages,
-  onConfigure,
-}) {
+export default function Settings({ state, refresh, report, onRecovery, onLogout, onEditPages }) {
   const [keys, setKeys] = useState([]),
     [busy, setBusy] = useState(false);
   async function load() {
@@ -97,29 +89,6 @@ export default function Settings({
         </section>
       </div>
       <div>
-        <section className="settings-block">
-          <div className="section-title">
-            <h3>Connections & routing</h3>
-            <button className="secondary" onClick={onConfigure}>
-              Configure
-            </button>
-          </div>
-          <p>{state.settings.komodo.url || 'Komodo is not connected.'}</p>
-          <div className="policy-row">
-            <strong>Servers</strong>
-            <span>{state.settings.komodo.servers.length}</span>
-          </div>
-          {state.policy.targets.map((t) => (
-            <div className="policy-row" key={t.address}>
-              <strong>{t.name}</strong>
-              <code>{t.address}</code>
-              <small>
-                {t.ports.map((p) => (p.from === p.to ? p.from : `${p.from}–${p.to}`)).join(', ')}
-              </small>
-            </div>
-          ))}
-          <div className="hint">Ingress: {state.policy.ingressIPs.join(', ')}</div>
-        </section>
         <section className="settings-block">
           <h3>Backups</h3>
           <p>Configuration only. Authentication, certificates and secrets are excluded.</p>

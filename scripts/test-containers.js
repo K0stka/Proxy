@@ -10,12 +10,16 @@ for (const [name, service] of Object.entries(configuration.services)) {
   const env = service.environment ?? {};
   for (const secret of ['PROXY_CLOUDFLARE_TOKEN', 'PROXY_CLOUDFLARE_TOKENS'])
     assert.equal(secret in env, name === 'certificates');
-  for (const secret of ['PROXY_KOMODO_KEY', 'PROXY_KOMODO_SECRET', 'PROXY_BOOTSTRAP_TOKEN'])
+  for (const secret of [
+    'PROXY_KOMODO_URL',
+    'PROXY_KOMODO_KEY',
+    'PROXY_KOMODO_SECRET',
+    'PROXY_BOOTSTRAP_TOKEN',
+  ])
     assert.equal(secret in env, name === 'control');
   for (const key of [
     'PROXY_TARGETS',
     'PROXY_DOMAINS',
-    'PROXY_KOMODO_URL',
     'PROXY_KOMODO_SERVERS',
     'PROXY_INGRESS_PORTS',
     'PROXY_ACME_STAGING',

@@ -54,30 +54,9 @@ test(
     const policy = {
       origin: 'https://proxy.example.net',
       ingressIPs: ['127.0.0.1'],
-      ingressPorts: [
-        { protocol: 'tcp', from: 51413, to: 51420 },
-        { protocol: 'udp', from: 52000, to: 52002 },
-      ],
-      targets: [
-        {
-          name: 'Home',
-          address: '127.0.0.2',
-          ports: [
-            { from: 18080, to: 18082 },
-            { from: 52000, to: 52002 },
-          ],
-        },
-      ],
-      forbiddenTargetPorts: [3001, 8120, 9120, 2375, 2376],
-      maxRangePorts: 1024,
       domains: ['krychlic.com', 'example.net'].map((name) => ({
         name,
       })),
-      komodo: {
-        url: 'http://100.101.102.103:9120',
-
-        servers: [{ id: 'home', name: 'Home', address: '127.0.0.2', local: false }],
-      },
       certificates: { email: 'admin@example.net', staging: false, propagationSeconds: 60 },
     };
     const edgeRequest = (path, options = {}) =>
@@ -197,6 +176,34 @@ test(
     });
     edge = start();
     await ready();
+    await t.test(
+      'reachability probes use the edge network and reject metadata/management endpoints',
+      async () => {
+        assert((await edgeRequest('/network')).addresses.includes('127.0.0.1'));
+        assert(
+          (
+            await edgeRequest('/probe', {
+              method: 'POST',
+              body: { host: '127.0.0.2', port: 18080 },
+            })
+          ).reachable,
+        );
+        assert(
+          !(
+            await edgeRequest('/probe', {
+              method: 'POST',
+              body: { host: '127.0.0.2', port: 18082 },
+            })
+          ).reachable,
+        );
+        for (const endpoint of [
+          { host: '169.254.169.254', port: 80 },
+          { host: '127.0.0.1', port: 3001 },
+          { host: 'example.net', port: 80 },
+        ])
+          await assert.rejects(edgeRequest('/probe', { method: 'POST', body: endpoint }), /Unsafe/);
+      },
+    );
     assert.equal(
       (await readFile('/runtime/edge.db')).subarray(0, 15).toString(),
       'SQLite format 3',

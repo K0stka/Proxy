@@ -2,12 +2,34 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
-import { readDeployment } from '../shared/env.js';
+import { readDeployment, readKomodoURL } from '../shared/env.js';
 import { policy, policyEnv } from './fixtures.js';
 import { mkdtemp, copyFile, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
+
+test('Core URL is configured only through env and rejects credentials, redirects and insecure non-tailnet HTTP', () => {
+  assert.equal(
+    readKomodoURL({ PROXY_KOMODO_URL: 'http://100.101.102.103:9120/' }),
+    'http://100.101.102.103:9120',
+  );
+  assert.equal(
+    readKomodoURL({ PROXY_KOMODO_URL: 'https://core.example.net' }),
+    'https://core.example.net',
+  );
+  for (const url of [
+    'invalid',
+    'http://example.net',
+    'https://user:secret@example.net',
+    'https://example.net?secret=hidden',
+    'file:///etc/passwd',
+  ])
+    assert.throws(
+      () => readKomodoURL({ PROXY_KOMODO_URL: url }),
+      (error) => !error.message.includes('secret'),
+    );
+});
 
 test('installation policy loads from environment without copying credentials', () => {
   const expected = policy(),
@@ -26,13 +48,8 @@ test('installation policy loads from environment without copying credentials', (
   assert(!serialized.includes('private-'));
   const example = parseEnv(readFileSync('.env.example', 'utf8'));
   assert.equal(example.PROXY_ORIGIN, '');
-  for (const name of [
-    'PROXY_TARGETS',
-    'PROXY_DOMAINS',
-    'PROXY_KOMODO_SERVERS',
-    'PROXY_KOMODO_URL',
-    'PROXY_ACME_EMAIL',
-  ])
+  assert.equal(example.PROXY_KOMODO_URL, '');
+  for (const name of ['PROXY_TARGETS', 'PROXY_DOMAINS', 'PROXY_KOMODO_SERVERS', 'PROXY_ACME_EMAIL'])
     assert(!(name in example));
 });
 

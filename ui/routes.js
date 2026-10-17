@@ -32,7 +32,6 @@ export function folderRules(state, directory) {
   );
 }
 export function freshRoute(state) {
-  const target = state.policy.targets[0];
   return {
     name: '',
     kind: 'http',
@@ -40,8 +39,8 @@ export function freshRoute(state) {
     ingressIP: state.policy.ingressIPs[0],
     portStart: 51413,
     portEnd: 51413,
-    targetHost: target?.address ?? '127.0.0.1',
-    targetPort: target?.ports[0]?.from ?? 3000,
+    targetHost: '',
+    targetPort: 80,
     staticSite: null,
     upstreamTLS: false,
     upstreamServerName: '',

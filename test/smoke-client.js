@@ -7,16 +7,19 @@ assert(!('PROXY_CLOUDFLARE_TOKEN' in process.env));
 assert.equal(process.env.PROXY_KOMODO_KEY, 'smoke-test-key');
 await assert.rejects(access('/config/config.json'));
 await assert.rejects(access('/run/secrets/bootstrap'));
-const edge = await new Promise((resolve, reject) => {
-  http
-    .get({ socketPath: '/ipc/edge.sock', path: '/status' }, (res) => {
-      let body = '';
-      res.on('data', (c) => (body += c));
-      res.on('end', () => resolve(JSON.parse(body)));
-    })
-    .on('error', reject);
-});
+const edgeRequest = (path) =>
+  new Promise((resolve, reject) => {
+    http
+      .get({ socketPath: '/ipc/edge.sock', path }, (res) => {
+        let body = '';
+        res.on('data', (c) => (body += c));
+        res.on('end', () => resolve(JSON.parse(body)));
+      })
+      .on('error', reject);
+  });
+const edge = await edgeRequest('/status');
 assert(edge.available);
+assert((await edgeRequest('/network')).addresses.includes('127.0.0.1'));
 assert.equal((await stat('/ipc/edge.sock')).mode & 0o777, 0o660);
 await writeFile('/cert-requests/test-permission.json', '{}');
 await unlink('/cert-requests/test-permission.json');

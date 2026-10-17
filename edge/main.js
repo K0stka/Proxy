@@ -1,4 +1,6 @@
 import http from 'node:http';
+import net from 'node:net';
+import { networkInterfaces } from 'node:os';
 import {
   readFile,
   writeFile,
@@ -17,6 +19,7 @@ import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
   validateSnapshot,
+  safeTarget,
   defaultPages,
   Problem,
   defaultSettings,
@@ -214,7 +217,10 @@ const saved = state.get('last-good');
 let recovery = false;
 if (saved) {
   try {
-    policy = effectivePolicy(deployment, saved.settings ?? defaultSettings);
+    policy = effectivePolicy(
+      deployment,
+      saved.settings ? settingsFromPolicy(saved.settings) : defaultSettings,
+    );
     snapshot = validateSnapshot(policy, saved.snapshot);
   } catch {
     recovery = true;
@@ -236,6 +242,37 @@ const server = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {
   try {
     if (req.url === '/status' && req.method === 'GET') {
       json(res, { ...applied, error: failed });
+      return;
+    }
+    if (req.url === '/probe' && req.method === 'POST') {
+      const { host, port } = await bodyJSON(req);
+      if (!safeTarget(host, port))
+        throw new Problem(400, 'Unsafe destination address or protected management port');
+      const reachable = await new Promise((resolve) => {
+        const socket = net.connect({ host, port, timeout: 3000 });
+        const finish = (value) => {
+          socket.destroy();
+          resolve(value);
+        };
+        socket.once('connect', () => finish(true));
+        socket.once('error', () => finish(false));
+        socket.once('timeout', () => finish(false));
+      });
+      json(res, {
+        reachable,
+        message: reachable
+          ? 'Backend TCP connection succeeded; public ingress is not verified'
+          : 'Backend TCP connection failed',
+      });
+      return;
+    }
+    if (req.url === '/network' && req.method === 'GET') {
+      json(res, {
+        addresses: Object.values(networkInterfaces())
+          .flat()
+          .filter(Boolean)
+          .map((item) => item.address),
+      });
       return;
     }
     if (req.url === '/sites' && req.method === 'GET') {

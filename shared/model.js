@@ -21,10 +21,6 @@ export const hostname = z
   );
 export const ip = z.string().refine((v) => isIP(v) !== 0, 'Enter a literal IPv4 or IPv6 address');
 const port = z.number().int().min(1).max(65535);
-const range = z
-  .object({ from: port, to: port })
-  .strict()
-  .refine((v) => v.to >= v.from, 'Port range must be ascending');
 const cidr = z.string().refine((v) => {
   const [address, bits, extra] = v.split('/');
   const type = isIP(address);
@@ -84,27 +80,6 @@ export const policySchema = z
   .object({
     origin: z.string().url(),
     ingressIPs: z.array(ip).min(1).max(8),
-    ingressPorts: z
-      .array(
-        z
-          .object({ protocol: z.enum(['tcp', 'udp']), from: port, to: port })
-          .strict()
-          .refine((v) => v.to >= v.from),
-      )
-      .max(100),
-    targets: z
-      .array(
-        z
-          .object({
-            name: z.string().min(1).max(80),
-            address: ip,
-            ports: z.array(range).min(1).max(100),
-          })
-          .strict(),
-      )
-      .max(100),
-    forbiddenTargetPorts: z.array(port).default([3001, 8120, 9120, 2375, 2376]),
-    maxRangePorts: z.number().int().min(1).max(10000).default(1024),
     domains: z
       .array(
         z
@@ -114,23 +89,6 @@ export const policySchema = z
           .strict(),
       )
       .max(50),
-    komodo: z
-      .object({
-        url: z.union([z.string().url(), z.literal('')]),
-        servers: z
-          .array(
-            z
-              .object({
-                id: z.string().min(1).max(128),
-                name: z.string().min(1).max(80),
-                address: ip,
-                local: z.boolean(),
-              })
-              .strict(),
-          )
-          .max(20),
-      })
-      .strict(),
     certificates: z
       .object({
         email: z.union([z.string().email(), z.literal('')]),
@@ -143,14 +101,9 @@ export const policySchema = z
 export const settingsSchema = policySchema.omit({
   origin: true,
   ingressIPs: true,
-  forbiddenTargetPorts: true,
 });
 export const defaultSettings = {
-  ingressPorts: [],
-  targets: [],
-  maxRangePorts: 1024,
   domains: [],
-  komodo: { url: '', servers: [] },
   certificates: { email: '', staging: true, propagationSeconds: 60 },
 };
 export function settingsFromPolicy(policy) {
@@ -164,7 +117,6 @@ export function effectivePolicy(deployment, settings, { development = false } = 
     {
       ...parse(settingsSchema, settings),
       ...deployment,
-      forbiddenTargetPorts: [3001, 8120, 9120, 2375, 2376],
     },
     { development },
   );
@@ -181,7 +133,7 @@ export const routeSchema = z
     ingressIP: ip,
     portStart: port.default(51413),
     portEnd: port.default(51413),
-    targetHost: ip,
+    targetHost: z.union([ip, z.literal('')]),
     targetPort: port,
     upstreamTLS: z.boolean().default(false),
     upstreamServerName: z.union([hostname, z.literal('')]).default(''),
@@ -281,13 +233,35 @@ export function coveredDomain(host, domains) {
       (host.endsWith(`.${d.name}`) && host.split('.').length === d.name.split('.').length + 1),
   );
 }
-const inRange = (value, ranges) => ranges.some((r) => value >= r.from && value <= r.to);
-export function allowedTarget(policy, host, start, end = start) {
-  const target = policy.targets.find((t) => canonicalIP(t.address) === canonicalIP(host));
-  if (!target || end < start) return false;
-  for (let p = start; p <= end; p++)
-    if (!inRange(p, target.ports) || policy.forbiddenTargetPorts.includes(p)) return false;
-  return true;
+export const MAX_STREAM_PORTS = 1024;
+const protectedPorts = [3001, 8120, 9120, 2375, 2376];
+const unsafeAddresses = new BlockList();
+for (const [address, bits, type] of [
+  ['0.0.0.0', 8, 'ipv4'],
+  ['169.254.0.0', 16, 'ipv4'],
+  ['224.0.0.0', 4, 'ipv4'],
+  ['240.0.0.0', 4, 'ipv4'],
+  ['fe80::', 10, 'ipv6'],
+  ['ff00::', 8, 'ipv6'],
+])
+  unsafeAddresses.addSubnet(address, bits, type);
+export function safeAddress(host) {
+  const type = isIP(host);
+  if (!type) return false;
+  const address = canonicalIP(host),
+    normalized = isIP(address);
+  return address !== '::' && !unsafeAddresses.check(address, normalized === 4 ? 'ipv4' : 'ipv6');
+}
+export function safeTarget(host, start, end = start) {
+  return (
+    safeAddress(host) &&
+    Number.isInteger(start) &&
+    Number.isInteger(end) &&
+    start >= 1 &&
+    end <= 65535 &&
+    end >= start &&
+    !protectedPorts.some((port) => port >= start && port <= end)
+  );
 }
 export function validatePolicy(raw, { development = false } = {}) {
   const p = parse(policySchema, raw);
@@ -313,52 +287,10 @@ export function validatePolicy(raw, { development = false } = {}) {
     throw new Problem(400, 'Duplicate domains in policy');
   if (p.domains.length && !p.certificates.email)
     throw new Problem(400, 'Set an ACME email before adding domains');
-  if (new Set(p.targets.map((t) => canonicalIP(t.address))).size !== p.targets.length)
-    throw new Problem(400, 'Duplicate destination address');
-  if (new Set(p.komodo.servers.map((s) => s.id)).size !== p.komodo.servers.length)
-    throw new Problem(400, 'Duplicate Komodo server ID');
-  const unsafe = new BlockList();
-  unsafe.addSubnet('169.254.0.0', 16, 'ipv4');
-  unsafe.addSubnet('224.0.0.0', 4, 'ipv4');
-  unsafe.addSubnet('fe80::', 10, 'ipv6');
-  unsafe.addSubnet('ff00::', 8, 'ipv6');
-  for (const address of [...p.ingressIPs, ...p.targets.map((t) => t.address)]) {
-    if (
-      ['0.0.0.0', '::'].includes(canonicalIP(address)) ||
-      unsafe.check(address, isIP(address) === 4 ? 'ipv4' : 'ipv6')
-    )
-      throw new Problem(
-        400,
-        'Unspecified, metadata/link-local and multicast addresses are forbidden',
-      );
-  }
-  if (!p.komodo.url) {
-    if (p.komodo.servers.length)
-      throw new Problem(400, 'Set the Komodo Core URL before adding servers');
-    return p;
-  }
-  const core = new URL(p.komodo.url);
-  if (
-    !['http:', 'https:'].includes(core.protocol) ||
-    core.username ||
-    core.password ||
-    core.search ||
-    core.hash
-  )
-    throw new Problem(400, 'Invalid Komodo URL');
-  // HTTP is permitted only over the explicitly configured Tailscale address.
-  if (
-    core.protocol === 'http:' &&
-    !(
-      isIP(core.hostname) === 4 &&
-      core.hostname.startsWith('100.') &&
-      Number(core.hostname.split('.')[1]) >= 64 &&
-      Number(core.hostname.split('.')[1]) <= 127
-    )
-  )
+  if (p.ingressIPs.some((address) => !safeAddress(address)))
     throw new Problem(
       400,
-      'Komodo HTTP requires a Tailscale IPv4 address; otherwise use verified HTTPS',
+      'Unspecified, metadata/link-local and multicast addresses are forbidden',
     );
   return p;
 }
@@ -375,8 +307,8 @@ export function validateSnapshot(policy, raw) {
       throw new Problem(400, 'Ingress address is not approved');
     const end = r.kind === 'udp' ? r.portEnd : r.targetPort;
     const start = r.kind === 'udp' ? r.portStart : r.targetPort;
-    if (r.kind !== 'static' && !allowedTarget(policy, r.targetHost, start, end))
-      throw new Problem(400, 'Destination ports are not approved by the host policy');
+    if (r.kind !== 'static' && !safeTarget(r.targetHost, start, end))
+      throw new Problem(400, 'Destination uses an unsafe address or a protected management port');
     if (r.kind === 'static' && !r.staticSite) throw new Problem(400, 'Choose a static-site folder');
     if (r.kind !== 'static' && r.staticSite)
       throw new Problem(400, 'Only static routes can select a folder');
@@ -395,22 +327,17 @@ export function validateSnapshot(policy, raw) {
     } else {
       if (r.portEnd < r.portStart || (r.kind === 'tcp' && r.portStart !== r.portEnd))
         throw new Problem(400, 'TCP needs one port; UDP ranges must be ascending');
-      if (r.portEnd - r.portStart + 1 > policy.maxRangePorts)
+      if (r.portEnd - r.portStart + 1 > MAX_STREAM_PORTS)
         throw new Problem(400, 'Port range exceeds the configured budget');
       if (r.kind === 'udp' && (r.streamTLS || r.proxyProtocol))
         throw new Problem(400, 'UDP does not support TLS or PROXY protocol in this application');
       if (r.streamTLS && !policy.domains.some((d) => d.name === r.tlsDomain))
         throw new Problem(400, 'Choose a configured TLS certificate domain');
       if (
-        !policy.ingressPorts.some(
-          (p) => p.protocol === r.kind && r.portStart >= p.from && r.portEnd <= p.to,
-        ) ||
-        (r.kind === 'tcp' && [80, 443].some((p) => r.portStart <= p && r.portEnd >= p))
+        r.kind === 'tcp' &&
+        [80, 443, ...protectedPorts].some((port) => r.portStart <= port && r.portEnd >= port)
       )
-        throw new Problem(
-          400,
-          'Listener is outside the approved ingress ranges or conflicts with HTTP/HTTPS',
-        );
+        throw new Problem(400, 'Listener conflicts with HTTP/HTTPS or a protected management port');
       if (r.published) {
         if (
           listeners.some(
@@ -427,7 +354,7 @@ export function validateSnapshot(policy, raw) {
       }
     }
   }
-  if (sockets > policy.maxRangePorts)
+  if (sockets > MAX_STREAM_PORTS)
     throw new Problem(400, 'Total published stream ports exceed the configured budget');
   return snapshot;
 }

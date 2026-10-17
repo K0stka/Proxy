@@ -24,7 +24,7 @@ import { RouteWizard, ErrorPagesWizard } from './wizards.jsx';
 import Settings from './settings.jsx';
 import Modal from './dialog.jsx';
 import Files from './files.jsx';
-import SettingsWizard from './settings-wizard.jsx';
+import DomainsWizard from './domains-wizard.jsx';
 
 const when = (value) =>
   value
@@ -153,16 +153,8 @@ export default function Workspace({ onLogout, onRecovery }) {
     );
   if (wizard?.kind === 'pages')
     return <ErrorPagesWizard state={state} onClose={() => setWizard(null)} onSaved={saved} />;
-  if (wizard?.kind === 'settings')
-    return (
-      <SettingsWizard
-        state={state}
-        initialStep={wizard.step ?? 0}
-        onClose={() => setWizard(null)}
-        onSaved={saved}
-      />
-    );
-  const needsSetup = !state.settings.targets.length && !state.settings.domains.length;
+  if (wizard?.kind === 'domains')
+    return <DomainsWizard state={state} onClose={() => setWizard(null)} onSaved={saved} />;
   const live = state.routes.filter((r) => r.published).length,
     edgeReady = state.edge.available === true;
   return (
@@ -225,20 +217,14 @@ export default function Workspace({ onLogout, onRecovery }) {
             {page === 'Routes' && (
               <button
                 className="primary"
-                onClick={() =>
-                  setWizard(
-                    needsSetup
-                      ? { kind: 'settings' }
-                      : { kind: 'route', initial: freshRoute(state) },
-                  )
-                }
+                onClick={() => setWizard({ kind: 'route', initial: freshRoute(state) })}
               >
                 <Plus size={17} />
-                {needsSetup ? 'Set up proxy' : 'New route'}
+                New route
               </button>
             )}
             {page === 'Domains' && (
-              <button className="primary" onClick={() => setWizard({ kind: 'settings', step: 3 })}>
+              <button className="primary" onClick={() => setWizard({ kind: 'domains' })}>
                 <Plus size={17} />
                 Manage domains
               </button>
@@ -405,30 +391,15 @@ export default function Workspace({ onLogout, onRecovery }) {
                     <h2>No routes</h2>
                     <button
                       className="secondary"
-                      onClick={() =>
-                        setWizard(
-                          needsSetup
-                            ? { kind: 'settings' }
-                            : { kind: 'route', initial: freshRoute(state) },
-                        )
-                      }
+                      onClick={() => setWizard({ kind: 'route', initial: freshRoute(state) })}
                     >
                       <Plus size={15} />
-                      {needsSetup ? 'Set up proxy' : 'Create route'}
+                      Create route
                     </button>
                   </div>
                 )}
               </div>
             </>
-          )}
-          {page === 'Services' && !state.policy.servers.length && (
-            <div className="empty-state">
-              <Server size={28} />
-              <h2>Connect Komodo</h2>
-              <button className="secondary" onClick={() => setWizard({ kind: 'settings' })}>
-                Configure
-              </button>
-            </div>
           )}
           {page === 'Services' && (
             <>
@@ -439,13 +410,14 @@ export default function Workspace({ onLogout, onRecovery }) {
                 </span>
                 <span>{when(state.discovery.lastSuccess)}</span>
               </div>
-              {state.policy.servers.map((server) => (
+              {state.discovery.servers.map((server) => (
                 <section className="server-group" key={server.id}>
                   <h2>
                     <Server size={18} />
                     {server.name}
                     <code>{server.address}</code>
                   </h2>
+                  {server.error && <div className="notice">{server.error}</div>}
                   {state.discovery.services
                     .filter((s) => s.server === server.id)
                     .map((service) => (
@@ -505,7 +477,7 @@ export default function Workspace({ onLogout, onRecovery }) {
             <div className="empty-state">
               <Globe size={28} />
               <h2>No domains</h2>
-              <p>Add your domains in the setup wizard.</p>
+              <p>Choose Manage domains to add one.</p>
             </div>
           )}
           {page === 'Domains' && (
@@ -567,7 +539,6 @@ export default function Workspace({ onLogout, onRecovery }) {
               onRecovery={onRecovery}
               onLogout={onLogout}
               onEditPages={() => setWizard({ kind: 'pages' })}
-              onConfigure={() => setWizard({ kind: 'settings' })}
             />
           )}
         </main>
