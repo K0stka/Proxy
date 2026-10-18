@@ -61,17 +61,19 @@ Redirect routes choose a fixed HTTP(S) URL, status 301 or 302, and an absolute s
 
 ### Static website
 
+Static routes may mount at `/` or a directory path, independently of a root route. Prefix approved file URLs with that mount, serve directory indexes with relative assets intact, and keep unmatched paths within the mount at 404. More specific static or redirect routes override their subtree. Apply each static route's CIDRs at its own locations, without inheriting another route's restrictions; shared error documents and assets remain usable across these scopes.
+
 Select a folder beneath the edge's read-only `/sites` mount. Manage shared include/exclude rules and their preview in Folders. Route wizards choose a configured folder; error-page wizards also choose the page document. Saving shared rules updates every use atomically; legacy per-use rules remain intact until then. Dotfiles and symlinks are always blocked; NGINX exposes only exact paths recorded during apply, disables symlink following at request time, and never lists directories. New filenames need an explicit rescan; existing exposed file contents update immediately. Folders lists saved folder definitions by path and include/exclude rules. No website discovery, `index.html` requirement, or classification of folder contents is performed. Empty and asset-only folders are valid. Folder scanning uses Linux directory descriptors and no-follow opens to prevent symlink races. Limits bound scan depth, entries and exposed files.
 
 The shared 404, 500 and 502 pages each select a configured folder and an explicit document within it, using the same filters. The document may have any filename; previously saved pages default to index.html. Its HTML is copied into the applied revision and given an asset base under `/_proxy/errors/<code>/`; CSS, JS and icons remain exact approved files. Bundles use relative URLs, resolved from the chosen document subdirectory. Error status codes are preserved.
 
 ### TCP
 
-Fields: ingress IP, public port, destination IP and port, optional source CIDR allowlist. Raw passthrough is the default. Optional TLS termination is explicit and requires a certificate; application-layer authentication remains the destination's responsibility. Reserve public TCP 80/443 for websites in the initial design.
+Fields: ingress IP, comma-separated public ports/ranges, destination IP and optional single-port destination override, optional source CIDR allowlist. A list or range preserves destination port numbers. Raw passthrough is the default. Optional TLS termination is explicit and requires a certificate; application-layer authentication remains the destination's responsibility. Reserve public TCP 80/443 for websites in the initial design.
 
 ### UDP / port block
 
-Fields: ingress IP, start/end public ports, destination IP, **preserve destination port**. A single port uses equal start/end values. Show the entire resulting mapping before applying it.
+Fields: ingress IP, comma-separated public ports/ranges, destination IP, **preserve destination port**. The shared Ports field accepts `12, 34, 56-78`, rejects duplicates and overlaps, and normalizes order. Legacy start/end values remain supported. Count actual ports across all ranges for listener conflicts and the stream budget. Show the entire resulting mapping before applying it.
 
 Example of generated NGINX configuration, with placeholders replaced by validated addresses:
 

@@ -139,7 +139,7 @@ Resource lists and selectors sort by name ascending. During route creation, the 
 
 Pages and wizard steps use normal paths such as `/settings/certificates` and `/routes/route?step=2`, without hash routing. Browser Back/Forward navigate them; refresh restores the current wizard step and its unsaved fields from the tab's history. This does not publish or save changes to the server. Credentials and recovery codes are never placed in navigation history.
 
-- **UDP blocks:** choose UDP → Address → Port block, then enter start/end ports. Every public port forwards to the identical destination port. Enter the destination IP and public start/end ports once in the route wizard. No separate port approval is required; the fixed total limit is 1,024 published stream ports.
+- **Port forwarding:** TCP and UDP use one **Ports** field, accepting individual ports and ranges such as `12, 34, 56-78`. Multiple ports forward to the identical destination port numbers; a single TCP port can use a different destination host port. Invalid, overlapping and protected ports are rejected. The fixed total limit is 1,024 published stream ports. Existing single-port and UDP-block routes retain their mappings.
 
 - **Redirects:** choose Redirect, an absolute HTTP(S) destination URL and Temporary (302) or Permanent (301). In Address, select the hostname and path (`/` for the whole site). A path such as `/something` matches that directory and its descendants, including `/something/child`, but not `/somethingelse`. It works without a root route; other HTTPS paths then return 404. With a website or another redirect at the root, the more specific directory wins. Every match goes to the exact destination URL; incoming suffixes and query strings are discarded. Source network restrictions apply independently to each redirect. Redirect hostnames need configured domain coverage and a production certificate before publishing.
 
@@ -155,6 +155,8 @@ Pages and wizard steps use normal paths such as `/settings/certificates` and `/r
 ## Static sites and error pages
 
 Compose mounts your sites directory read-only at `/sites` in the edge. Use **Folders → Add folder** to define a relative path (such as `websites/portfolio`, with no leading or trailing slash) and include/exclude rules, preview its files, then save. Only configured folders (plus previously saved route/page folders) appear; the mount is not searched for websites. Empty folders and asset-only folders are valid; there is no `index.html` requirement. Use **Edit rules** to change the path or rules and create a static route in Routes to connect it to a hostname. These are folder definitions, not filesystem creation/upload commands; create the actual directories on the host. No server-side scripts execute.
+
+Static routes also have a **Path** field. Set `/something` and choose folder `something` to serve `/sites/something/index.html` at `https://krychlic.com/something/`, with assets beneath the same URL directory. `/something` redirects to `/something/` when an index exists. The mount works without a root route and overrides a root website only for that directory, with its own access restrictions. Other paths keep their root route or return 404. Use relative asset URLs so the site works under its mount path; root-absolute URLs still refer to the hostname root.
 
 ```text
 sites/

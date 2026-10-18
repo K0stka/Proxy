@@ -313,6 +313,93 @@ test(
       await checkRedirect('/something');
       await apply(snapshot.routes);
     });
+    await t.test('static subdirectories mount folders independently and override only their subtree', async () => {
+      await mkdir('/sites/mounted/docs', { recursive: true });
+      await writeFile('/sites/mounted/index.html', '<h1>Mounted site</h1>');
+      await writeFile('/sites/mounted/style.css', 'body { color: red; }');
+      await writeFile('/sites/mounted/docs/index.html', 'Mounted docs');
+      const site = route({ kind: 'static', hostname: 'app.krychlic.com', path: '/something', ingressIP: '127.0.0.1', staticSite: { directory: 'mounted' }, published: true });
+      const apply = (rules) => edgeRequest('/apply', { method: 'POST', body: { routes: rules, pages: defaultPages }, timeout: 20000 });
+      const check = async () => {
+        assert.equal((await request(site.hostname, '/something')).headers.location, 'https://app.krychlic.com/something/');
+        const index = await request(site.hostname, '/something/');
+        assert.match(index.body, /Mounted site/);
+        assert.match(index.headers['content-type'], /text\/html/);
+        assert.match((await request(site.hostname, '/something/style.css')).body, /color: red/);
+        assert.equal((await request(site.hostname, '/something/docs/')).body, 'Mounted docs');
+        assert.equal((await request(site.hostname, '/something/missing')).status, 404);
+      };
+      await apply([site]);
+      await check();
+      assert.equal((await request(site.hostname, '/')).status, 404);
+      assert.equal((await request(site.hostname, '/somethingelse')).status, 404);
+      await apply([site, routes[0]]);
+      await check();
+      assert.equal((await request(site.hostname, '/')).body, 'hello from home');
+      assert.equal((await request(site.hostname, '/somethingelse')).body, 'hello from home');
+      const nested = { ...site, id: route().id, path: '/something/docs', staticSite: { directory: 'mounted' } };
+      await apply([nested, site, routes[0]]);
+      assert.match((await request(site.hostname, '/something/docs/')).body, /Mounted site/);
+      await apply([{ ...site, sourceCIDRs: ['192.0.2.0/24'] }, routes[0]]);
+      assert.equal((await request(site.hostname, '/something/')).status, 403);
+      await apply([site, { ...routes[0], sourceCIDRs: ['192.0.2.0/24'] }]);
+      assert.equal((await request(site.hostname, '/')).status, 403);
+      await check();
+      const redirectRoot = route({ kind: 'redirect', hostname: site.hostname, ingressIP: '127.0.0.1', targetHost: '', redirectURL: 'https://example.net/', published: true });
+      await apply([redirectRoot, site]);
+      await check();
+      assert.equal((await request(site.hostname, '/', true)).headers.location, redirectRoot.redirectURL);
+      assert.equal((await request(site.hostname, '/something/style.css', false)).headers.location, 'https://app.krychlic.com/something/style.css');
+      await mkdir('/sites/mount-root/something', { recursive: true });
+      await writeFile('/sites/mount-root/index.html', 'Root static');
+      await writeFile('/sites/mount-root/something/index.html', 'Shadowed index');
+      await writeFile('/sites/mount-root/something/style.css', 'Shadowed CSS');
+      await apply([site, { ...routes[0], kind: 'static', staticSite: { directory: 'mount-root' } }]);
+      await check();
+      assert.equal((await request(site.hostname, '/')).body, 'Root static');
+      await apply(snapshot.routes);
+    });
+    await t.test('TCP/UDP port lists preserve target ports and leave gaps closed', async () => {
+      const servers = [];
+      try {
+        for (const port of [52400, 52402, 52403]) {
+          const server = net.createServer((s) => s.on('data', () => s.end(`tcp:${port}`)));
+          await new Promise((resolve) => server.listen(port, '127.0.0.2', resolve));
+          servers.push(server);
+        }
+        await edgeRequest('/apply', { method: 'POST', body: { routes: [
+          route({ kind: 'tcp', ingressIP: '127.0.0.1', ports: '52400, 52402-52403', targetHost: '127.0.0.2', published: true }),
+          route({ kind: 'udp', ingressIP: '127.0.0.1', ports: '52000, 52002', targetHost: '127.0.0.2', published: true }),
+        ], pages: defaultPages }, timeout: 20000 });
+        for (const port of [52400, 52402, 52403]) {
+          const result = await new Promise((resolve, reject) => {
+            const socket = net.connect(port, '127.0.0.1', () => socket.write('ping'));
+            socket.on('data', (data) => { resolve(String(data)); socket.destroy(); });
+            socket.on('error', reject);
+            socket.setTimeout(2000, () => { socket.destroy(); reject(Error('TCP timeout')); });
+          });
+          assert.equal(result, `tcp:${port}`);
+        }
+        await assert.rejects(new Promise((resolve, reject) => {
+          const socket = net.connect(52401, '127.0.0.1', () => { socket.destroy(); resolve(); });
+          socket.on('error', reject);
+        }));
+        for (const port of [52000, 52002]) {
+          const socket = dgram.createSocket('udp4');
+          try {
+            const result = new Promise((resolve, reject) => {
+              const timer = setTimeout(() => reject(Error('UDP timeout')), 2000);
+              socket.once('message', (data) => { clearTimeout(timer); resolve(String(data)); });
+            });
+            socket.send('ping', port, '127.0.0.1');
+            assert.equal(await result, `${port}:ping`);
+          } finally { socket.close(); }
+        }
+      } finally {
+        await edgeRequest('/apply', { method: 'POST', body: snapshot, timeout: 20000 });
+        for (const server of servers) await new Promise((resolve) => server.close(resolve));
+      }
+    });
     await t.test(
       'folders need no index; explicit non-index error documents and relative assets work',
       async () => {

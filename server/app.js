@@ -1,4 +1,5 @@
 import { errorPageTypes } from '../shared/pages.js';
+import { samePorts } from '../shared/ports.js';
 import http from 'node:http';
 import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { join, resolve, extname, sep } from 'node:path';
@@ -22,6 +23,7 @@ import {
   routeFields,
   redirectURL,
   safeTarget,
+  safeAddress,
   defaultPages,
   errorPageSchema,
 } from '../shared/model.js';
@@ -295,7 +297,7 @@ export function createApp({
                 parse(redirectURL, value.redirectURL);
               } else {
                 const endpoint = parse(routeFields.pick({ targetHost: true, targetPort: true, upstreamTLS: true, upstreamServerName: true, source: true }).strip(), value);
-                if (!safeTarget(endpoint.targetHost, endpoint.targetPort))
+                if (samePorts(value) ? !safeAddress(endpoint.targetHost) : !safeTarget(endpoint.targetHost, endpoint.targetPort))
                   throw new Problem(400, 'Choose a safe destination IP and host port');
                 if (endpoint.upstreamTLS && !endpoint.upstreamServerName)
                   throw new Problem(400, 'HTTPS backend requires its certificate hostname');

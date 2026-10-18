@@ -12,7 +12,8 @@
   --mantine-color-dimmed: var(--muted);
   --mantine-color-default: var(--surface);
   --mantine-color-default-border: var(--line);
-  --mantine-color-default-hover: var(--soft);
+  --hover: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  --mantine-color-default-hover: var(--hover);
   --card-shadow: 0 2px 3px #18332a03, 0 8px 24px #18332a04;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
@@ -730,6 +731,26 @@ a:hover {
 .mantine-Checkbox-input:not(:checked):not(:disabled) {
   background: var(--surface);
 }
+.mantine-Menu-item {
+  --menu-item-hover: var(--hover);
+}
+@media (hover: hover) {
+  .mantine-Accordion-control:not(:disabled):hover,
+  .mantine-Combobox-option:not([data-combobox-selected], [data-combobox-disabled]):hover,
+  .mantine-Select-option:not([data-combobox-selected], [data-combobox-disabled]):hover,
+  .mantine-TagsInput-option:not([data-combobox-selected], [data-combobox-disabled]):hover,
+  .mantine-NumberInput-control:not(:disabled):hover,
+  .mantine-PasswordInput-visibilityToggle:not(:disabled):hover,
+  .mantine-CloseButton-root:not(:disabled, [data-disabled]):hover,
+  .mantine-Pill-remove:not(:disabled):hover,
+  .mantine-TagsInput-pillRemove:not(:disabled):hover,
+  .mantine-Select-clearButton:not(:disabled):hover,
+  .mantine-TagsInput-clearButton:not(:disabled):hover,
+  .mantine-Modal-close:not(:disabled):hover,
+  .mantine-Button-root[data-variant='default']:not(:disabled):hover {
+    background: var(--hover);
+  }
+}
 .mantine-Switch-track {
   cursor: pointer;
 }
@@ -1130,7 +1151,7 @@ textarea):focus-visible {
     border-bottom: 0;
   }
   .route-row:hover {
-    background: var(--bg);
+    background: var(--hover);
   }
   .route-row .service-icon {
     width: 36px;
@@ -1227,6 +1248,66 @@ textarea):focus-visible {
     grid-template-columns: 140px minmax(0, 1fr);
     gap: 28px;
     padding: 36px 24px;
+  }
+}
+/* Shared intrinsic tracks keep desktop cells unbroken and arrows aligned. */
+@media (min-width: 761px) {
+  .route-list,
+  .service-list,
+  .folder-grid,
+  .domain-list {
+    display: grid;
+    overflow-x: auto;
+    column-gap: 20px;
+  }
+  .route-list {
+    grid-template-columns: max-content max-content max-content max-content 20px minmax(max-content, 1fr) max-content;
+    column-gap: 18px;
+  }
+  .service-list,
+  .folder-grid,
+  .domain-list {
+    grid-template-columns: max-content max-content minmax(max-content, 1fr) max-content;
+  }
+  .route-row,
+  .service-row,
+  .folder-card,
+  .domain-row {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    column-gap: inherit;
+  }
+  .route-row > .route-info {
+    grid-column: 3 / 7;
+    grid-template-columns: subgrid;
+    column-gap: inherit;
+  }
+  .route-info > .route-endpoints {
+    grid-column: 2 / -1;
+    grid-template-columns: subgrid;
+    column-gap: inherit;
+    max-width: none;
+  }
+  .route-footer > .route-actions {
+    grid-column: 7;
+  }
+  .domain-row .domain-actions {
+    grid-column: 4;
+    grid-row: 1;
+  }
+  .route-info > strong,
+  .route-endpoints > span,
+  .service-name,
+  .service-port,
+  .folder-name,
+  .folder-path,
+  .domain-identity,
+  .domain-facts {
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+  .route-list > .empty-state {
+    grid-column: 1 / -1;
   }
 }
 @media (max-width: 760px) {

@@ -32,7 +32,7 @@ test('redirect paths, targets, status codes and upstream fields reject ambiguous
   for (const redirectStatus of [200, 307, 308])
     assert.throws(() => validateSnapshot(policy(), snapshot([redirect({ redirectStatus })])));
   assert.throws(() => validateSnapshot(policy(), snapshot([redirect({ redirectURL: 'https://krychlic.com/something/else' })])), /itself/);
-  assert.throws(() => validateSnapshot(policy(), snapshot([route({ path: '/something' })])), /Only redirects/);
+  assert.throws(() => validateSnapshot(policy(), snapshot([route({ path: '/something' })])), /Only static routes and redirects/);
 });
 
 test('standalone directory redirects generate one host and keep unmatched HTTPS paths at 404', () => {
@@ -81,4 +81,20 @@ test('root and nested redirect rules retain their URLs in UI labels without matc
   const output = render(policy(), snapshot([root, child]), options);
   assert.match(output.config, /location \/ \{ return 301 "https:\/\/example.net\/"; \}/);
   assert.match(output.config, /location = "\/something"/);
+});
+
+test('static directory mounts coexist with a root and own their path, files and access rules', () => {
+  const site = route({ kind: 'static', hostname: 'krychlic.com', path: '/something/', staticSite: { directory: 'something' }, published: true });
+  const root = route({ hostname: 'krychlic.com', published: true, sourceCIDRs: ['192.0.2.0/24'] });
+  const value = validateSnapshot(policy(), snapshot([site, root]));
+  assert.equal(value.routes[0].path, '/something');
+  assert.equal(listener(value.routes[0]), 'krychlic.com/something');
+  assert.throws(() => validateSnapshot(policy(), snapshot([site, redirect()])), /already have a route/);
+  const output = render(policy(), value, {
+    ...options, staticSites: { [site.id]: { directory: 'something', exposed: ['index.html', 'app.js', 'docs/index.html'] } },
+  });
+  assert.match(output.config, /location = "\/something\/app.js" \{[^}]*allow all;[^}]*alias "\/sites\/something\/app.js"/);
+  assert.match(output.config, /location = "\/something\/" \{[^\n]*alias "\/sites\/something\/"; index index.html/);
+  assert.match(output.config, /location \^~ "\/something\/" \{ error_page 404/);
+  assert(output.config.includes('proxy_pass http://100.101.102.103:3000;'));
 });

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { isIP, BlockList } from 'node:net';
 import { domainToASCII } from 'node:url';
 import { createHash } from 'node:crypto';
+import { parsePorts, portRanges, formatPorts, samePorts } from './ports.js';
 
 export class Problem extends Error {
   constructor(status, message) {
@@ -152,6 +153,11 @@ export const routeFields = z
     ingressIP: ip,
     portStart: port.default(51413),
     portEnd: port.default(51413),
+    ports: z.string().max(8192).default('').superRefine((value, ctx) => {
+      if (!value) return;
+      try { parsePorts(value); }
+      catch (error) { ctx.addIssue({ code: 'custom', message: error.message }); }
+    }).transform((value) => value ? formatPorts(parsePorts(value)) : ''),
     targetHost: z.union([ip, z.literal('')]),
     targetPort: port,
     upstreamTLS: z.boolean().default(false),
@@ -343,15 +349,17 @@ export function validateSnapshot(policy, raw) {
     ids.add(r.id);
     if (!policy.ingressIPs.some((a) => canonicalIP(a) === canonicalIP(r.ingressIP)))
       throw new Problem(400, 'Ingress address is not approved');
-    const end = r.kind === 'udp' ? r.portEnd : r.targetPort;
-    const start = r.kind === 'udp' ? r.portStart : r.targetPort;
-    if (!['static', 'redirect'].includes(r.kind) && !safeTarget(r.targetHost, start, end))
+    const ranges = portRanges(r);
+    const destinations = samePorts(r) ? ranges : [{ start: r.targetPort, end: r.targetPort }];
+    if (!['static', 'redirect'].includes(r.kind) && destinations.some(({ start, end }) => !safeTarget(r.targetHost, start, end)))
       throw new Problem(400, 'Destination uses an unsafe address or a protected management port');
     if (r.kind === 'static' && !r.staticSite) throw new Problem(400, 'Choose a static-site folder');
     if (r.kind !== 'static' && r.staticSite)
       throw new Problem(400, 'Only static routes can select a folder');
-    if (r.kind !== 'redirect' && (r.path !== '/' || r.redirectURL))
-      throw new Problem(400, 'Only redirects can select a path or redirect URL');
+    if (!['static', 'redirect'].includes(r.kind) && r.path !== '/')
+      throw new Problem(400, 'Only static routes and redirects can select a path');
+    if (r.kind !== 'redirect' && r.redirectURL)
+      throw new Problem(400, 'Only redirects can select a redirect URL');
     if (['http', 'static', 'redirect'].includes(r.kind)) {
       if (r.hostname === policy.adminHostname)
         throw new Problem(400, 'Hostname is reserved for the admin panel');
@@ -376,9 +384,10 @@ export function validateSnapshot(policy, raw) {
       if (r.streamTLS || r.proxyProtocol)
         throw new Problem(400, 'Stream options cannot be used on a website');
     } else {
-      if (r.portEnd < r.portStart || (r.kind === 'tcp' && r.portStart !== r.portEnd))
+      if (!r.ports && (r.portEnd < r.portStart || (r.kind === 'tcp' && r.portStart !== r.portEnd)))
         throw new Problem(400, 'TCP needs one port; UDP ranges must be ascending');
-      if (r.portEnd - r.portStart + 1 > MAX_STREAM_PORTS)
+      const count = ranges.reduce((count, { start, end }) => count + end - start + 1, 0);
+      if (count > MAX_STREAM_PORTS)
         throw new Problem(400, 'Port range exceeds the configured budget');
       if (r.kind === 'udp' && (r.streamTLS || r.proxyProtocol))
         throw new Problem(400, 'UDP does not support TLS or PROXY protocol in this application');
@@ -386,7 +395,7 @@ export function validateSnapshot(policy, raw) {
         throw new Problem(400, 'Choose a configured TLS certificate domain');
       if (
         r.kind === 'tcp' &&
-        [80, 443, ...protectedPorts].some((port) => r.portStart <= port && r.portEnd >= port)
+        [80, 443, ...protectedPorts].some((port) => ranges.some(({ start, end }) => start <= port && end >= port))
       )
         throw new Problem(400, 'Listener conflicts with HTTP/HTTPS or a protected management port');
       if (r.published) {
@@ -395,13 +404,12 @@ export function validateSnapshot(policy, raw) {
             (o) =>
               o.kind === r.kind &&
               canonicalIP(o.ingressIP) === canonicalIP(r.ingressIP) &&
-              r.portStart <= o.portEnd &&
-              r.portEnd >= o.portStart,
+              ranges.some((a) => portRanges(o).some((b) => a.start <= b.end && a.end >= b.start)),
           )
         )
           throw new Problem(400, 'Listener overlaps another published route');
         listeners.push(r);
-        sockets += r.portEnd - r.portStart + 1;
+        sockets += count;
       }
     }
   }

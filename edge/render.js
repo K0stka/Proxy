@@ -1,5 +1,6 @@
 import { errorPageTypes } from '../shared/pages.js';
 import { isIP } from 'node:net';
+import { portRanges, samePorts } from '../shared/ports.js';
 import { coveredDomain, validateSnapshot, Problem, snapshotHash } from '../shared/model.js';
 
 export const activeHash = snapshotHash;
@@ -17,37 +18,41 @@ const certLines = (domain) =>
 const acl = (r) =>
   r.sourceCIDRs.length ? `${r.sourceCIDRs.map((c) => `allow ${c};`).join('\n')}\ndeny all;` : '';
 const quote = (value) => `"${value.replace(/[\\"$]/g, (c) => `\\${c}`)}"`;
-function assetLocation(uri, file, { internal = false } = {}) {
-  return `location = ${quote(uri)} { ${internal ? 'internal; types {} default_type text/html; charset utf-8;' : ''} alias ${quote(file)}; disable_symlinks on; add_header X-Content-Type-Options nosniff always; limit_except GET { deny all; } }`;
+function assetLocation(uri, file, { internal = false, access = '' } = {}) {
+  return `location = ${quote(uri)} { ${internal ? 'internal; types {} default_type text/html; charset utf-8; allow all;' : ''} ${access} alias ${quote(file)}; disable_symlinks on; add_header X-Content-Type-Options nosniff always; limit_except GET { deny all; } }`;
 }
 const errorLocations = (dir, errors, include404 = true) =>
-  (include404 ? [404, 500, 502] : [500, 502])
+  [404, 500, 502]
     .map((code) => {
       const prefix = `/_proxy/errors/${code}/`;
       const documentUri = `/_proxy/error-documents/${code}`;
-      return `error_page ${code === 502 ? '502 504' : code} ${documentUri};\n${assetLocation(documentUri, `${dir}/${code}.html`, { internal: true })}\n${(errors[code]?.exposed ?? []).map((path) => assetLocation(prefix + path, `/sites/${errors[code].directory}/${path}`)).join('\n')}`;
+      return `${code === 404 && !include404 ? '' : `error_page ${code === 502 ? '502 504' : code} ${documentUri};`}\n${assetLocation(documentUri, `${dir}/${code}.html`, { internal: true })}\n${(errors[code]?.exposed ?? []).map((path) => assetLocation(prefix + path, `/sites/${errors[code].directory}/${path}`, { access: 'allow all;' })).join('\n')}`;
     })
     .join('\n');
 
-function staticLocations(manifest, redirects = []) {
+const containsPath = (base, path) => base === '/' || path === base || path.startsWith(base + '/');
+function staticLocations(manifest, route, overrides) {
   if (!manifest) throw new Problem(400, 'Static folder has not been checked');
   const root = `/sites/${manifest.directory}`;
-  const indexLocation = (uri) =>
-    `location = ${quote(uri)} { root ${quote(root)}; index index.html; disable_symlinks on; limit_except GET { deny all; } }`;
-  return `autoindex off;\n${manifest.exposed
-    .filter((path) => !redirects.some((route) => '/' + path === route.path || ('/' + path).startsWith(route.path + '/')))
+  const mount = route.path === '/' ? '' : route.path;
+  const access = `${acl(route) || 'allow all;'} error_page 404 /_proxy/error-documents/404;`;
+  const shadowed = (uri) => overrides.some((other) => containsPath(other.path, uri));
+  const locations = manifest.exposed
+    .filter((path) => !shadowed(mount + '/' + path))
     .map((path) => {
-      const uri = '/' + path;
-      let result = assetLocation(uri, `${root}/${path}`);
-      if (path === 'index.html') result += '\n' + indexLocation('/');
-      else if (path.endsWith('/index.html')) {
+      const uri = mount + '/' + path;
+      let result = assetLocation(uri, `${root}/${path}`, { access });
+      if (path === 'index.html' || path.endsWith('/index.html')) {
         const folder = uri.slice(0, -'index.html'.length);
-        result += '\n' + indexLocation(folder);
-        result += `\nlocation = ${quote(folder.slice(0, -1))} { return 308 ${quote(encodeURI(folder).replace(/[?#]/g, encodeURIComponent))}; }`;
+        if (!shadowed(folder)) result += `\nlocation = ${quote(folder)} { alias ${quote(root + '/' + path.slice(0, -'index.html'.length))}; index index.html; ${access} disable_symlinks on; limit_except GET { deny all; } }`;
+        if (folder !== '/' && !shadowed(folder.slice(0, -1)))
+          result += `\nlocation = ${quote(folder.slice(0, -1))} { return 308 ${quote(encodeURI(folder).replace(/[?#]/g, encodeURIComponent))}; }`;
       }
       return result;
     })
-    .join('\n')}\nlocation / { return 404; }`;
+    .join('\n');
+  const hasIndex = manifest.exposed.includes('index.html');
+  return `${locations}\n${mount ? `${hasIndex ? '' : `location = ${quote(mount)} { error_page 404 /_proxy/error-documents/404; return 404; }`}\nlocation ^~ ${quote(mount + '/')} { error_page 404 /_proxy/error-documents/404; return 404; }` : 'location / { return 404; }'}`;
 }
 
 export function render(
@@ -149,6 +154,11 @@ return 504 '{"error":"Management request timed out. Check the operation result b
       const root = group.find((route) => route.path === '/');
       const redirects = group.filter((route) => route.kind === 'redirect');
       const redirectRules = redirectLocations(redirects);
+      const staticRoutes = group.filter((route) => route.kind === 'static');
+      const staticRules = staticRoutes.map((route) => staticLocations(staticSites[route.id], route,
+        group.filter((other) => other !== route && containsPath(route.path, other.path)))).join('\n');
+      const staticUpgrades = staticRoutes.filter((route) => route.path !== '/').map((route) =>
+        `location = ${quote(route.path)} { return 308 https://${route.hostname}$request_uri; }\nlocation ^~ ${quote(route.path + '/')} { return 308 https://${route.hostname}$request_uri; }`).join('\n');
       r = root ?? r;
       const endpoint = `${address(r.targetHost)}:${r.targetPort}`;
       const domain = coveredDomain(r.hostname, policy.domains)?.name;
@@ -158,7 +168,7 @@ return 504 '{"error":"Management request timed out. Check the operation result b
           `Certificate for ${domain} is not ready; issue it before publishing`,
         );
       http.push(
-        `server { ${policy.ingressIPs.map((ip) => listen(ip, 80)).join(' ')} server_name ${r.hostname}; ${acl(r)} ${redirectRules} ${root?.kind === 'redirect' ? '' : `location / { return 308 https://${r.hostname}$request_uri; }`} }`,
+        `server { ${policy.ingressIPs.map((ip) => listen(ip, 80)).join(' ')} server_name ${r.hostname}; ${acl(r)} ${redirectRules} ${staticUpgrades} ${root?.kind === 'redirect' ? '' : `location / { return 308 https://${r.hostname}$request_uri; }`} }`,
       );
       http.push(`server {
 ${policy.ingressIPs.map((ip) => listen(ip, 443, 'ssl')).join(' ')} server_name ${r.hostname}; ${certLines(domain)}
@@ -167,11 +177,11 @@ ${acl(r)}
 ${errorLocations(directory, errorSites, r.kind !== 'http')}
 client_max_body_size ${r.uploadMB}m;
 ${redirectRules}
+${staticRules}
 ${
   !root ? 'location / { return 404; }'
     : r.kind === 'redirect' ? ''
-    : r.kind === 'static'
-    ? staticLocations(staticSites[r.id], redirects)
+    : r.kind === 'static' ? ''
     : `
 location / {
 proxy_pass ${r.upstreamTLS ? 'https' : 'http'}://${endpoint};
@@ -196,12 +206,12 @@ ${r.upstreamTLS ? `proxy_ssl_server_name on; proxy_ssl_name ${r.upstreamServerNa
 }
 }`);
     } else {
-      const endpoint = `${address(r.targetHost)}:${r.kind === 'udp' ? '$server_port' : r.targetPort}`;
+      const endpoint = `${address(r.targetHost)}:${samePorts(r) ? '$server_port' : r.targetPort}`;
       if (r.streamTLS && !ready.has(r.tlsDomain))
         throw new Problem(409, `Certificate for ${r.tlsDomain} is not ready`);
-      const ports = r.portEnd === r.portStart ? r.portStart : `${r.portStart}-${r.portEnd}`;
+      const listeners = portRanges(r).map(({ start, end }) => listen(r.ingressIP, start === end ? start : `${start}-${end}`, r.kind === 'udp' ? 'udp reuseport' : r.streamTLS ? 'ssl' : '')).join('\n');
       stream.push(
-        `server { ${listen(r.ingressIP, ports, r.kind === 'udp' ? 'udp reuseport' : r.streamTLS ? 'ssl' : '')} ${r.streamTLS ? certLines(r.tlsDomain) : ''} ${acl(r)} proxy_connect_timeout 5s; proxy_timeout ${r.timeout}s; ${r.proxyProtocol ? 'proxy_protocol on;' : ''} proxy_pass ${endpoint}; }`,
+        `server { ${listeners} ${r.streamTLS ? certLines(r.tlsDomain) : ''} ${acl(r)} proxy_connect_timeout 5s; proxy_timeout ${r.timeout}s; ${r.proxyProtocol ? 'proxy_protocol on;' : ''} proxy_pass ${endpoint}; }`,
       );
     }
   }

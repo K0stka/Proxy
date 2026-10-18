@@ -436,6 +436,23 @@ test('redirect drafts validate URLs without probes and publish beside a root rou
   assert.equal(exported.routes.find((route) => route.id === created.id).redirectURL, input.redirectURL);
 });
 
+test('static directory paths and port lists validate, persist and publish through the API', async (t) => {
+  const f = await fixture(t);
+  const site = route({ kind: 'static', hostname: 'krychlic.com', path: '/something/', staticSite: { directory: 'something' } });
+  const created = await (await f.request('/api/routes', { method: 'POST', body: site })).json();
+  assert.equal(created.path, '/something');
+  assert.equal((await f.request(`/api/routes/${created.id}/publish`, { method: 'POST' })).status, 200);
+  assert.equal((await f.request('/api/routes', { method: 'POST', body: route({ hostname: 'krychlic.com' }) })).status, 200);
+  for (const kind of ['tcp', 'udp']) {
+    const input = route({ kind, ports: '56-78, 12, 34' });
+    assert.equal((await f.request('/api/validate', { method: 'POST', body: { kind: 'route', step: 2, value: input } })).status, 200);
+    const stream = await (await f.request('/api/routes', { method: 'POST', body: input })).json();
+    assert.equal(stream.ports, '12, 34, 56-78');
+    assert.equal((await f.request(`/api/routes/${stream.id}/publish`, { method: 'POST' })).status, 200);
+    assert.equal((await f.request('/api/routes', { method: 'POST', body: { ...input, ports: '12,,34' } })).status, 400);
+  }
+});
+
 test('drafts stay private; failed publish and live edits preserve working state', async (t) => {
   const f = await fixture(t);
   const response = await f.request('/api/routes', {

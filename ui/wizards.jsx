@@ -1,4 +1,5 @@
 import { errorPageTypes } from '../shared/pages.js';
+import { portRanges, formatPorts, samePorts } from '../shared/ports.js';
 import { Button, SelectField, NumberField, Disclosure } from './controls.jsx';
 import { TagsInput, Stepper, Group, Alert, TextInput, Switch, Checkbox } from '@mantine/core';
 import React, { useState, useEffect, useRef } from 'react';
@@ -351,10 +352,10 @@ function Summary({ route }) {
       {route.kind === 'redirect' && (
         <div><dt>Redirect</dt><dd>{route.redirectStatus === 301 ? 'Permanent (301)' : 'Temporary (302)'}</dd></div>
       )}
-      {route.kind === 'udp' && (
+      {samePorts(route) && (
         <div>
           <dt>Ports</dt>
-          <dd>{route.portEnd - route.portStart + 1} · same port on destination</dd>
+          <dd>{portRanges(route).reduce((count, { start, end }) => count + end - start + 1, 0)} · same port on destination</dd>
         </div>
       )}
       {route.sourceCIDRs.length > 0 && (
@@ -371,15 +372,12 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
   const editing = Boolean(initial.id) && !publishOnly;
   const [route, setRoute] = useWizardField('route', {
     ...initial,
+    ports: initial.ports || (['tcp', 'udp'].includes(initial.kind) ? formatPorts(portRanges(initial)) : ''),
     staticSite: initial.staticSite ?? null,
   });
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [check, setCheck] = useState(null);
-  const [udpBlock, setUDPBlock] = useWizardField(
-    'udpBlock',
-    initial.kind === 'udp' && initial.portEnd > initial.portStart,
-  );
   const [cidrs, setCIDRs] = useWizardField('cidrs', initial.sourceCIDRs.join('\n'));
   const initialDomain =
     state.domains.find(
@@ -417,8 +415,6 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
     hostname: isWebsite(route)
       ? `${subdomain && state.domains.find((d) => d.name === domain)?.subdomains ? subdomain + '.' : ''}${domain}`
       : '',
-    portEnd:
-      route.kind === 'tcp' || (route.kind === 'udp' && !udpBlock) ? route.portStart : route.portEnd,
     sourceCIDRs: cidrs.split(/[\s,]+/).filter(Boolean),
   };
   async function save() {
@@ -456,6 +452,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
       targetPort: port.hostPort,
       portStart: route.kind === 'udp' ? port.hostPort : r.portStart,
       portEnd: route.kind === 'udp' ? port.hostPort : r.portEnd,
+      ports: route.kind === 'udp' ? String(port.hostPort) : r.ports,
       source: {
         server: service.server,
         container: service.name,
@@ -544,6 +541,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                           kind,
                           path: '/',
                           redirectURL: '',
+                          ports: ['tcp', 'udp'].includes(kind) ? String(r.portStart) : '',
                           staticSite: kind === 'static' ? (r.staticSite ?? blankSite('')) : null,
                           streamTLS: false,
                           proxyProtocol: false,
@@ -625,7 +623,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                     list="discovered-servers"
                     label={'Destination IP'}
                   />
-                  {route.kind !== 'udp' && (
+                  {!samePorts(route) && (
                     <NumberField
                       required
                       min={1}
@@ -726,39 +724,15 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                   ))}
                 </SelectField>
               )}
-              {route.kind === 'udp' && (
-                <div className="segmented">
-                  <Button type="button" aria-pressed={!udpBlock} onClick={() => setUDPBlock(false)}>
-                    Single port
-                  </Button>
-                  <Button type="button" aria-pressed={udpBlock} onClick={() => setUDPBlock(true)}>
-                    Port block
-                  </Button>
-                </div>
-              )}
-              <div className="field-pair">
-                <NumberField
-                  required
-                  min={1}
-                  max={65535}
-                  value={route.portStart}
-                  onChange={(e) => set('portStart', Number(e.target.value))}
-                  label={route.kind === 'udp' && udpBlock ? 'Start port' : 'Public port'}
-                />
-                {route.kind === 'udp' && udpBlock && (
-                  <NumberField
-                    required
-                    min={route.portStart}
-                    max={65535}
-                    value={route.portEnd}
-                    onChange={(e) => set('portEnd', Number(e.target.value))}
-                    label={'End port'}
-                  />
-                )}
-              </div>
+              <TextInput
+                required label="Ports" placeholder="12, 34, 56-78"
+                value={route.ports}
+                description="Separate ports and ranges with commas. Multiple ports forward to the same port numbers at the destination."
+                onChange={(e) => set('ports', e.target.value)}
+              />
             </>
           )}
-          {route.kind === 'redirect' && (
+          {['static', 'redirect'].includes(route.kind) && (
             <TextInput label="Path" required placeholder="/" value={route.path}
               description="Matches this directory and its subdirectories. Other paths keep their existing route, or return 404."
               onChange={(e) => set('path', e.target.value)} />

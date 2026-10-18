@@ -1,5 +1,6 @@
 import { errorPageTypes } from '../shared/pages.js';
 import { compareNames } from './order.js';
+import { portRanges, formatPorts, samePorts } from '../shared/ports.js';
 export const isWebsite = (route) => ['http', 'static', 'redirect'].includes(route.kind);
 export const routeSubdomain = (name) =>
   name
@@ -12,12 +13,12 @@ export const routeSubdomain = (name) =>
     .replace(/-+$/g, '');
 export const listener = (route) =>
   isWebsite(route)
-    ? route.hostname + (route.kind === 'redirect' && route.path !== '/' ? (route.path ?? '') : '')
-    : `${route.ingressIP.includes(':') ? `[${route.ingressIP}]` : route.ingressIP}:${route.portStart}${route.portEnd !== route.portStart ? `–${route.portEnd}` : ''}`;
+    ? route.hostname + (['static', 'redirect'].includes(route.kind) && route.path !== '/' ? (route.path ?? '') : '')
+    : `${route.ingressIP.includes(':') ? `[${route.ingressIP}]` : route.ingressIP}:${route.ports || formatPorts(portRanges(route))}`;
 export const destination = (route) =>
   route.kind === 'redirect' ? route.redirectURL : route.kind === 'static'
     ? `/sites/${route.staticSite?.directory ?? ''}`
-    : `${route.targetHost.includes(':') ? `[${route.targetHost}]` : route.targetHost}:${route.kind === 'udp' ? (route.portStart === route.portEnd ? route.portStart : `${route.portStart}–${route.portEnd}`) : route.targetPort}`;
+    : `${route.targetHost.includes(':') ? `[${route.targetHost}]` : route.targetHost}:${samePorts(route) ? (route.ports || formatPorts(portRanges(route))) : route.targetPort}`;
 export const kindName = { http: 'Service', static: 'Static site', redirect: 'Redirect', tcp: 'TCP', udp: 'UDP' };
 export const portLabel = (port) =>
   `${port.hostPort ? port.hostPort + ':' : ''}${port.containerPort} (${port.protocol.toUpperCase()})`;
@@ -35,8 +36,8 @@ export function serviceProxies(routes, service, port) {
     if (['static', 'redirect'].includes(route.kind) || (route.kind === 'udp') !== (port.protocol === 'udp'))
       return false;
     if (
-      route.kind === 'udp'
-        ? port.hostPort < route.portStart || port.hostPort > route.portEnd
+      samePorts(route)
+        ? !portRanges(route).some(({ start, end }) => port.hostPort >= start && port.hostPort <= end)
         : route.targetPort !== port.hostPort
     )
       return false;
@@ -126,6 +127,7 @@ export function freshRoute(state) {
     ingressIP: state.policy.ingressIPs[0],
     portStart: 51413,
     portEnd: 51413,
+    ports: '',
     targetHost: '',
     targetPort: 80,
     staticSite: null,
