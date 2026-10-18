@@ -241,7 +241,7 @@ export function SitePicker({
         </p>
       )}
       {!fixedDirectory && !catalog.error && !catalog.folders.length && (
-        <p className="hint">No folders configured. Add one in Files.</p>
+        <p className="hint">No folders configured. Add one in Folders.</p>
       )}
       {editRules && (
         <>

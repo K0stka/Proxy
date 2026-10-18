@@ -1,7 +1,7 @@
 import { Button } from './controls.jsx';
 import { TextInput, Alert, Paper, Group, Tooltip } from '@mantine/core';
 import React, { useState } from 'react';
-import { FolderOpen, Plus, Pencil, Trash2, GitPullRequest } from 'lucide-react';
+import { FolderOpen, Pencil, Trash2, GitPullRequest } from 'lucide-react';
 import { api } from './api.js';
 import { useToast } from './toasts.jsx';
 import { blankSite } from './routes.js';
@@ -107,7 +107,7 @@ export function FolderWizard({ initial, onClose, onSaved }) {
     </Wizard>
   );
 }
-export default function Folders({ catalog, onEdit, onCreate, onSaved }) {
+export default function Folders({ catalog, onEdit, onSaved }) {
   const report = useToast();
   const [busy, setBusy] = useState(false);
   const [pulling, setPulling] = useState(null);
@@ -140,13 +140,6 @@ export default function Folders({ catalog, onEdit, onCreate, onSaved }) {
   }
   return (
     <section className="folders-section" aria-label="Folders">
-      <div className="section-title">
-        <h2>Folders</h2>
-        <Button className="primary" onClick={onCreate}>
-          <Plus size={15} />
-          Add folder
-        </Button>
-      </div>
       {catalog.error && (
         <Alert className="notice error" role="alert" color="red" variant="light">
           {catalog.error}

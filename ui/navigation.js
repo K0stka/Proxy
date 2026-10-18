@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-const pages = ['Routes', 'Services', 'Files', 'Domains', 'Settings'];
+const pages = ['Routes', 'Services', 'Folders', 'Domains', 'Settings'];
 const kinds = ['route', 'folder', 'pages', 'domains'];
 
 export function createNavigation(browser) {
@@ -12,10 +12,10 @@ export function createNavigation(browser) {
     const [, section, action, name] = url.pathname.split('/');
     const kind = section === 'domains' && ['new', 'edit'].includes(action) ? 'domains' : action;
     const domainName = section === 'domains' && action === 'edit' ? name : null;
-    const code = section === 'files' && kind === 'pages' ? (name === '502' ? 502 : 404) : null;
-    const page = pages.find((name) => name.toLowerCase() === section) ?? 'Routes';
+    const code = ['files', 'settings'].includes(section) && kind === 'pages' ? (name === '502' ? 502 : 404) : null;
+    const page = code !== null ? 'Settings' : section === 'files' ? 'Folders' : pages.find((name) => name.toLowerCase() === section) ?? 'Routes';
     const saved = browser.history.state?.proxyNavigation;
-    const matches = saved?.page === page && saved.wizard?.kind === kind &&
+    const matches = (saved?.page === page || (saved?.page === 'Files' && ['Folders', 'Settings'].includes(page))) && saved.wizard?.kind === kind &&
       (!domainName || (saved.wizard.initial?.name ?? saved.wizard.domainName) === domainName) &&
       (code === null || (saved.wizard.code ?? 404) === code) &&
       !(section === 'domains' && action === 'new' && saved.wizard?.initial);
@@ -27,7 +27,7 @@ export function createNavigation(browser) {
     const requestedStep = Math.floor(Number(url.searchParams.get('step'))) || 0;
     return {
       page, wizard, id,
-      settingsSection: page === 'Settings' && ['general', 'certificates', 'access', 'backup'].includes(kind) ? kind : 'general',
+      settingsSection: code !== null ? 'error-pages' : page === 'Settings' && ['general', 'certificates', 'error-pages', 'access', 'backup'].includes(kind) ? kind : 'general',
       step: wizard ? Math.min(maxStep, Math.max(0, requestedStep)) : 0,
       draft: drafts.get(id) ?? (wizard && saved?.id === id ? saved.draft : null) ?? {},
     };
@@ -61,6 +61,7 @@ export function createNavigation(browser) {
     setWizard(wizard) {
       write({
         ...current, wizard, step: 0, draft: {},
+        ...(wizard?.kind === 'pages' ? { page: 'Settings', settingsSection: 'error-pages' } : {}),
         id: wizard ? browser.crypto.randomUUID() : null,
       }, wizard ? 'pushState' : 'replaceState');
     },

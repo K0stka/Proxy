@@ -15,6 +15,7 @@ import {
   Trash2,
   Pencil,
   ChevronRight,
+  ArrowRight,
 } from 'lucide-react';
 import { api } from './api.js';
 import { useToast } from './toasts.jsx';
@@ -23,7 +24,7 @@ import {
   freshRoute,
   listener,
   destination,
-  portLabel,
+  destinationLabel,
   visibleServicePorts,
   serviceProxies,
 } from './routes.js';
@@ -77,7 +78,7 @@ export default function Workspace({ onLogout, onRecovery }) {
       else report(e.message, true);
     }
   }
-  async function loadFiles() {
+  async function loadFolders() {
     try {
       const next = await api('/sites');
       setCatalog({ ...next, folders: next.folders.toSorted(byName) });
@@ -98,7 +99,7 @@ export default function Workspace({ onLogout, onRecovery }) {
       top: 0,
       behavior: 'instant',
     });
-    if (page === 'Files') loadFiles();
+    if (page === 'Folders') loadFolders();
   }, [page, wizard]);
   async function action(route, op) {
     setWorking(true);
@@ -183,7 +184,7 @@ export default function Workspace({ onLogout, onRecovery }) {
         onClose={() => setWizard(null)}
         onSaved={async (message) => {
           await saved(message);
-          await loadFiles();
+          await loadFolders();
         }}
       />
     );
@@ -222,7 +223,7 @@ export default function Workspace({ onLogout, onRecovery }) {
           {[
             ['Routes', Waypoints],
             ['Services', Server],
-            ['Files', FolderOpen],
+            ['Folders', FolderOpen],
             ['Domains', Globe],
             ['Settings', ShieldCheck],
           ].map(([name, Icon]) => (
@@ -260,7 +261,7 @@ export default function Workspace({ onLogout, onRecovery }) {
       </aside>
       <div className="workspace" ref={content}>
         {flow ?? (
-          <main>
+          <main className={page === 'Settings' ? 'settings-main' : undefined}>
             <div className="page-heading">
               <h1>{page}</h1>
               {page === 'Routes' && (
@@ -311,14 +312,19 @@ export default function Workspace({ onLogout, onRecovery }) {
                   Add domain
                 </Button>
               )}
-              {['Services', 'Files'].includes(page) && (
+              {page === 'Folders' && (
+                <Button className="primary" onClick={() => setWizard({ kind: 'folder' })}>
+                  <Plus size={17} /> Add folder
+                </Button>
+              )}
+              {['Services', 'Folders'].includes(page) && (
                 <Button
                   className="secondary"
                   disabled={working}
                   onClick={async () => {
                     setWorking(true);
                     try {
-                      if (page === 'Files') await loadFiles();
+                      if (page === 'Folders') await loadFolders();
                       else {
                         await api('/discovery/refresh', {
                           method: 'POST',
@@ -410,11 +416,9 @@ export default function Workspace({ onLogout, onRecovery }) {
                                 {forwarding && `${route.kind.toUpperCase()}: `}
                                 {listener(route)}
                               </span>
-                              <span className="inline-arrow">→</span>
+                              <ArrowRight className="inline-arrow" size={20} aria-label="to" />
                               <span title={destination(route)}>
-                                {forwarding
-                                  ? destination(route)
-                                  : (route.source?.container ?? destination(route))}
+                                {destinationLabel(route, state.discovery)}
                               </span>
                             </span>
                           </Button>
@@ -476,90 +480,74 @@ export default function Workspace({ onLogout, onRecovery }) {
                     {state.discovery.error}
                   </Alert>
                 )}
-                <div className="inventory-status">
-                  {state.discovery.stale && <span>Discovery out of date</span>}
-                  <span>Updated {when(state.discovery.lastSuccess)}</span>
-                </div>
-                {state.discovery.servers
-                  .filter(
-                    (server) => server.error || portServices.some((s) => s.server === server.id),
-                  )
-                  .map((server) => (
-                    <section className="server-group" key={server.id}>
-                      <h2>
-                        <Server size={18} />
-                        {server.name}
-                        <code>{server.address}</code>
-                      </h2>
-                      {server.error && (
-                        <Alert className="notice" color="blue" variant="light">
-                          {server.error}
-                        </Alert>
-                      )}
-                      <div className="service-grid">
-                        {portServices
-                          .filter((s) => s.server === server.id)
-                          .map((service) => (
-                            <Paper
-                              className={`discovered-service${service.ports.some((port) => serviceProxies(state.routes, service, port).length) ? ' proxied' : ''}${service.ports.some((port) => serviceProxies(state.routes, service, port).some((route) => route.published)) ? ' proxy-enabled' : ''}`}
-                              key={`${service.server}:${service.containerId}:${service.name}`}
-                              component="article"
-                              withBorder={true}
-                              p="lg"
-                            >
-                              <div className="service-heading">
-                                <strong>{service.name}</strong>
-                                {service.state !== 'running' && (
-                                  <span className="status-text">{service.state}</span>
-                                )}
-                              </div>
-                              {service.ports.map((port, i) => {
-                                const proxies = serviceProxies(state.routes, service, port);
-                                const edit = (route) =>
-                                  setWizard({ kind: 'route', initial: route });
-                                const button = (
-                                  <Button
-                                    className="secondary small"
-                                    disabled={!proxies.length && service.state !== 'running'}
-                                    onClick={
-                                      proxies.length > 1
-                                        ? undefined
-                                        : () =>
-                                            proxies.length
-                                              ? edit(proxies[0])
-                                              : connect(service, port)
-                                    }
-                                  >
-                                    {proxies.length ? 'Edit proxy' : 'Create proxy'}
-                                    <ChevronRight size={14} />
-                                  </Button>
-                                );
-                                return (
-                                  <div className="port-row" key={i}>
-                                    <code>{portLabel(port)}</code>
-                                    {!port.usable && <span className="hint">{port.reason}</span>}
-                                    {proxies.length > 1 ? (
-                                      <Menu position="bottom-end" withinPortal>
-                                        <Menu.Target>{button}</Menu.Target>
-                                        <Menu.Dropdown>
-                                          {proxies.map((route) => (
-                                            <Menu.Item key={route.id} onClick={() => edit(route)}>
-                                              {route.name} · {listener(route)}
-                                            </Menu.Item>
-                                          ))}
-                                        </Menu.Dropdown>
-                                      </Menu>
-                                    ) : (
-                                      button
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </Paper>
-                          ))}
-                      </div>
-                    </section>
-                  ))}
+                {state.discovery.stale && (
+                  <p className="inventory-status">Discovery out of date</p>
+                )}
+                {state.discovery.servers.filter((server) => server.error).map((server) => (
+                  <Alert key={server.id} className="notice" color="blue" variant="light">
+                    {server.name}: {server.error}
+                  </Alert>
+                ))}
+                {portServices.length > 0 && (
+                  <div className="service-list">
+                    <div className="service-columns" aria-hidden="true">
+                      <span />
+                      <span>Service</span>
+                      <span>Host</span>
+                      <span>Host port</span>
+                      <span>Container port</span>
+                      <span>Protocol</span>
+                      <span />
+                    </div>
+                    {portServices.flatMap((service) => service.ports.map((port) => {
+                      const proxies = serviceProxies(state.routes, service, port);
+                      const host = state.discovery.servers.find((server) => server.id === service.server);
+                      const edit = (route) => setWizard({ kind: 'route', initial: route });
+                      const button = (
+                        <Button
+                          className="secondary small"
+                          disabled={!proxies.length && service.state !== 'running'}
+                          onClick={proxies.length > 1 ? undefined : () =>
+                            proxies.length ? edit(proxies[0]) : connect(service, port)}
+                        >
+                          {proxies.length ? 'Edit proxy' : 'Create proxy'}
+                          <ChevronRight size={14} />
+                        </Button>
+                      );
+                      return (
+                        <Paper className="service-row" component="article" withBorder
+                          key={`${service.server}:${service.containerId}:${service.name}:${port.hostPort}:${port.containerPort}:${port.protocol}`}>
+                          <div className="service-icon"><Server size={20} /></div>
+                          <div className="service-name">
+                            <strong>{service.name}</strong>
+                            {service.state !== 'running' && <span className="status-text">{service.state}</span>}
+                          </div>
+                          <div className="service-host">
+                            <span>{host?.name ?? service.serverName ?? service.server}</span>
+                            <code>{port.targetHost}</code>
+                          </div>
+                          <code className="service-host-port"><span className="mobile-field-label">Host port</span>{port.hostPort}</code>
+                          <code className="service-container-port"><span className="mobile-field-label">Container port</span>{port.containerPort}</code>
+                          <code className="service-protocol">{port.protocol.toUpperCase()}</code>
+                          <div className="service-actions">
+                            {proxies.length > 1 ? (
+                              <Menu position="bottom-end" withinPortal>
+                                <Menu.Target>{button}</Menu.Target>
+                                <Menu.Dropdown>
+                                  {proxies.map((route) => (
+                                    <Menu.Item key={route.id} onClick={() => edit(route)}>
+                                      {route.name} · {listener(route)}
+                                    </Menu.Item>
+                                  ))}
+                                </Menu.Dropdown>
+                              </Menu>
+                            ) : button}
+                          </div>
+                        </Paper>
+                      );
+                    }))}
+                  </div>
+                )}
                 {!portServices.length && !state.discovery.error && (
                   <div className="empty-state">
                     <Server size={28} />
@@ -568,15 +556,10 @@ export default function Workspace({ onLogout, onRecovery }) {
                 )}
               </>
             )}
-            {page === 'Files' && (
-              <div className="files-layout">
+            {page === 'Folders' && (
+              <div className="folders-layout">
                 <Folders
                   catalog={catalog}
-                  onCreate={() =>
-                    setWizard({
-                      kind: 'folder',
-                    })
-                  }
                   onEdit={(initial) =>
                     setWizard({
                       kind: 'folder',
@@ -585,49 +568,10 @@ export default function Workspace({ onLogout, onRecovery }) {
                   }
                   onSaved={async (message) => {
                     await refresh();
-                    await loadFiles();
+                    await loadFolders();
                     report(message);
                   }}
                 />
-                <section className="error-pages-section" aria-label="Error pages">
-                  <h2>Error pages</h2>
-                  <div className="error-pages-grid">
-                    {[
-                      ['404', state.pages.notFoundSite, state.pages.notFoundDocument],
-                      ['502', state.pages.badGatewaySite, state.pages.badGatewayDocument],
-                    ].map(([code, site, document]) => (
-                      <Paper
-                        className="error-page-card"
-                        key={code}
-                        component="article"
-                        withBorder={true}
-                        p="lg"
-                      >
-                        <div className="error-page-heading">
-                          <div>
-                            <span className="error-page-code">{code}</span>
-                            <h3>{code === '404' ? 'Not found' : 'Service unavailable'}</h3>
-                          </div>
-                          <Button
-                            className="secondary"
-                            aria-label={`Edit ${code} page`}
-                            onClick={() =>
-                              setWizard({
-                                kind: 'pages',
-                                code: Number(code),
-                              })
-                            }
-                          >
-                            <Pencil size={14} /> Edit
-                          </Button>
-                        </div>
-                        <code>
-                          {site ? `/sites/${site.directory}/${document}` : 'Built-in page'}
-                        </code>
-                      </Paper>
-                    ))}
-                  </div>
-                </section>
               </div>
             )}
             {page === 'Domains' && !state.domains.length && (
@@ -637,23 +581,24 @@ export default function Workspace({ onLogout, onRecovery }) {
               </div>
             )}
             {page === 'Domains' && (
-              <div className="domain-grid">
+              <div className="domain-list">
                 {state.domains.map((d) => (
                   <Paper
-                    className="domain-card"
+                    className="domain-row"
                     key={d.name}
                     component="section"
                     withBorder={true}
-                    p="lg"
                   >
-                    <div className="section-title">
-                      <Globe size={22} />
-                      <span className="status-text">
-                        {d.staging ? 'Staging' : d.ready ? 'Ready' : 'Pending'}
-                      </span>
+                    <div className="service-icon"><Globe size={20} /></div>
+                    <div className="domain-identity">
+                      <div className="section-title">
+                        <span className="status-text">
+                          {d.staging ? 'Staging' : d.ready ? 'Ready' : 'Pending'}
+                        </span>
+                      </div>
+                      <h2>{d.name}</h2>
+                      <code>{d.subdomains ? `${d.name}, *.${d.name}` : d.name}</code>
                     </div>
-                    <h2>{d.name}</h2>
-                    <code>{d.subdomains ? `${d.name}, *.${d.name}` : d.name}</code>
                     <div className="domain-facts">
                       <div>
                         <span>Expires</span>
@@ -665,12 +610,12 @@ export default function Workspace({ onLogout, onRecovery }) {
                       </div>
                     </div>
                     {d.staging && (
-                      <p className="hint">
+                      <p className="hint domain-note">
                         Test certificate. Disable staging in Settings to enable routes.
                       </p>
                     )}
                     {d.error && (
-                      <p className="error-text" role="alert">
+                      <p className="error-text domain-note" role="alert">
                         {d.error}
                       </p>
                     )}
@@ -736,6 +681,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                 report={report}
                 onRecovery={onRecovery}
                 onLogout={onLogout}
+                onEditPage={(code) => setWizard({ kind: 'pages', code })}
               />
             )}
           </main>

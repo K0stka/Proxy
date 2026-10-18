@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeContainers } from '../server/komodo.js';
-import { serviceEndpoints, portLabel, visibleServicePorts, serviceProxies, routeSubdomain } from '../ui/routes.js';
+import { serviceEndpoints, portLabel, visibleServicePorts, serviceProxies, destinationLabel, routeSubdomain } from '../ui/routes.js';
 import { byName } from '../ui/order.js';
 import { route } from './fixtures.js';
 
@@ -76,4 +76,23 @@ test('names sort ascending without case sensitivity and route names form valid s
   assert.equal(routeSubdomain(' Žlutý kůň! '), 'zluty-kun');
   assert.equal(routeSubdomain('---'), '');
   assert.equal(routeSubdomain('x'.repeat(62) + ' more').length, 62);
+});
+
+
+test('route destinations identify discovered services and hosts, retaining custom and stale targets', () => {
+  const discovery = {
+    servers: [{ id: 'home', name: 'Home server' }],
+    services: [{
+      server: 'home', name: 'Photos', containerId: 'photos-id',
+      ports: [{ hostPort: 2283, containerPort: 2283, protocol: 'tcp', targetHost: '100.101.102.103', usable: true }],
+    }],
+  };
+  const custom = route({ targetHost: '100.101.102.103', targetPort: 2283 });
+  assert.equal(destinationLabel(custom, discovery), 'Photos (Home server)');
+  assert.equal(destinationLabel(route({ targetHost: '100.101.102.103', targetPort: 9000 }), discovery), '100.101.102.103:9000');
+  assert.equal(destinationLabel(route({ kind: 'static', staticSite: { directory: 'portfolio' } }), discovery), '/sites/portfolio');
+  assert.equal(destinationLabel(route({ source: { server: 'home', container: 'Old photos', containerPort: 2283 } }),
+    { ...discovery, services: [] }), 'Old photos (Home server)');
+  assert.equal(destinationLabel(route({ source: { server: 'offline', container: 'Photos', containerPort: 2283 } }),
+    { servers: [], services: [] }), 'Photos (offline)');
 });

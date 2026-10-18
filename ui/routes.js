@@ -49,6 +49,16 @@ export function serviceProxies(routes, service, port) {
     return route.targetHost === port.targetHost;
   });
 }
+export function destinationLabel(route, discovery) {
+  if (route.kind === 'static') return destination(route);
+  const service = discovery.services.find((service) =>
+    visibleServicePorts(service).some((port) => serviceProxies([route], service, port).length),
+  );
+  const name = service?.name ?? route.source?.container;
+  if (!name) return destination(route);
+  const server = discovery.servers.find((server) => server.id === (service?.server ?? route.source?.server));
+  return `${name} (${server?.name ?? service?.serverName ?? route.source?.server ?? route.targetHost})`;
+}
 export function serviceEndpoints(services, kind) {
   const protocol = kind === 'udp' ? 'udp' : 'tcp';
   return services
