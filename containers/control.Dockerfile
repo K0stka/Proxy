@@ -4,6 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY index.html vite.config.js ./
 COPY ui ./ui
+COPY shared ./shared
 COPY public ./public
 RUN npm run build && npm prune --omit=dev --ignore-scripts
 
