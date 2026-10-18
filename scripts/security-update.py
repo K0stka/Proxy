@@ -43,6 +43,42 @@ def rollback_images(previous):
         run(['docker', 'tag', container['Image'], container['Config']['Image']])
 
 
+def rollback_configuration(config):
+    changes = ['LABEL org.krychlic.proxy.managed=true']
+    for name in ('Entrypoint', 'Cmd'):
+        if config.get(name):
+            changes.append(name.upper() + ' ' + json.dumps(config[name]))
+    for name, directive in [('User', 'USER'), ('WorkingDir', 'WORKDIR')]:
+        if config.get(name):
+            changes.append(directive + ' ' + config[name])
+    for value in config.get('Env', []):
+        key, data = value.split('=', 1)
+        if not any(secret in key.upper() for secret in ('TOKEN', 'SECRET', 'KEY', 'PASSWORD')):
+            changes.append('ENV ' + key + '=' + json.dumps(data))
+    return changes
+
+
+def preserve_images(previous, work):
+    for service, container in zip(SERVICES, previous):
+        present = subprocess.run(['docker', 'image', 'inspect', container['Image']],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+        if not present:
+            # A running container can outlive pruned image metadata. Export excludes
+            # mounted state/keys; import explicitly excludes runtime secret variables.
+            print('Reconstructing missing rollback image for ' + service, flush=True)
+            archive = work / (service + '-rootfs.tar')
+            try:
+                run(['docker', 'export', '--output', str(archive), container['Id']])
+                changes = rollback_configuration(container['Config'])
+                command = ['docker', 'import']
+                for change in changes:
+                    command += ['--change', change]
+                container['Image'] = run(command + [str(archive)], capture=True).strip()
+            finally:
+                archive.unlink(missing_ok=True)
+        run(['docker', 'tag', container['Image'], 'proxy-rollback-' + service + ':latest'])
+
+
 def health(previous, admin_host, isolation=True):
     for container in containers():
         if not container['State']['Running'] or container['State'].get('Health', {}).get('Status', 'healthy') != 'healthy':
@@ -131,10 +167,9 @@ def main():
     revision = run(['git', 'rev-parse', 'origin/main'], cwd=repo, capture=True).strip()
     environment_hash = hashlib.sha256((repo / '.env').read_bytes()).digest()
     work = Path(tempfile.mkdtemp(prefix='run-', dir=args.state))
+    preserve_images(previous, work)
     rollback_file = work / 'rollback.compose.json'
     rollback_file.write_text(json.dumps({'services': {service: {'image': container['Image']} for service, container in zip(SERVICES, previous)}}))
-    for service, container in zip(SERVICES, previous):
-        run(['docker', 'tag', container['Image'], 'proxy-rollback-' + service + ':latest'])
     with sqlite3.connect(db_path.as_uri() + '?mode=ro', uri=True) as source:
         with sqlite3.connect(work / 'control-backup.db') as destination:
             source.backup(destination)

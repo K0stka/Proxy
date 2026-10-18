@@ -9,6 +9,18 @@ spec.loader.exec_module(updater)
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_reconstructed_images_preserve_startup_without_embedding_runtime_secrets(self):
+        changes = updater.rollback_configuration({
+            'Entrypoint': ['proxy-start', 'control'], 'Cmd': ['node', 'server/main.js'],
+            'User': '0:10000', 'WorkingDir': '/app',
+            'Env': ['PATH=/bin', 'PROXY_STATE=/state', 'PROXY_KOMODO_KEY=do-not-store',
+                    'PROXY_KOMODO_SECRET=do-not-store', 'PROXY_CLOUDFLARE_TOKENS=do-not-store',
+                    'PROXY_BOOTSTRAP_TOKEN=do-not-store'],
+        })
+        self.assertNotIn('do-not-store', '\n'.join(changes))
+        self.assertIn('ENV PROXY_STATE="/state"', changes)
+        self.assertIn('ENTRYPOINT ["proxy-start", "control"]', changes)
+
     def test_health_failure_restores_images_and_uses_rollback_override(self):
         previous = [{'Image': 'sha256:known-good', 'Config': {'Image': 'proxy-control'}}]
         with patch.object(updater, 'run') as run:

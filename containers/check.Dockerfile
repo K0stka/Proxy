@@ -1,5 +1,6 @@
 FROM node:26-alpine3.24
-RUN apk upgrade --no-cache && apk add --no-cache docker-cli docker-cli-compose git python3
+RUN apk upgrade --no-cache && apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git python3
+ENV DOCKER_BUILDKIT=1
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts

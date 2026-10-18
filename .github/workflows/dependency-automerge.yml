@@ -40,6 +40,8 @@ jobs:
                   for name in old.keys() & new.keys():
                       if not re.fullmatch(r'\d+\.\d+\.\d+', old[name]) or not re.fullmatch(r'\d+\.\d+\.\d+', new[name]) or old[name].split('.')[0] != new[name].split('.')[0]:
                           compatible = False
+                      elif tuple(map(int, new[name].split('.'))) < tuple(map(int, old[name].split('.'))):
+                          compatible = False
               if not compatible or before != after:
                   continue
               api(f'repos/{repo}/pulls/{pr["number"]}/merge', '--method', 'PUT', '-f', f'sha={sha}', '-f', 'merge_method=squash')
