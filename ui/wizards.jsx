@@ -6,6 +6,7 @@ import { useMediaQuery } from '@mantine/hooks';
 import {
   ArrowLeft,
   ArrowRight,
+  CornerUpRight,
   Check,
   Globe,
   FolderOpen,
@@ -347,6 +348,9 @@ function Summary({ route }) {
         <dt>Destination</dt>
         <dd>{destination(route)}</dd>
       </div>
+      {route.kind === 'redirect' && (
+        <div><dt>Redirect</dt><dd>{route.redirectStatus === 301 ? 'Permanent (301)' : 'Temporary (302)'}</dd></div>
+      )}
       {route.kind === 'udp' && (
         <div>
           <dt>Ports</dt>
@@ -522,6 +526,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
             {[
               ['http', 'Service', Globe, 'Proxy a web service'],
               ['static', 'Static site', FolderOpen, 'Serve a folder'],
+              ['redirect', 'Redirect', CornerUpRight, 'Send visitors to another URL'],
               ['tcp', 'TCP', Cable, 'Forward a TCP port'],
               ['udp', 'UDP', Radio, 'Forward a port or block'],
             ].map(([kind, label, Icon, hint]) => (
@@ -537,6 +542,8 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                       : {
                           ...r,
                           kind,
+                          path: '/',
+                          redirectURL: '',
                           staticSite: kind === 'static' ? (r.staticSite ?? blankSite('')) : null,
                           streamTLS: false,
                           proxyProtocol: false,
@@ -558,7 +565,21 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
       )}
       {!publishOnly &&
         (editing || step === 1) &&
-        (route.kind === 'static' ? (
+        (route.kind === 'redirect' ? (
+          <>
+            <TextInput
+              required type="url" label="Destination URL"
+              description="All matching requests go to this exact URL."
+              placeholder="https://example.com/new-address"
+              value={route.redirectURL}
+              onChange={(e) => set('redirectURL', e.target.value)}
+            />
+            <SelectField label="Redirect type" value={route.redirectStatus} onChange={(e) => set('redirectStatus', Number(e.target.value))}>
+              <option value="302">Temporary (302)</option>
+              <option value="301">Permanent (301)</option>
+            </SelectField>
+          </>
+        ) : route.kind === 'static' ? (
           <SitePicker
             value={route.staticSite}
             onChange={(value) => set('staticSite', folderRules(state, value.directory))}
@@ -737,6 +758,11 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
               </div>
             </>
           )}
+          {route.kind === 'redirect' && (
+            <TextInput label="Path" required placeholder="/" value={route.path}
+              description="Matches this directory and its subdirectories. Other paths keep their existing route, or return 404."
+              onChange={(e) => set('path', e.target.value)} />
+          )}
           <Disclosure
             className="route-options"
             defaultOpen={editing}
@@ -752,7 +778,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
                 onChange={(values) => setCIDRs(values.join('\n'))}
               />
             </section>
-            {route.kind !== 'static' && (
+            {!['static', 'redirect'].includes(route.kind) && (
               <section className="option-group">
                 <h3>Limits</h3>
                 <div className="field-pair">

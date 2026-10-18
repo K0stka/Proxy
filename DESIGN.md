@@ -55,7 +55,9 @@ Bind a route to a stable server/resource/service identity and a selected host en
 
 Fields: hostname/domain, service or custom destination, host port, HTTP/HTTPS upstream, optional source CIDR restriction. Show host port (container port) explicitly. Create routes begin as unpublished drafts and create no ingress listener until explicitly published. Default public traffic to HTTPS. Support WebSockets and streaming/SSE; put upload limits and timeouts in advanced settings. Verify upstream HTTPS certificates by default, including the configured upstream server name and private CA where needed.
 
-Select the apex or a subdomain of any configured domain. Store canonical lower-case/IDNA hostnames and validate labels. Reject duplicate hostnames. Match only configured names; never construct an upstream or redirect hostname from an untrusted Host header.
+Select the apex or a subdomain of any configured domain. Store canonical lower-case/IDNA hostnames and validate labels. Reject duplicate hostname/path pairs. Match only configured names; never construct an upstream or redirect hostname from an untrusted Host header.
+
+Redirect routes choose a fixed HTTP(S) URL, status 301 or 302, and an absolute source path. Directory paths match the exact path and its descendants; the longest match wins over a root website or redirect. A root route is optional, with unmatched HTTPS paths returning 404. Incoming query strings and suffixes are not appended to the destination. Group routes for the same hostname into one HTTP/HTTPS server pair. Remove overridden static exact locations so they cannot shadow directory redirects. Enforce redirect CIDRs with a geo check before returning, since NGINX returns run before access-phase allow/deny checks.
 
 ### Static website
 
@@ -103,7 +105,7 @@ The certificate worker accepts only structured requests for administrator-config
 
 ## Unknown hosts and errors
 
-For each certificate-covered domain, unmatched HTTP hostnames return the static custom **404**, and unmatched HTTPS hostnames do the same after a successful TLS handshake. Defined website routes redirect HTTP to their canonical HTTPS name. Match the apex separately when it is not assigned a website.
+For each certificate-covered domain, unmatched HTTP hostnames return the static custom **404**, and unmatched HTTPS hostnames do the same after a successful TLS handshake. Service and static website routes redirect HTTP to their canonical HTTPS name; explicit redirect rules send HTTP and HTTPS directly to the configured URL. Match the apex separately when it is not assigned a website.
 
 For unrelated or certificate-uncovered TLS names, reject the TLS handshake: an HTTP 404 cannot be shown before TLS succeeds. Use a global HTTP default server returning 404 and a rejecting TLS default server. Validate Host/SNI consistency to prevent cross-host routing.
 

@@ -15,6 +15,7 @@ import {
   Trash2,
   Pencil,
   ArrowRight,
+  CornerUpRight,
 } from 'lucide-react';
 import { api } from './api.js';
 import { useToast } from './toasts.jsx';
@@ -44,6 +45,7 @@ const when = (value) =>
 const icons = {
   http: Globe,
   static: FolderOpen,
+  redirect: CornerUpRight,
   tcp: Cable,
   udp: Radio,
 };
@@ -271,6 +273,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                       ['all', 'All'],
                       ['http', 'Services'],
                       ['static', 'Static'],
+                      ['redirect', 'Redirects'],
                       ['tcp', 'TCP'],
                       ['udp', 'UDP'],
                     ].map(([value, label]) => (

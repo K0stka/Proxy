@@ -125,11 +125,28 @@ export function effectivePolicy(deployment, settings, { development = false } = 
 }
 export const policyHash = (policy) =>
   createHash('sha256').update(JSON.stringify(policy)).digest('hex');
+export const redirectPath = z.string().max(512)
+  .regex(/^\/[A-Za-z0-9._~/-]*$/, 'Use an absolute path without queries, fragments or encoded characters')
+  .refine((value) => !value.includes('//') && !value.split('/').some((part) => ['.', '..'].includes(part)), 'Use a path without empty or relative segments')
+  .refine((value) => value !== '/_proxy' && !value.startsWith('/_proxy/'), 'This path is reserved for proxy error pages')
+  .transform((value) => value === '/' ? value : value.replace(/\/$/, ''));
+export const redirectURL = z.string().trim().max(2048)
+  .refine((value) => {
+    if (/[\u0000-\u0020\u007f\\$]/.test(value)) return false;
+    try {
+      const url = new URL(value);
+      return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
+    } catch { return false; }
+  }, 'Enter an absolute HTTP(S) URL without credentials, whitespace or variables')
+  .transform((value) => new URL(value).href);
 export const routeFields = z
   .object({
     id: z.string().uuid(),
     name: z.string().trim().min(1).max(80),
-    kind: z.enum(['http', 'static', 'tcp', 'udp']),
+    kind: z.enum(['http', 'static', 'redirect', 'tcp', 'udp']),
+    path: redirectPath.default('/'),
+    redirectURL: z.union([redirectURL, z.literal('')]).default(''),
+    redirectStatus: z.union([z.literal(301), z.literal(302)]).default(302),
     staticSite: staticSiteSchema.nullable().default(null),
     hostname: z.union([hostname, z.literal('')]).default(''),
     ingressIP: ip,
@@ -328,12 +345,14 @@ export function validateSnapshot(policy, raw) {
       throw new Problem(400, 'Ingress address is not approved');
     const end = r.kind === 'udp' ? r.portEnd : r.targetPort;
     const start = r.kind === 'udp' ? r.portStart : r.targetPort;
-    if (r.kind !== 'static' && !safeTarget(r.targetHost, start, end))
+    if (!['static', 'redirect'].includes(r.kind) && !safeTarget(r.targetHost, start, end))
       throw new Problem(400, 'Destination uses an unsafe address or a protected management port');
     if (r.kind === 'static' && !r.staticSite) throw new Problem(400, 'Choose a static-site folder');
     if (r.kind !== 'static' && r.staticSite)
       throw new Problem(400, 'Only static routes can select a folder');
-    if (r.kind === 'http' || r.kind === 'static') {
+    if (r.kind !== 'redirect' && (r.path !== '/' || r.redirectURL))
+      throw new Problem(400, 'Only redirects can select a path or redirect URL');
+    if (['http', 'static', 'redirect'].includes(r.kind)) {
       if (r.hostname === policy.adminHostname)
         throw new Problem(400, 'Hostname is reserved for the admin panel');
       if (!coveredDomain(r.hostname, policy.domains))
@@ -341,8 +360,17 @@ export function validateSnapshot(policy, raw) {
           400,
           `Hostname ${r.hostname} is outside enabled domain coverage`,
         );
-      if (hosts.has(r.hostname)) throw new Problem(400, 'Hostname already has a route');
-      hosts.add(r.hostname);
+      const hostPath = `${r.hostname}${r.path}`;
+      if (hosts.has(hostPath)) throw new Problem(400, 'Hostname and path already have a route');
+      hosts.add(hostPath);
+      if (r.kind === 'redirect') {
+        if (!r.redirectURL) throw new Problem(400, 'Choose a redirect destination URL');
+        if (r.source || r.upstreamTLS) throw new Problem(400, 'Redirects cannot select an upstream');
+        const target = new URL(r.redirectURL);
+        if (target.hostname === r.hostname && ['', '80', '443'].includes(target.port) &&
+          (r.path === '/' || target.pathname === r.path || target.pathname.startsWith(r.path + '/')))
+          throw new Problem(400, 'Redirect destination would redirect to itself');
+      }
       if (r.upstreamTLS && !r.upstreamServerName)
         throw new Problem(400, 'HTTPS upstream requires its certificate hostname');
       if (r.streamTLS || r.proxyProtocol)

@@ -1,6 +1,6 @@
 import { errorPageTypes } from '../shared/pages.js';
 import { compareNames } from './order.js';
-export const isWebsite = (route) => route.kind === 'http' || route.kind === 'static';
+export const isWebsite = (route) => ['http', 'static', 'redirect'].includes(route.kind);
 export const routeSubdomain = (name) =>
   name
     .normalize('NFKD')
@@ -12,13 +12,13 @@ export const routeSubdomain = (name) =>
     .replace(/-+$/g, '');
 export const listener = (route) =>
   isWebsite(route)
-    ? route.hostname
+    ? route.hostname + (route.kind === 'redirect' && route.path !== '/' ? (route.path ?? '') : '')
     : `${route.ingressIP.includes(':') ? `[${route.ingressIP}]` : route.ingressIP}:${route.portStart}${route.portEnd !== route.portStart ? `–${route.portEnd}` : ''}`;
 export const destination = (route) =>
-  route.kind === 'static'
+  route.kind === 'redirect' ? route.redirectURL : route.kind === 'static'
     ? `/sites/${route.staticSite?.directory ?? ''}`
     : `${route.targetHost.includes(':') ? `[${route.targetHost}]` : route.targetHost}:${route.kind === 'udp' ? (route.portStart === route.portEnd ? route.portStart : `${route.portStart}–${route.portEnd}`) : route.targetPort}`;
-export const kindName = { http: 'Service', static: 'Static site', tcp: 'TCP', udp: 'UDP' };
+export const kindName = { http: 'Service', static: 'Static site', redirect: 'Redirect', tcp: 'TCP', udp: 'UDP' };
 export const portLabel = (port) =>
   `${port.hostPort ? port.hostPort + ':' : ''}${port.containerPort} (${port.protocol.toUpperCase()})`;
 export const visibleServicePorts = (service) =>
@@ -32,7 +32,7 @@ export const visibleServicePorts = (service) =>
     );
 export function serviceProxies(routes, service, port) {
   return routes.filter((route) => {
-    if (route.kind === 'static' || (route.kind === 'udp') !== (port.protocol === 'udp'))
+    if (['static', 'redirect'].includes(route.kind) || (route.kind === 'udp') !== (port.protocol === 'udp'))
       return false;
     if (
       route.kind === 'udp'
@@ -51,7 +51,7 @@ export function serviceProxies(routes, service, port) {
   });
 }
 export function destinationLabel(route, discovery) {
-  if (route.kind === 'static') return destination(route);
+  if (['static', 'redirect'].includes(route.kind)) return destination(route);
   const service = discovery.services.find((service) =>
     visibleServicePorts(service).some((port) => serviceProxies([route], service, port).length),
   );
@@ -119,6 +119,9 @@ export function freshRoute(state) {
   return {
     name: '',
     kind: 'http',
+    path: '/',
+    redirectURL: '',
+    redirectStatus: 302,
     hostname: '',
     ingressIP: state.policy.ingressIPs[0],
     portStart: 51413,

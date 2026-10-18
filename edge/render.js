@@ -29,12 +29,13 @@ const errorLocations = (dir, errors, include404 = true) =>
     })
     .join('\n');
 
-function staticLocations(manifest) {
+function staticLocations(manifest, redirects = []) {
   if (!manifest) throw new Problem(400, 'Static folder has not been checked');
   const root = `/sites/${manifest.directory}`;
   const indexLocation = (uri) =>
     `location = ${quote(uri)} { root ${quote(root)}; index index.html; disable_symlinks on; limit_except GET { deny all; } }`;
   return `autoindex off;\n${manifest.exposed
+    .filter((path) => !redirects.some((route) => '/' + path === route.path || ('/' + path).startsWith(route.path + '/')))
     .map((path) => {
       const uri = '/' + path;
       let result = assetLocation(uri, `${root}/${path}`);
@@ -121,9 +122,35 @@ return 504 '{"error":"Management request timed out. Check the operation result b
 }
 }`);
   }
-  for (const r of routes) {
-    const endpoint = `${address(r.targetHost)}:${r.kind === 'udp' ? '$server_port' : r.targetPort}`;
-    if (r.kind === 'http' || r.kind === 'static') {
+  const websiteGroups = new Map();
+  const redirectVariables = new Map();
+  for (const route of routes.filter((route) => ['http', 'static', 'redirect'].includes(route.kind))) {
+    if (!websiteGroups.has(route.hostname)) websiteGroups.set(route.hostname, []);
+    websiteGroups.get(route.hostname).push(route);
+    if (route.kind === 'redirect' && route.sourceCIDRs.length) {
+      const variable = `$redirect_allowed_${redirectVariables.size}`;
+      redirectVariables.set(route.id, variable);
+      http.push(`geo ${variable} { default 0; ${route.sourceCIDRs.map((cidr) => `${cidr} 1;`).join(' ')} }`);
+    }
+  }
+  const redirectLocations = (redirects) => redirects.map((route) => {
+    const restricted = route.sourceCIDRs.length
+      ? `if (${redirectVariables.get(route.id)} = 0) { return 403; } ` : '';
+    const body = `${restricted}return ${route.redirectStatus} ${quote(route.redirectURL)};`;
+    return route.path === '/'
+      ? `location / { ${body} }`
+      : `location = ${quote(route.path)} { ${body} }\nlocation ^~ ${quote(route.path + '/')} { ${body} }`;
+  }).join('\n');
+  for (const entry of routes) {
+    let r = entry;
+    if (['http', 'static', 'redirect'].includes(r.kind)) {
+      const group = websiteGroups.get(r.hostname);
+      if (group[0] !== r) continue;
+      const root = group.find((route) => route.path === '/');
+      const redirects = group.filter((route) => route.kind === 'redirect');
+      const redirectRules = redirectLocations(redirects);
+      r = root ?? r;
+      const endpoint = `${address(r.targetHost)}:${r.targetPort}`;
       const domain = coveredDomain(r.hostname, policy.domains)?.name;
       if (!ready.has(domain) || (r.hostname !== domain && !wildcard.has(domain)))
         throw new Problem(
@@ -131,17 +158,20 @@ return 504 '{"error":"Management request timed out. Check the operation result b
           `Certificate for ${domain} is not ready; issue it before publishing`,
         );
       http.push(
-        `server { ${policy.ingressIPs.map((ip) => listen(ip, 80)).join(' ')} server_name ${r.hostname}; ${acl(r)} location / { return 308 https://${r.hostname}$request_uri; } }`,
+        `server { ${policy.ingressIPs.map((ip) => listen(ip, 80)).join(' ')} server_name ${r.hostname}; ${acl(r)} ${redirectRules} ${root?.kind === 'redirect' ? '' : `location / { return 308 https://${r.hostname}$request_uri; }`} }`,
       );
       http.push(`server {
 ${policy.ingressIPs.map((ip) => listen(ip, 443, 'ssl')).join(' ')} server_name ${r.hostname}; ${certLines(domain)}
 if ($ssl_server_name != $host) { return 421; }
 ${acl(r)}
-${errorLocations(directory, errorSites, r.kind === 'static')}
+${errorLocations(directory, errorSites, r.kind !== 'http')}
 client_max_body_size ${r.uploadMB}m;
+${redirectRules}
 ${
-  r.kind === 'static'
-    ? staticLocations(staticSites[r.id])
+  !root ? 'location / { return 404; }'
+    : r.kind === 'redirect' ? ''
+    : r.kind === 'static'
+    ? staticLocations(staticSites[r.id], redirects)
     : `
 location / {
 proxy_pass ${r.upstreamTLS ? 'https' : 'http'}://${endpoint};
@@ -166,6 +196,7 @@ ${r.upstreamTLS ? `proxy_ssl_server_name on; proxy_ssl_name ${r.upstreamServerNa
 }
 }`);
     } else {
+      const endpoint = `${address(r.targetHost)}:${r.kind === 'udp' ? '$server_port' : r.targetPort}`;
       if (r.streamTLS && !ready.has(r.tlsDomain))
         throw new Problem(409, `Certificate for ${r.tlsDomain} is not ready`);
       const ports = r.portEnd === r.portStart ? r.portStart : `${r.portStart}-${r.portEnd}`;

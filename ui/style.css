@@ -802,7 +802,7 @@ textarea):focus-visible {
 /* Desktop uses the full canvas; phone navigation remains at the bottom. */
 .route-info > .route-endpoints {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 180px) 20px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
   line-height: 1.6;
@@ -1147,7 +1147,7 @@ textarea):focus-visible {
   }
   .route-info > .route-endpoints {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 180px) 20px minmax(0, 1fr);
     gap: 16px;
     margin: 0;
     max-width: 640px;
@@ -1350,7 +1350,7 @@ textarea):focus-visible {
     flex: 1;
     min-width: 0;
     padding-inline: 5px;
-    font-size: 12px;
+    font-size: 11px;
     height: 38px;
   }
   .route-list {

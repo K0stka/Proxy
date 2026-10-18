@@ -129,7 +129,7 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
   if (
     nextPolicy.certificates.staging &&
     next.routes.some(
-      (r) => r.published && (r.kind === 'http' || r.kind === 'static' || r.streamTLS),
+      (r) => r.published && (r.kind === 'http' || r.kind === 'static' || r.kind === 'redirect' || r.streamTLS),
     )
   )
     throw new Problem(

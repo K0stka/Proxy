@@ -155,7 +155,7 @@ export default function Folders({ catalog, onEdit, onSaved }) {
           >
             <div className="service-icon"><FolderOpen size={20} /></div>
             <h3 className="folder-name">
-              {folder.directory.split('/').at(-1).replace(/^./u, (letter) => letter.toLocaleUpperCase())}
+              {folder.directory.split('/')[0].replace(/^./u, (letter) => letter.toLocaleUpperCase())}
             </h3>
             <code className="folder-path">/sites/{folder.directory}</code>
             <div className="folder-actions">

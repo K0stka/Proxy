@@ -415,6 +415,27 @@ test('API rejects unauthenticated, cross-origin, forged-host and CSRF requests',
   assert(!JSON.stringify(state).includes(f.app.auth.bootstrapToken));
   assert(!('activity' in state));
 });
+test('redirect drafts validate URLs without probes and publish beside a root route', async (t) => {
+  const f = await fixture(t);
+  const input = route({ kind: 'redirect', hostname: 'krychlic.com', path: '/something', targetHost: '', redirectURL: 'https://example.net/target', redirectStatus: 302 });
+  const validate = (value) => f.request('/api/validate', { method: 'POST', body: { kind: 'route', step: 1, value } });
+  assert.equal((await validate(input)).status, 200);
+  assert.equal((await validate({ ...input, redirectURL: 'javascript:alert(1)' })).status, 400);
+  const created = await (await f.request('/api/routes', { method: 'POST', body: input })).json();
+  assert.equal(created.kind, 'redirect');
+  assert.equal(created.published, false);
+  assert.equal((await f.request(`/api/routes/${created.id}/publish`, { method: 'POST' })).status, 200);
+  assert.equal((await f.request('/api/routes', { method: 'POST', body: route({ hostname: 'krychlic.com' }) })).status, 200);
+  assert.equal((await f.request('/api/routes', { method: 'POST', body: input })).status, 400);
+  const probe = await (await f.request(`/api/routes/${created.id}/probe`, { method: 'POST' })).json();
+  assert.equal(probe.reachable, null);
+  f.setFail(true);
+  assert.equal((await f.request(`/api/routes/${created.id}`, { method: 'PUT', body: { ...created, redirectStatus: 301 } })).status, 502);
+  assert.equal(f.store.snapshot().routes.find((route) => route.id === created.id).redirectStatus, 302);
+  const exported = await (await f.request('/api/export')).json();
+  assert.equal(exported.routes.find((route) => route.id === created.id).redirectURL, input.redirectURL);
+});
+
 test('drafts stay private; failed publish and live edits preserve working state', async (t) => {
   const f = await fixture(t);
   const response = await f.request('/api/routes', {

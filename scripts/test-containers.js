@@ -134,6 +134,8 @@ run([
   '--tmpfs',
   '/runtime:rw,noexec,nosuid,size=64m,uid=10002,gid=10000',
   '--tmpfs',
+  '/ipc:rw,noexec,nosuid,size=1m,uid=10002,gid=10000',
+  '--tmpfs',
   '/tls:rw,noexec,nosuid,size=32m,uid=10002,gid=10000',
   '--tmpfs',
   '/sites:rw,noexec,nosuid,size=32m,uid=10002,gid=10000',

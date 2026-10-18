@@ -265,6 +265,54 @@ test(
       }),
     ];
     const snapshot = { routes, pages: defaultPages };
+    await t.test('redirect directory overrides work without a root, beside HTTP/static roots, and enforce CIDRs', async () => {
+      const redirect = route({ kind: 'redirect', hostname: 'app.krychlic.com', path: '/something',
+        ingressIP: '127.0.0.1', targetHost: '', redirectURL: 'https://example.net/landing?fixed=1', redirectStatus: 302, published: true });
+      const apply = async (rules) => {
+        try {
+          return await edgeRequest('/apply', { method: 'POST', body: { routes: rules, pages: defaultPages }, timeout: 20000 });
+        } catch (error) {
+          console.error(logs.slice(-8000));
+          throw error;
+        }
+      };
+      const checkRedirect = async (path, status = 302, secure = true) => {
+        const result = await request('app.krychlic.com', path, secure);
+        assert.equal(result.status, status, path);
+        assert.equal(result.headers.location, redirect.redirectURL, path);
+      };
+      await apply([redirect]);
+      await checkRedirect('/something');
+      await checkRedirect('/something/');
+      await checkRedirect('/something/deep/page?incoming=discarded');
+      await checkRedirect('/something', 302, false);
+      for (const path of ['/', '/somethingelse', '/another']) assert.equal((await request('app.krychlic.com', path)).status, 404);
+      const nested = { ...redirect, id: route().id, path: '/something/nested', redirectURL: 'https://example.net/nested', redirectStatus: 301 };
+      await apply([nested, redirect, routes[0]]);
+      assert.equal((await request('app.krychlic.com', '/')).body, 'hello from home');
+      assert.equal((await request('app.krychlic.com', '/somethingelse')).body, 'hello from home');
+      await checkRedirect('/something/child');
+      const specific = await request('app.krychlic.com', '/something/nested/child');
+      assert.equal(specific.status, 301);
+      assert.equal(specific.headers.location, nested.redirectURL);
+      await mkdir('/sites/redirect-root/something', { recursive: true });
+      await writeFile('/sites/redirect-root/index.html', 'Static root');
+      await writeFile('/sites/redirect-root/something/index.html', 'Shadowed directory');
+      await writeFile('/sites/redirect-root/something/file.txt', 'Shadowed exact file');
+      await writeFile('/sites/redirect-root/somethingelse.txt', 'Unchanged sibling');
+      const root = { ...routes[0], kind: 'static', staticSite: { directory: 'redirect-root' } };
+      await apply([root, { ...redirect, redirectStatus: 301 }]);
+      assert.equal((await request('app.krychlic.com', '/')).body, 'Static root');
+      assert.equal((await request('app.krychlic.com', '/somethingelse.txt')).body, 'Unchanged sibling');
+      await checkRedirect('/something', 301);
+      await checkRedirect('/something/file.txt', 301);
+      await apply([{ ...redirect, sourceCIDRs: ['192.0.2.0/24'] }, routes[0]]);
+      assert.equal((await request('app.krychlic.com', '/something')).status, 403);
+      assert.equal((await request('app.krychlic.com', '/')).status, 200);
+      await apply([{ ...redirect, sourceCIDRs: ['127.0.0.0/8'] }]);
+      await checkRedirect('/something');
+      await apply(snapshot.routes);
+    });
     await t.test(
       'folders need no index; explicit non-index error documents and relative assets work',
       async () => {

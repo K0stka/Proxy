@@ -20,6 +20,7 @@ import {
   policyHash,
   domainSchema,
   routeFields,
+  redirectURL,
   safeTarget,
   defaultPages,
   errorPageSchema,
@@ -290,6 +291,8 @@ export function createApp({
               if (base.kind === 'static') {
                 const spec = parse(staticSiteSchema, value.staticSite);
                 await edge('/sites/inspect', { method: 'POST', body: spec });
+              } else if (base.kind === 'redirect') {
+                parse(redirectURL, value.redirectURL);
               } else {
                 const endpoint = parse(routeFields.pick({ targetHost: true, targetPort: true, upstreamTLS: true, upstreamServerName: true, source: true }).strip(), value);
                 if (!safeTarget(endpoint.targetHost, endpoint.targetPort))
@@ -434,6 +437,8 @@ export function createApp({
             if (operation === 'probe' && req.method === 'POST') {
               if (route.kind === 'static')
                 return edge('/sites/inspect', { method: 'POST', body: route.staticSite });
+              if (route.kind === 'redirect')
+                return { reachable: null, message: 'Redirects do not use an upstream connection' };
               if (route.kind === 'udp')
                 return { reachable: null, message: 'UDP needs a protocol-specific external check' };
               return edge('/probe', {
