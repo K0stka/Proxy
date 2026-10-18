@@ -17,7 +17,8 @@ time, method, management origin, and status; bodies and credentials are excluded
 Dependabot opens daily npm minor/patch updates. GitHub Actions runs the application
 checks and isolated container suite. A separate privileged workflow merges only a
 successful, current Dependabot revision that changes package.json/package-lock.json.
-It never checks out or executes PR code with its write token. Major npm updates
+It never checks out or executes PR code with its write token. Dependency build tests
+run as a non-root user with root-owned orchestration files. Major npm updates
 remain manual. GitHub Actions and Dependabot must be enabled for the repository.
 
 The VPS timer runs daily between 04:00 and 04:30 Europe/Prague, and catches up after
