@@ -166,6 +166,123 @@ test('passkey names persist without changing credentials or sessions and require
   assert.equal(keys[0].publicKey, undefined);
 });
 
+test('device links are single-use, expire after five minutes and enroll one new device', async (t) => {
+  const f = await fixture(t);
+  const credential = { id: randomToken(), publicKey: 'existing-key', counter: 0, rpID: 'localhost', created: '2026-10-17T12:00:00Z' };
+  f.store.set('credentials', [credential]);
+  const link = (options = {}) => f.request('/api/auth/devices/link', { method: 'POST', ...options });
+  const options = (body) =>
+    f.request('/api/auth/devices/options', { method: 'POST', authenticated: false, body });
+  assert.equal((await link({ authenticated: false })).status, 401);
+  assert.equal((await link({ extra: { 'x-csrf-token': 'wrong' } })).status, 403);
+  const response = await link();
+  assert.equal(response.status, 200);
+  const { url, expires } = await response.json();
+  const parsed = new URL(url);
+  assert.equal(parsed.origin, 'http://localhost:5173');
+  assert.equal(parsed.pathname, '/device');
+  const token = parsed.hash.slice(1);
+  assert.match(token, /^[\w-]{43}$/);
+  const remaining = Date.parse(expires) - Date.now();
+  assert(remaining > 0 && remaining <= 300000);
+  assert.deepEqual(
+    f.store.get('deviceTokens').map((link) => ({ ...link, expires: Boolean(link.expires) })),
+    [{ token: hash(token), origin: 'http://localhost:5173', expires: true }],
+  );
+  assert.equal((await options({ token: randomToken() })).status, 403);
+  assert.equal((await options({ token, name: 'x'.repeat(81) })).status, 400);
+  const begin = await options({ token, name: '  Phone  ' });
+  assert.equal(begin.status, 200);
+  const challenge = await begin.json();
+  const { publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }),
+    jwk = publicKey.export({ format: 'jwk' }),
+    id = randomBytes(32),
+    idString = id.toString('base64url');
+  const publicCOSE = isoCBOR.encode(
+      new Map([
+        [1, 2],
+        [3, -7],
+        [-1, 1],
+        [-2, Buffer.from(jwk.x, 'base64url')],
+        [-3, Buffer.from(jwk.y, 'base64url')],
+      ]),
+    ),
+    length = Buffer.alloc(2);
+  length.writeUInt16BE(id.length);
+  const authData = Buffer.concat([
+    createHash('sha256').update('localhost').digest(),
+    Buffer.from([0x45]),
+    Buffer.alloc(4),
+    Buffer.alloc(16),
+    length,
+    id,
+    Buffer.from(publicCOSE),
+  ]);
+  const attestation = isoCBOR.encode(
+    new Map([
+      ['fmt', 'none'],
+      ['attStmt', new Map()],
+      ['authData', authData],
+    ]),
+  );
+  const registration = {
+    id: idString,
+    rawId: idString,
+    type: 'public-key',
+    clientExtensionResults: {},
+    response: {
+      clientDataJSON: Buffer.from(
+        JSON.stringify({
+          type: 'webauthn.create',
+          challenge: challenge.challenge,
+          origin: 'http://localhost:5173',
+          crossOrigin: false,
+        }),
+      ).toString('base64url'),
+      attestationObject: Buffer.from(attestation).toString('base64url'),
+      transports: ['internal'],
+    },
+  };
+  const challengeCookie = begin.headers.getSetCookie()[0].split(';')[0];
+  const verify = (cookie, body) =>
+    f.request('/api/auth/devices/verify', {
+      method: 'POST',
+      authenticated: false,
+      extra: { cookie },
+      body,
+    });
+  const enrolled = await verify(challengeCookie, registration);
+  assert.equal(enrolled.status, 200);
+  const result = await enrolled.json();
+  assert.equal(result.authenticated, true);
+  assert.equal(result.recoveryCode, undefined);
+  assert.equal(result.csrf.length, 43);
+  assert.equal(f.store.get('deviceTokens').length, 0);
+  const added = f.app.auth.credentials().at(-1);
+  assert.equal(added.id, idString);
+  assert.equal(added.rpID, 'localhost');
+  assert.equal(added.name, 'Phone');
+  assert.equal((await verify(challengeCookie, registration)).status, 400);
+  assert.equal((await options({ token })).status, 403);
+  const session = enrolled.headers
+    .getSetCookie()
+    .find((value) => value.includes('proxy_session'))
+    .split(';')[0];
+  assert.equal((await f.request('/api/state', { authenticated: false, extra: { cookie: session } })).status, 200);
+  const second = await (await link()).json();
+  const secondToken = new URL(second.url).hash.slice(1);
+  f.store.set('deviceTokens', [
+    { token: hash(secondToken), origin: 'http://localhost:5173', expires: Date.now() - 1 },
+  ]);
+  assert.equal((await options({ token: secondToken })).status, 403);
+  const third = await (await link()).json();
+  const thirdToken = new URL(third.url).hash.slice(1);
+  f.store.set('deviceTokens', [
+    { token: hash(thirdToken), origin: 'https://proxy.krychlic.com', expires: Date.now() + 60000 },
+  ]);
+  assert.equal((await options({ token: thirdToken })).status, 403);
+  assert.equal(f.app.auth.credentials().length, 2);
+});
 test('Git pulls require authentication, CSRF and a configured folder, then refresh proxy files', async (t) => {
   const f = await fixture(t);
   const request = (body, options = {}) => f.request('/api/sites/pull', { method: 'POST', body, ...options });

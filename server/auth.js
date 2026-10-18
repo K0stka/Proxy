@@ -19,6 +19,14 @@ export function equalSecret(a, b) {
 function cookies(req) {
   return Object.fromEntries((req.headers.cookie ?? '').split(';').map((p) => p.trim().split('=')));
 }
+function deviceName(value) {
+  const name = typeof value === 'string' ? value.trim() : '';
+  if (name.length > 80 || /[\u0000-\u001f\u007f]/.test(name))
+    throw new Problem(400, 'Enter a device name of up to 80 characters');
+  return name;
+}
+const DEVICE_LINK_LIFETIME = 5 * 60000;
+const DEVICE_LINK_LIMIT = 10;
 
 export class Auth {
   constructor(store, { origin, bootstrapToken, development = false, legacyRPID }) {
@@ -83,6 +91,30 @@ export class Auth {
     this.cookie(res, 'proxy_session', token, 12 * 3600);
     return { authenticated: true, csrf };
   }
+  registrationOptions() {
+    return generateRegistrationOptions({
+      rpName: 'Proxy',
+      rpID: this.rpID,
+      userID: Buffer.from('proxy-owner'),
+      userName: 'owner',
+      attestationType: 'none',
+      supportedAlgorithmIDs: [-7, -257, -8],
+      authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+      excludeCredentials: this.localCredentials().map((c) => ({ id: c.id, transports: c.transports })),
+    });
+  }
+  deviceLinks() {
+    const now = Date.now();
+    return this.store.get('deviceTokens', []).filter((link) => link.expires > now);
+  }
+  deviceLink(token) {
+    const key = hash(typeof token === 'string' ? token : '');
+    const link = this.deviceLinks().find(
+      (candidate) => candidate.token === key && candidate.origin === this.origin,
+    );
+    if (!link) throw new Problem(403, 'This device link is invalid or has expired');
+    return link;
+  }
   challenge(req, res, value) {
     const now = Date.now();
     for (const [key, p] of this.pending) if (p.expires < now) this.pending.delete(key);
@@ -120,16 +152,7 @@ export class Auth {
         }
         if (!equalSecret(body.token, token)) throw new Problem(403, 'Invalid enrollment token');
       }
-      const options = await generateRegistrationOptions({
-        rpName: 'Proxy',
-        rpID: this.rpID,
-        userID: Buffer.from('proxy-owner'),
-        userName: 'owner',
-        attestationType: 'none',
-        supportedAlgorithmIDs: [-7, -257, -8],
-        authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
-        excludeCredentials: this.localCredentials().map((c) => ({ id: c.id, transports: c.transports })),
-      });
+      const options = await this.registrationOptions();
       this.challenge(req, res, {
         type: 'register',
         challenge: options.challenge,
@@ -186,6 +209,79 @@ export class Auth {
         this.store.set('recovery', hash(recoveryCode));
       }
       return { ...this.issue(req, res), recoveryCode };
+    }
+    if (path === '/api/auth/devices/link') {
+      this.require(req, true);
+      const token = randomToken(),
+        expires = Date.now() + DEVICE_LINK_LIFETIME;
+      this.store.set('deviceTokens', [
+        ...this.deviceLinks().slice(-(DEVICE_LINK_LIMIT - 1)),
+        { token: hash(token), origin: this.origin, expires },
+      ]);
+      return { url: `${this.origin}/device#${token}`, expires: new Date(expires).toISOString() };
+    }
+    if (path === '/api/auth/devices/options') {
+      this.deviceLink(body.token);
+      const name = deviceName(body.name),
+        options = await this.registrationOptions();
+      this.challenge(req, res, {
+        type: 'device',
+        challenge: options.challenge,
+        token: hash(body.token),
+        name,
+      });
+      return options;
+    }
+    if (path === '/api/auth/devices/verify') {
+      const pending = this.consume(req, res, 'device');
+      let result;
+      try {
+        result = await verifyRegistrationResponse({
+          response: body,
+          expectedChallenge: pending.challenge,
+          expectedOrigin: this.origin,
+          expectedRPID: this.rpID,
+          requireUserVerification: true,
+          supportedAlgorithmIDs: [-7, -257, -8],
+        });
+      } catch {
+        throw new Problem(400, 'Device registration could not be verified');
+      }
+      if (!result.verified || !result.registrationInfo)
+        throw new Problem(400, 'Device registration failed');
+      const c = result.registrationInfo.credential;
+      this.store.transaction(() => {
+        const links = this.store.get('deviceTokens', []);
+        if (
+          !links.some(
+            (link) =>
+              link.token === pending.token &&
+              link.origin === this.origin &&
+              link.expires > Date.now(),
+          )
+        )
+          throw new Problem(403, 'This device link is invalid or has expired');
+        const latest = this.credentials();
+        if (latest.length >= 10 || latest.some((p) => p.id === c.id))
+          throw new Problem(400, 'Device already registered or limit reached');
+        this.store.set(
+          'deviceTokens',
+          links.filter((link) => link.token !== pending.token),
+        );
+        this.store.set('credentials', [
+          ...latest,
+          {
+            id: c.id,
+            rpID: this.rpID,
+            publicKey: Buffer.from(c.publicKey).toString('base64url'),
+            counter: c.counter,
+            transports: c.transports,
+            ...(pending.name ? { name: pending.name } : {}),
+            created: new Date().toISOString(),
+          },
+        ]);
+      });
+      return this.issue(req, res);
     }
     if (path === '/api/auth/login/options') {
       const credentials = this.localCredentials();
@@ -256,12 +352,11 @@ export class Auth {
     }
     if (path === '/api/auth/passkeys/rename') {
       this.require(req, true);
-      const name = typeof body.name === 'string' ? body.name.trim() : '';
-      if (!name || name.length > 80 || /[\u0000-\u001f\u007f]/.test(name))
-        throw new Problem(400, 'Enter a passkey name of 1–80 characters');
+      const name = deviceName(body.name);
+      if (!name) throw new Problem(400, 'Enter a device name of 1–80 characters');
       const credentials = this.credentials();
       const credential = credentials.find((c) => c.id === body.id);
-      if (!credential) throw new Problem(404, 'Passkey not found');
+      if (!credential) throw new Problem(404, 'Device not found');
       credential.name = name;
       this.store.set('credentials', credentials);
       return { ok: true };
@@ -270,8 +365,8 @@ export class Auth {
       this.require(req, true);
       const credentials = this.credentials();
       if (credentials.length < 2)
-        throw new Problem(400, 'Add another passkey before removing the last one');
-      if (!credentials.some((c) => c.id === body.id)) throw new Problem(404, 'Passkey not found');
+        throw new Problem(400, 'Add another device before removing the last one');
+      if (!credentials.some((c) => c.id === body.id)) throw new Problem(404, 'Device not found');
       this.store.set(
         'credentials',
         credentials.filter((c) => c.id !== body.id),

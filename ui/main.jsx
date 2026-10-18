@@ -2,12 +2,12 @@ import { Button } from './controls.jsx';
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
-import { Waypoints, Check, KeyRound, Fingerprint, CircleAlert } from 'lucide-react';
+import { Waypoints, Check, KeyRound, Fingerprint, CircleAlert, Smartphone } from 'lucide-react';
 import { api, setCSRF } from './api.js';
 import Modal from './dialog.jsx';
 import Workspace from './workspace.jsx';
 import { ToastProvider } from './toasts.jsx';
-import { MantineProvider, createTheme, PasswordInput, Alert } from '@mantine/core';
+import { MantineProvider, createTheme, PasswordInput, TextInput, Text, Alert } from '@mantine/core';
 import '@mantine/core/styles.css';
 import './style.css';
 function Recovery({ code, onClose }) {
@@ -167,10 +167,86 @@ function AuthScreen({ status, onAuth }) {
     </div>
   );
 }
+function DeviceSetup({ token, onAuth }) {
+  const [name, setName] = useState(''),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('');
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const optionsJSON = await api('/auth/devices/options', {
+        method: 'POST',
+        body: {
+          token,
+          name,
+        },
+      });
+      const response = await startRegistration({
+        optionsJSON,
+      });
+      const result = await api('/auth/devices/verify', {
+        method: 'POST',
+        body: response,
+      });
+      setCSRF(result.csrf);
+      window.history.replaceState(null, '', '/');
+      onAuth(result);
+    } catch (e) {
+      setError(e.name === 'NotAllowedError' ? 'Passkey prompt cancelled. Try again.' : e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="auth-shell">
+      <div className="auth-panel">
+        <div className="brand">
+          <span className="brand-mark">
+            <Waypoints />
+          </span>
+          Proxy
+        </div>
+        <div className="auth-symbol">
+          <Smartphone size={32} />
+        </div>
+        <h1>Add this device</h1>
+        <form onSubmit={submit}>
+          <Text size="sm" c="dimmed">
+            This one-time link was created on an existing device. Register a passkey to sign in
+            here.
+          </Text>
+          <TextInput
+            label="Device name"
+            placeholder="e.g. Laptop or phone"
+            autoComplete="off"
+            maxLength={80}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          {error && (
+            <Alert className="notice error" role="alert" color="red" variant="light">
+              {error}
+            </Alert>
+          )}
+          <Button className="primary full" disabled={busy} type="submit">
+            <KeyRound size={17} />
+            {busy ? 'Waiting…' : 'Register this device'}
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
+}
 function App() {
   const [status, setStatus] = useState(null),
     [error, setError] = useState(''),
     [recovery, setRecovery] = useState(null);
+  const deviceToken =
+    window.location.pathname.replace(/\/+$/, '') === '/device'
+      ? window.location.hash.slice(1)
+      : null;
   const load = async () => {
     try {
       const s = await api('/auth/status');
@@ -184,6 +260,13 @@ function App() {
   useEffect(() => {
     load();
   }, []);
+  const completeAuth = (result) => {
+    setStatus({
+      enrolled: true,
+      authenticated: true,
+    });
+    if (result.recoveryCode) setRecovery(result.recoveryCode);
+  };
   if (error)
     return (
       <div className="auth-shell">
@@ -204,6 +287,8 @@ function App() {
         Loading…
       </div>
     );
+  if (deviceToken !== null)
+    return <DeviceSetup token={deviceToken} onAuth={completeAuth} />;
   return (
     <>
       {status.authenticated ? (
@@ -215,19 +300,9 @@ function App() {
               authenticated: false,
             });
           }}
-          onRecovery={setRecovery}
         />
       ) : (
-        <AuthScreen
-          status={status}
-          onAuth={(result) => {
-            setStatus({
-              enrolled: true,
-              authenticated: true,
-            });
-            if (result.recoveryCode) setRecovery(result.recoveryCode);
-          }}
-        />
+        <AuthScreen status={status} onAuth={completeAuth} />
       )}
       {recovery && <Recovery code={recovery} onClose={() => setRecovery(null)} />}
     </>

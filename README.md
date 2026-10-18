@@ -119,7 +119,7 @@ In **Settings → General**, set a public hostname covered by a configured domai
 
 Management API errors remain JSON, including gateway failures, so action errors can be shown in toasts. Browser pages and proxied websites use the shared HTML error pages.
 
-The private Tailscale Serve address remains independent of public DNS, the edge, and Let's Encrypt: `https://byttorrent.pancake-ghost.ts.net:8443` for the example above. Both addresses use passkeys and exact Host/Origin checks. Sessions and passkeys are scoped to their hostname/origin. Existing private-host passkeys remain valid. On first access at the other hostname, enter the recovery code to authorize creating a passkey there, then save the newly rotated recovery code. Cancelling that passkey prompt still shows the recovery code; you can add the passkey later in **Settings → Passkeys**. Recovery revokes other sessions but preserves existing passkeys. Private availability still requires the control container and host Tailscale service to be running.
+The private Tailscale Serve address remains independent of public DNS, the edge, and Let's Encrypt: `https://byttorrent.pancake-ghost.ts.net:8443` for the example above. Both addresses use passkeys and exact Host/Origin checks. Sessions and passkeys are scoped to their hostname/origin. Existing private-host passkeys remain valid. On first access at the other hostname, enter the recovery code to authorize creating a passkey there, then save the newly rotated recovery code. Cancelling that passkey prompt still shows the recovery code; you can register the passkey later with a one-time link from **Settings → Devices**. Recovery revokes other sessions but preserves existing passkeys. Private availability still requires the control container and host Tailscale service to be running.
 
 ## Automatic discovery
 
@@ -191,7 +191,7 @@ For root-owned repositories/keys use UID `0` and `/root/.ssh`. The SSH directory
 
 ## State, security and updates
 
-Routes, domains, certificate preferences, folder rules, page selections, passkey public keys, sessions and recovery-code hashes live in **`/state/proxy.db`** (`control_state`). This is the source of truth.
+Routes, domains, certificate preferences, folder rules, page selections, passkey public keys, one-time device links, sessions and recovery-code hashes live in **`/state/proxy.db`** (`control_state`). This is the source of truth.
 
 The edge caches its last working routes and settings in **`/runtime/edge.db`** (`edge_state`) so traffic resumes without the controller. The certificate worker reads only domains and certificate preferences from **`/cert-policy/policy.db`** (`certificate_policy`, read-only in the worker), maintained by the controller. It cannot read the authentication database or Core credentials. Both caches can be reconstructed from the controller's saved configuration.
 

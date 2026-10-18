@@ -49,7 +49,7 @@ const icons = {
   tcp: Cable,
   udp: Radio,
 };
-export default function Workspace({ onLogout, onRecovery }) {
+export default function Workspace({ onLogout }) {
   const { page, setPage, wizard, setWizard } = useNavigation();
   const [state, setState] = useState(null),
     [filter, setFilter] = useState('all'),
@@ -671,7 +671,6 @@ export default function Workspace({ onLogout, onRecovery }) {
                 state={state}
                 refresh={refresh}
                 report={report}
-                onRecovery={onRecovery}
                 onLogout={onLogout}
                 onEditPage={(code) => setWizard({ kind: 'pages', code })}
               />

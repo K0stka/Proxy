@@ -2,10 +2,9 @@ import { errorPageTypes } from '../shared/pages.js';
 import { Button, NumberField, Disclosure } from './controls.jsx';
 import { TextInput, Switch, Stack, Group, Text, Anchor, Alert } from '@mantine/core';
 import React, { useState, useEffect } from 'react';
-import { startRegistration } from '@simplewebauthn/browser';
-import { Plus, KeyRound, Trash2, Download, Pencil } from 'lucide-react';
+import { Plus, KeyRound, Trash2, Download, Pencil, Copy } from 'lucide-react';
 import Modal from './dialog.jsx';
-import { api, setCSRF } from './api.js';
+import { api } from './api.js';
 import { useNavigation } from './navigation.js';
 import { compareNames } from './order.js';
 const when = (value) =>
@@ -13,15 +12,17 @@ const when = (value) =>
     dateStyle: 'medium',
     timeStyle: 'short',
   });
-export default function Settings({ state, refresh, report, onRecovery, onLogout, onEditPage }) {
+export default function Settings({ state, refresh, report, onLogout, onEditPage }) {
   const { settingsSection } = useNavigation();
   const [preferences, setPreferences] = useState(state.settings);
   const [renaming, setRenaming] = useState(null),
     [nameError, setNameError] = useState(''),
     [savingName, setSavingName] = useState(false);
   const [keys, setKeys] = useState([]),
-    [busy, setBusy] = useState(false);
-  async function load() {
+    [busy, setBusy] = useState(false),
+    [deviceLink, setDeviceLink] = useState(null),
+    [copied, setCopied] = useState(false);
+  async function load(silent = false) {
     try {
       setKeys(
         await api('/auth/passkeys', {
@@ -29,11 +30,13 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout,
         }),
       );
     } catch (e) {
-      report(e.message, true);
+      if (!silent) report(e.message, true);
     }
   }
   useEffect(() => {
     load();
+    const timer = setInterval(() => load(true), 15000);
+    return () => clearInterval(timer);
   }, []);
   useEffect(() => {
     if (settingsSection === 'general') return;
@@ -42,27 +45,27 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout,
     );
     return () => cancelAnimationFrame(frame);
   }, [settingsSection]);
-  async function addKey() {
+  async function addDevice() {
     setBusy(true);
     try {
-      const optionsJSON = await api('/auth/register/options', {
-        method: 'POST',
-      });
-      const response = await startRegistration({
-        optionsJSON,
-      });
-      const result = await api('/auth/register/verify', {
-        method: 'POST',
-        body: response,
-      });
-      setCSRF(result.csrf);
-      if (result.recoveryCode) onRecovery(result.recoveryCode);
-      await load();
-      report('Passkey added.');
+      setCopied(false);
+      setDeviceLink(
+        await api('/auth/devices/link', {
+          method: 'POST',
+        }),
+      );
     } catch (e) {
       report(e.message, true);
     } finally {
       setBusy(false);
+    }
+  }
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(deviceLink.url);
+      setCopied(true);
+    } catch {
+      report('Could not copy the link. Select it manually.', true);
     }
   }
   async function removeKey(id) {
@@ -218,14 +221,18 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout,
       </section>
       <section id="access" className="settings-section" aria-labelledby="access-heading">
         <Group justify="space-between" mb="lg">
-          <h2 id="access-heading">Passkeys</h2>
-          <Button className="secondary" onClick={addKey} loading={busy}>
+          <h2 id="access-heading">Devices</h2>
+          <Button className="secondary" onClick={addDevice} loading={busy}>
             <Plus size={16} />
-            Add passkey
+            Add device
           </Button>
         </Group>
+        <Text size="sm" c="dimmed" mb="md">
+          Each device registers its own passkey. Add one from a signed-in device with a one-time
+          link, or rename and revoke existing devices here.
+        </Text>
         {keys
-          .map((key, index) => ({ ...key, displayName: key.name || `Passkey ${index + 1}` }))
+          .map((key, index) => ({ ...key, displayName: key.name || `Device ${index + 1}` }))
           .sort((a, b) => compareNames(a.displayName, b.displayName))
           .map((key) => (
             <div className="key-row" key={key.id}>
@@ -277,7 +284,7 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout,
       </section>
       {renaming && (
         <Modal
-          title="Name passkey"
+          title="Name device"
           onClose={() => {
             if (!savingName) setRenaming(null);
           }}
@@ -321,6 +328,24 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout,
               </Group>
             </Stack>
           </form>
+        </Modal>
+      )}
+      {deviceLink && (
+        <Modal title="Add device" onClose={() => setDeviceLink(null)}>
+          <Text size="sm" c="dimmed">
+            Open this link on the new device to register its passkey. The link works once and
+            expires {when(deviceLink.expires)}.
+          </Text>
+          <code className="recovery-code">{deviceLink.url}</code>
+          <Group justify="flex-end" gap="lg">
+            <Button className="text-button" onClick={() => setDeviceLink(null)}>
+              Done
+            </Button>
+            <Button className="primary" onClick={copyLink}>
+              <Copy size={16} />
+              {copied ? 'Copied' : 'Copy link'}
+            </Button>
+          </Group>
         </Modal>
       )}
     </div>
