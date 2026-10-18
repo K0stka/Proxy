@@ -101,35 +101,29 @@ export function Wizard({
               </Alert>
             )}
             <div className="wizard-actions">
-              <Button type="button" className="text-button" disabled={disabled} onClick={onClose}>
-                Cancel
+              <Button
+                type="button"
+                className="secondary"
+                disabled={disabled}
+                onClick={() => {
+                  if (step === 0) return onClose();
+                  setValidationError('');
+                  onStep(step - 1);
+                }}
+              >
+                {step > 0 && <ArrowLeft size={16} />}
+                {step === 0 ? 'Cancel' : 'Back'}
               </Button>
-              <Group gap="sm">
-                {step > 0 && steps.length > 1 && (
-                  <Button
-                    type="button"
-                    className="secondary"
-                    disabled={disabled}
-                    onClick={() => {
-                      setValidationError('');
-                      onStep(step - 1);
-                    }}
-                  >
-                    <ArrowLeft size={16} />
-                    Back
-                  </Button>
-                )}
-                <Button className="primary" disabled={disabled || !canContinue} type="submit">
-                  {validating
-                    ? 'Checking…'
-                    : busy
-                      ? 'Applying…'
-                      : step === steps.length - 1
-                        ? submitLabel
-                        : 'Continue'}
-                  {step === steps.length - 1 ? <Check size={16} /> : <ArrowRight size={16} />}
-                </Button>
-              </Group>
+              <Button className="primary" disabled={disabled || !canContinue} type="submit">
+                {validating
+                  ? 'Checking…'
+                  : busy
+                    ? 'Applying…'
+                    : step === steps.length - 1
+                      ? submitLabel
+                      : 'Continue'}
+                {step === steps.length - 1 ? <Check size={16} /> : <ArrowRight size={16} />}
+              </Button>
             </div>
           </form>
         </section>
@@ -478,7 +472,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
   const validFiles = route.kind !== 'static' || Boolean(check);
   return (
     <Wizard
-      title={publishOnly ? 'Enable route' : initial.id ? 'Edit route' : 'New route'}
+      title={publishOnly ? 'Enable route' : initial.id ? 'Edit route' : 'Create route'}
       steps={steps}
       step={editing ? 0 : step}
       onStep={(s) => {
@@ -505,7 +499,7 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
             ? 'Apply changes'
             : initial.id
               ? 'Save changes'
-              : 'Create disabled route'
+              : 'Create route'
       }
       error={error}
       canContinue={

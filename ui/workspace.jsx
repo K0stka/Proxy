@@ -296,7 +296,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                   }
                 >
                   <Plus size={17} />
-                  New route
+                  Create route
                 </Button>
               )}
               {page === 'Domains' && (
@@ -583,8 +583,8 @@ export default function Workspace({ onLogout, onRecovery }) {
                     <div className="service-icon"><Globe size={20} /></div>
                     <div className="domain-identity">
                       <h2>{d.name}</h2>
-                      <span className="status-text">{d.staging ? 'Staging' : d.ready ? 'Ready' : 'Pending'}</span>
-                      {d.subdomains && <code>*.{d.name}</code>}
+                      <code>{d.subdomains ? `${d.name}, *.${d.name}` : d.name}</code>
+                      {!d.ready && <span className="status-text">{d.staging ? 'Staging' : 'Pending'}</span>}
                     </div>
                     <div className="domain-facts">
                       <div>

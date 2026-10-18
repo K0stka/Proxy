@@ -61,6 +61,7 @@ export function createNavigation(browser) {
     setWizard(wizard) {
       write({
         ...current, wizard, step: 0, draft: {},
+        ...(!wizard && current.wizard?.kind === 'route' ? { page: 'Routes' } : {}),
         ...(wizard?.kind === 'pages' ? { page: 'Settings', settingsSection: 'error-pages' } : {}),
         id: wizard ? browser.crypto.randomUUID() : null,
       }, wizard ? 'pushState' : 'replaceState');

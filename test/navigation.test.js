@@ -100,6 +100,22 @@ test('renamed folder links retain drafts saved under the old page name', () => {
   assert.equal(nav.getSnapshot().step, 1);
 });
 
+test('route flows return to Routes when closed, regardless of their starting page', () => {
+  for (const page of ['Routes', 'Services', 'Folders', 'Domains', 'Settings']) {
+    const tab = browser(), nav = createNavigation(tab);
+    nav.setPage(page);
+    nav.setWizard({ kind: 'route' });
+    nav.setWizard(null);
+    assert.equal(nav.getSnapshot().page, 'Routes');
+    assert.equal(tab.location.pathname, '/routes');
+    nav.setPage(page);
+    nav.setWizard({ kind: 'route' });
+    nav.setStep(3);
+    nav.setWizard(null);
+    assert.equal(tab.location.pathname, '/routes');
+  }
+});
+
 
 test('old Files links resolve to Folders and Settings without losing wizard state', () => {
   for (const [path, expectedPage, expectedPath] of [

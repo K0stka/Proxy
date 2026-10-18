@@ -153,54 +153,48 @@ export default function Folders({ catalog, onEdit, onSaved }) {
             component="article"
             withBorder={true}
           >
-            <div className="folder-content">
-              <div className="folder-heading">
-                <FolderOpen size={22} />
-                <div>
-                  <h3>
-                    {folder.directory.split('/').at(-1).replace(/^./u, (letter) => letter.toLocaleUpperCase())}
-                  </h3>
-                  <code>/sites/{folder.directory}</code>
-                </div>
-              </div>
-              <div className="folder-actions">
-                <Tooltip label="Edit folder">
+            <div className="service-icon"><FolderOpen size={20} /></div>
+            <h3 className="folder-name">
+              {folder.directory.split('/').at(-1).replace(/^./u, (letter) => letter.toLocaleUpperCase())}
+            </h3>
+            <code className="folder-path">/sites/{folder.directory}</code>
+            <div className="folder-actions">
+              <Tooltip label="Edit folder">
+                <Button
+                  className="icon-button"
+                  aria-label={`Edit ${folder.directory}`}
+                  onClick={() => onEdit(folder)}
+                  disabled={busy || Boolean(pulling)}
+                >
+                  <Pencil size={17} />
+                </Button>
+              </Tooltip>
+              {(catalog.repositories ?? []).some(
+                (repo) => repo.directory === folder.directory && repo.git,
+              ) && (
+                <Tooltip label="Git pull">
                   <Button
                     className="icon-button"
-                    aria-label={`Edit ${folder.directory}`}
-                    onClick={() => onEdit(folder)}
-                    disabled={busy || Boolean(pulling)}
+                    aria-label={`Git pull ${folder.directory}`}
+                    loading={pulling === folder.directory}
+                    disabled={busy || Boolean(pulling && pulling !== folder.directory)}
+                    onClick={() => pull(folder.directory)}
                   >
-                    <Pencil size={17} />
+                    <GitPullRequest size={17} />
                   </Button>
                 </Tooltip>
-                {(catalog.repositories ?? []).some(
-                  (repo) => repo.directory === folder.directory && repo.git,
-                ) && (
-                  <Tooltip label="Git pull">
-                    <Button
-                      className="icon-button"
-                      aria-label={`Git pull ${folder.directory}`}
-                      loading={pulling === folder.directory}
-                      disabled={busy || Boolean(pulling && pulling !== folder.directory)}
-                      onClick={() => pull(folder.directory)}
-                    >
-                      <GitPullRequest size={17} />
-                    </Button>
-                  </Tooltip>
-                )}
-                <Tooltip label="Remove folder">
-                  <Button
-                    className="icon-button"
-                    aria-label={`Remove ${folder.directory}`}
-                    color="red.6"
-                    disabled={busy || Boolean(pulling)}
-                    onClick={() => remove(folder.directory)}
-                  >
-                    <Trash2 size={17} />
-                  </Button>
-                </Tooltip>
-              </div>
+              )}
+              <Tooltip label="Remove folder">
+                <Button
+                  className="icon-button"
+                  aria-label={`Remove ${folder.directory}`}
+                  color="red.6"
+                  disabled={busy || Boolean(pulling)}
+                  onClick={() => remove(folder.directory)}
+                >
+                  <Trash2 size={17} />
+                </Button>
+              </Tooltip>
             </div>
           </Paper>
         ))}
