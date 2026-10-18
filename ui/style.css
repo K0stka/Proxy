@@ -753,6 +753,20 @@ a:hover {
   border-color: var(--line);
   background: var(--surface);
 }
+.mantine-Popover-dropdown,
+.mantine-Menu-dropdown,
+.mantine-Accordion-item,
+.mantine-Button-root[data-variant='default'] {
+  background: var(--surface);
+  border-color: var(--line);
+}
+.mantine-Pill-root {
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.mantine-Checkbox-input:not(:checked):not(:disabled) {
+  background: var(--surface);
+}
 .mantine-Switch-track {
   cursor: pointer;
 }
@@ -839,9 +853,6 @@ textarea):focus-visible {
 .inline-arrow {
   color: var(--accent);
   opacity: 1;
-}
-.route-options .mantine-Accordion-item {
-  background: var(--surface);
 }
 .folders-layout {
   min-width: 0;
