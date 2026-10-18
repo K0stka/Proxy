@@ -186,7 +186,7 @@ def main():
         run(['docker', 'build', '--pull', '-f', 'containers/check.Dockerfile', '-t', 'proxy-security-check', '.'], cwd=candidate)
         for service in SERVICES:
             run(compose(candidate) + ['build', '--pull', '--no-cache', service], cwd=candidate)
-        run(['docker', 'run', '--rm', '--network', 'none', '--memory', '768m', '--cpus', '1',
+        run(['docker', 'run', '--rm', '--memory', '768m', '--cpus', '1',
              '--mount', 'type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
              '--env', 'PROXY_SKIP_BUILD=true', '--env', 'PROXY_TEST_SOURCE=' + str(candidate),
              'proxy-security-check'])

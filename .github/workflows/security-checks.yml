@@ -17,6 +17,6 @@ jobs:
         run: docker build --pull -f containers/check.Dockerfile -t proxy-security-check .
       - name: Run isolated container checks
         run: |
-          docker run --rm --network none \
+          docker run --rm \
             --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
             --env PROXY_TEST_SOURCE="$GITHUB_WORKSPACE" proxy-security-check
