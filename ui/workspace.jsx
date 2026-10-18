@@ -264,6 +264,27 @@ export default function Workspace({ onLogout, onRecovery }) {
             <div className="page-heading">
               <h1>{page}</h1>
               {page === 'Routes' && (
+                <div className="routes-toolbar">
+                  <div className="filter-tabs" aria-label="Route filter">
+                    {[
+                      ['all', 'All'],
+                      ['http', 'Services'],
+                      ['static', 'Static'],
+                      ['tcp', 'TCP'],
+                      ['udp', 'UDP'],
+                    ].map(([value, label]) => (
+                      <Button
+                        key={value}
+                        aria-pressed={filter === value}
+                        onClick={() => setFilter(value)}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {page === 'Routes' && (
                 <Button
                   className="primary"
                   onClick={() =>
@@ -352,25 +373,6 @@ export default function Workspace({ onLogout, onRecovery }) {
             )}
             {page === 'Routes' && (
               <>
-                <div className="routes-toolbar">
-                  <div className="filter-tabs" aria-label="Route filter">
-                    {[
-                      ['all', 'All'],
-                      ['http', 'Services'],
-                      ['static', 'Static'],
-                      ['tcp', 'TCP'],
-                      ['udp', 'UDP'],
-                    ].map(([value, label]) => (
-                      <Button
-                        key={value}
-                        aria-pressed={filter === value}
-                        onClick={() => setFilter(value)}
-                      >
-                        {label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
                 <div className="route-list">
                   {state.routes
                     .filter((r) => filter === 'all' || r.kind === filter)
@@ -403,9 +405,11 @@ export default function Workspace({ onLogout, onRecovery }) {
                             }
                           >
                             <strong>{route.name}</strong>
-                            <span>
-                              {forwarding && `${route.kind.toUpperCase()}: `}
-                              {listener(route)}
+                            <span className="route-endpoints">
+                              <span>
+                                {forwarding && `${route.kind.toUpperCase()}: `}
+                                {listener(route)}
+                              </span>
                               <span className="inline-arrow">→</span>
                               <span title={destination(route)}>
                                 {forwarding
@@ -565,7 +569,26 @@ export default function Workspace({ onLogout, onRecovery }) {
               </>
             )}
             {page === 'Files' && (
-              <>
+              <div className="files-layout">
+                <Folders
+                  catalog={catalog}
+                  onCreate={() =>
+                    setWizard({
+                      kind: 'folder',
+                    })
+                  }
+                  onEdit={(initial) =>
+                    setWizard({
+                      kind: 'folder',
+                      initial,
+                    })
+                  }
+                  onSaved={async (message) => {
+                    await refresh();
+                    await loadFiles();
+                    report(message);
+                  }}
+                />
                 <section className="error-pages-section" aria-label="Error pages">
                   <h2>Error pages</h2>
                   <div className="error-pages-grid">
@@ -605,26 +628,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                     ))}
                   </div>
                 </section>
-                <Folders
-                  catalog={catalog}
-                  onCreate={() =>
-                    setWizard({
-                      kind: 'folder',
-                    })
-                  }
-                  onEdit={(initial) =>
-                    setWizard({
-                      kind: 'folder',
-                      initial,
-                    })
-                  }
-                  onSaved={async (message) => {
-                    await refresh();
-                    await loadFiles();
-                    report(message);
-                  }}
-                />
-              </>
+              </div>
             )}
             {page === 'Domains' && !state.domains.length && (
               <div className="empty-state">

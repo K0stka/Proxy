@@ -1,6 +1,7 @@
 import { Button, NumberField, Disclosure } from './controls.jsx';
 import { TextInput, Switch, Tabs, Paper, Stack, Group, Text, Anchor, Alert } from '@mantine/core';
 import React, { useState, useEffect } from 'react';
+import { useMediaQuery } from '@mantine/hooks';
 import { startRegistration } from '@simplewebauthn/browser';
 import { Plus, KeyRound, Trash2, Download, Pencil } from 'lucide-react';
 import Modal from './dialog.jsx';
@@ -13,6 +14,7 @@ const when = (value) =>
     timeStyle: 'short',
   });
 export default function Settings({ state, refresh, report, onRecovery, onLogout }) {
+  const desktop = useMediaQuery('(min-width: 761px)');
   const { settingsSection: section, setSettingsSection } = useNavigation();
   const [preferences, setPreferences] = useState(state.settings);
   const [renaming, setRenaming] = useState(null),
@@ -120,6 +122,7 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
   }
   return (
     <Tabs
+      orientation={desktop ? 'vertical' : 'horizontal'}
       value={section}
       onChange={(next) => {
         setSettingsSection(next);

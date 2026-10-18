@@ -139,7 +139,7 @@ export default function Folders({ catalog, onEdit, onCreate, onSaved }) {
     }
   }
   return (
-    <>
+    <section className="folders-section" aria-label="Folders">
       <div className="section-title">
         <h2>Folders</h2>
         <Button className="primary" onClick={onCreate}>
@@ -221,6 +221,6 @@ export default function Folders({ catalog, onEdit, onCreate, onSaved }) {
           <h2>No folders configured</h2>
         </div>
       )}
-    </>
+    </section>
   );
 }

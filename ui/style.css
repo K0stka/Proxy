@@ -911,32 +911,279 @@ a:hover {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
-@media (min-width: 761px) and (max-width: 1100px) {
+/* Desktop uses the full canvas; phone navigation remains at the bottom. */
+@media (min-width: 761px) {
   .app-shell {
-    grid-template-columns: 192px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 80px minmax(0, 1fr);
   }
   .sidebar {
-    padding-inline: 16px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+    padding: 0 40px;
+    overflow: visible;
+    border: 0;
+  }
+  .sidebar .brand {
+    padding: 0;
+  }
+  .sidebar nav {
+    flex-direction: row;
+    align-self: stretch;
+    align-items: center;
+    gap: 8px;
+  }
+  .sidebar .mantine-NavLink-root {
+    width: auto;
+    padding: 12px 16px;
   }
   .sidebar .mantine-NavLink-root[data-active]::before {
-    left: -16px;
+    inset: auto 16px -12px;
+    width: auto;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+  }
+  .sidebar .mantine-NavLink-section {
+    margin-inline-end: 8px;
+  }
+  .sidebar-bottom {
+    margin: 0;
+    padding: 0;
+    border: 0;
   }
   .workspace > main {
-    padding: 36px 28px;
+    max-width: 1440px;
+    padding: 44px 48px;
   }
-  .folder-grid,
-  .domain-grid,
+  .page-heading {
+    border: 0;
+    padding: 0;
+    margin-bottom: 36px;
+    min-height: 44px;
+  }
+  .page-heading > h1 {
+    margin-right: auto;
+  }
+  .page-heading .routes-toolbar {
+    margin: 0 12px 0 0;
+  }
+  .route-list {
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: var(--card-shadow);
+  }
+  .route-row {
+    display: grid;
+    grid-template-columns: 36px 38px minmax(0, 1fr) 80px;
+    gap: 18px;
+    padding: 22px 24px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .route-row:last-child {
+    border-bottom: 0;
+  }
+  .route-row:hover {
+    background: var(--bg);
+  }
+  .route-row .service-icon {
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 10px;
+  }
+  .route-info {
+    display: grid;
+    grid-template-columns: minmax(140px, .75fr) minmax(0, 1.7fr);
+    gap: 24px;
+    align-items: center;
+    padding-block: 8px;
+  }
+  .route-info > .route-endpoints {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr);
+    gap: 16px;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .route-endpoints > span {
+    overflow-wrap: anywhere;
+  }
+  .route-endpoints > span:first-child {
+    color: var(--ink);
+  }
+  .route-actions {
+    justify-content: flex-end;
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+  .route-list > .empty-state {
+    border: 0;
+    min-height: 360px;
+  }
+  .files-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 40px;
+    align-items: start;
+  }
+  .folders-section {
+    min-width: 0;
+  }
+  .folder-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .error-pages-section {
+    padding-left: 32px;
+    border-left: 1px solid var(--line);
+  }
   .error-pages-grid {
     grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .settings-tabs {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 800px);
+    gap: 40px;
+    max-width: none;
+    align-items: start;
+  }
+  .settings-tabs .mantine-Tabs-list {
+    position: sticky;
+    top: 24px;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+  }
+  .settings-tabs .mantine-Tabs-list::before {
+    display: none;
+  }
+  .settings-tabs .mantine-Tabs-tab {
+    justify-content: flex-start;
+    padding: 14px 18px;
+    border: 0;
+    border-radius: 10px;
+  }
+  .settings-tabs .mantine-Tabs-tab[data-active] {
+    background: var(--surface);
+    box-shadow: var(--card-shadow);
+    color: var(--accent);
+  }
+  .settings-tabs .mantine-Tabs-panel {
+    min-width: 0;
+  }
+  .settings-pane {
+    padding: 36px;
+  }
+  .domain-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+    gap: 24px;
+    align-items: stretch;
+  }
+  .domain-card {
+    display: flex;
+    flex-direction: column;
+  }
+  .domain-actions {
+    margin-top: auto;
+  }
+  .server-group {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    column-gap: 32px;
+    padding-block: 24px;
+    border-top: 1px solid var(--line);
+    margin-bottom: 0;
+  }
+  .server-group > h2 {
+    align-content: start;
+    align-items: center;
+    justify-content: flex-start;
+    font-size: 16px;
+    gap: 10px;
+    margin: 0;
+  }
+  .server-group > h2 > code {
+    flex-basis: 100%;
+    overflow-wrap: anywhere;
+    padding-left: 28px;
+  }
+  .server-group > .notice {
+    grid-column: 2;
+  }
+  .server-group > .service-grid {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .server-group:has(> .notice) > .service-grid {
+    grid-row: auto;
+  }
+  .wizard-body {
+    grid-template-columns: 200px minmax(0, 760px);
+    max-width: 1100px;
+    gap: 64px;
+  }
+  .wizard-steps {
+    padding: 24px 0;
+  }
+}
+@media (min-width: 761px) and (max-width: 1000px) {
+  .sidebar {
+    padding-inline: 24px;
+    gap: 16px;
+  }
+  .sidebar .mantine-NavLink-root {
+    padding-inline: 10px;
+  }
+  .sidebar .mantine-NavLink-section {
+    display: none;
+  }
+  .sidebar-bottom .mantine-Button-label > span {
+    display: none;
+  }
+  .workspace > main {
+    padding: 32px 24px;
+  }
+  .page-heading {
+    flex-wrap: wrap;
+  }
+  .page-heading .routes-toolbar {
+    order: 3;
+    flex-basis: 100%;
+    margin: 0;
+  }
+  .route-info {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .files-layout {
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 24px;
+  }
+  .error-pages-section {
+    padding-left: 24px;
+  }
+  .settings-tabs {
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 24px;
+  }
+  .server-group {
+    grid-template-columns: 140px minmax(0, 1fr);
+    column-gap: 24px;
   }
   .wizard-body {
     grid-template-columns: 140px minmax(0, 1fr);
     gap: 28px;
     padding: 36px 24px;
-  }
-  .route-row {
-    gap: 12px;
-    padding: 18px;
   }
 }
 @media (max-width: 760px) {
@@ -1035,6 +1282,7 @@ a:hover {
     padding: 28px max(20px, env(safe-area-inset-right)) 28px max(20px, env(safe-area-inset-left));
   }
   .page-heading {
+    flex-wrap: wrap;
     margin-bottom: 24px;
     padding-bottom: 22px;
     gap: 12px;
@@ -1043,8 +1291,17 @@ a:hover {
     padding-inline: 12px;
     flex-shrink: 0;
   }
-  .routes-toolbar {
-    margin-bottom: 18px;
+  .page-heading > h1 {
+    margin-right: auto;
+  }
+  .page-heading .routes-toolbar {
+    order: 3;
+    flex-basis: 100%;
+    margin: 8px 0 0;
+  }
+  .files-layout {
+    display: grid;
+    gap: 32px;
   }
   .filter-tabs {
     width: 100%;
