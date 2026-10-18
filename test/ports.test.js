@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { parsePorts, portRanges, formatPorts } from '../shared/ports.js';
 import { validateSnapshot } from '../shared/model.js';
 import { render } from '../edge/render.js';
-import { listener, destination, serviceProxies } from '../ui/routes.js';
+import { listener, destination, destinationLabel, serviceProxies } from '../ui/routes.js';
 import { policy, route, snapshot } from './fixtures.js';
 
 test('port lists normalize singles and ranges and reject malformed or overlapping values', () => {
@@ -40,4 +40,23 @@ test('stream lists create separate listeners with preserved destinations; single
   }
   const output = render(policy(), snapshot([route({ kind: 'tcp', ports: '12345', targetPort: 8080, published: true })]), { revision: 'ports', directory: '/runtime/test' });
   assert(output.config.includes('proxy_pass 100.101.102.103:8080;'));
+});
+
+test('route rows truncate only long source ports and omit repeated destination ports', () => {
+  const discovery = { services: [], servers: [] };
+  const ports = '27015, 27020, 27025, 27030';
+  for (const kind of ['tcp', 'udp']) {
+    const input = route({ kind, ports });
+    assert.equal(listener(input, true), `203.0.113.10:${ports.slice(0, 20)}…`);
+    assert.equal(listener(input), `203.0.113.10:${ports}`);
+    assert.equal(destinationLabel(input, discovery), input.targetHost);
+    assert.equal(destinationLabel({ ...input, targetHost: '2001:db8::1' }, discovery), '[2001:db8::1]');
+  }
+  for (const ports of ['27015', '27015, 27020, 30-300']) {
+    const input = route({ kind: 'udp', ports });
+    assert.equal(listener(input, true), listener(input));
+  }
+  assert.equal(destinationLabel(route({ kind: 'tcp', ports: '27015', targetPort: 8080 }), discovery), '100.101.102.103:8080');
+  const website = route({ kind: 'http', hostname: 'example.com' });
+  assert.equal(listener(website, true), 'example.com');
 });

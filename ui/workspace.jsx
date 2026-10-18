@@ -411,8 +411,8 @@ export default function Workspace({ onLogout }) {
                           >
                             <strong>{route.name}</strong>
                             <span className="route-endpoints">
-                              <span>
-                                {listener(route)}
+                              <span title={listener(route)}>
+                                {listener(route, true)}
                               </span>
                               <ArrowRight className="inline-arrow" size={20} aria-label="to" />
                               <span title={destination(route)}>

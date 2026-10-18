@@ -11,10 +11,12 @@ export const routeSubdomain = (name) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 63)
     .replace(/-+$/g, '');
-export const listener = (route) =>
-  isWebsite(route)
-    ? route.hostname + (['static', 'redirect'].includes(route.kind) && route.path !== '/' ? (route.path ?? '') : '')
-    : `${route.ingressIP.includes(':') ? `[${route.ingressIP}]` : route.ingressIP}:${route.ports || formatPorts(portRanges(route))}`;
+export function listener(route, compact = false) {
+  if (isWebsite(route))
+    return route.hostname + (['static', 'redirect'].includes(route.kind) && route.path !== '/' ? (route.path ?? '') : '');
+  const ports = route.ports || formatPorts(portRanges(route));
+  return `${route.ingressIP.includes(':') ? `[${route.ingressIP}]` : route.ingressIP}:${compact && ports.length > 20 ? `${ports.slice(0, 20)}…` : ports}`;
+}
 export const destination = (route) =>
   route.kind === 'redirect' ? route.redirectURL : route.kind === 'static'
     ? `/sites/${route.staticSite?.directory ?? ''}`
@@ -57,7 +59,9 @@ export function destinationLabel(route, discovery) {
     visibleServicePorts(service).some((port) => serviceProxies([route], service, port).length),
   );
   const name = service?.name ?? route.source?.container;
-  if (!name) return destination(route);
+  if (!name) return samePorts(route)
+    ? (route.targetHost.includes(':') ? `[${route.targetHost}]` : route.targetHost)
+    : destination(route);
   const server = discovery.servers.find((server) => server.id === (service?.server ?? route.source?.server));
   return `${name} (${server?.name ?? service?.serverName ?? route.source?.server ?? route.targetHost})`;
 }
