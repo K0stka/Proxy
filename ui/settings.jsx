@@ -2,7 +2,7 @@ import { errorPageTypes } from '../shared/pages.js';
 import { Button, NumberField, Disclosure } from './controls.jsx';
 import { TextInput, Switch, Stack, Group, Text, Anchor, Alert } from '@mantine/core';
 import React, { useState, useEffect } from 'react';
-import { Plus, KeyRound, Trash2, Download, Pencil, Copy } from 'lucide-react';
+import { Plus, KeyRound, Trash2, Pencil, Copy } from 'lucide-react';
 import Modal from './dialog.jsx';
 import { api } from './api.js';
 import { useNavigation } from './navigation.js';
@@ -267,20 +267,6 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
               </Group>
             </div>
           ))}
-      </section>
-      <section id="backup" className="settings-section" aria-labelledby="backup-heading">
-        <Stack gap="lg">
-          <h2 id="backup-heading">Configuration backup</h2>
-          <Text size="sm" c="dimmed">
-            Routes, domains and file rules. Authentication, certificates and secrets are excluded.
-          </Text>
-          <Group>
-            <Button component="a" className="secondary" href="/api/export" download>
-              <Download size={16} />
-              Export configuration
-            </Button>
-          </Group>
-        </Stack>
       </section>
       {renaming && (
         <Modal

@@ -27,7 +27,7 @@ export function createNavigation(browser) {
     const requestedStep = Math.floor(Number(url.searchParams.get('step'))) || 0;
     return {
       page, wizard, id,
-      settingsSection: code !== null ? 'error-pages' : page === 'Settings' && ['general', 'certificates', 'error-pages', 'access', 'backup'].includes(kind) ? kind : 'general',
+      settingsSection: code !== null ? 'error-pages' : page === 'Settings' && ['general', 'certificates', 'error-pages', 'access'].includes(kind) ? kind : 'general',
       step: wizard ? Math.min(maxStep, Math.max(0, requestedStep)) : 0,
       draft: drafts.get(id) ?? (wizard && saved?.id === id ? saved.draft : null) ?? {},
     };

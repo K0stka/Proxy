@@ -411,7 +411,7 @@ test('settings are private, SQLite-backed, independently applied and reject chan
     400,
   );
   assert.deepEqual(f.store.get('settings'), changed);
-  assert.deepEqual((await (await f.request('/api/export')).json()).settings, changed);
+  assert.deepEqual((await (await f.request('/api/state')).json()).settings, changed);
 });
 test('first run has no example domains, targets or services and accepts UI setup', async (t) => {
   const f = await fixture(t, { empty: true });
@@ -549,8 +549,8 @@ test('redirect drafts validate URLs without probes and publish beside a root rou
   f.setFail(true);
   assert.equal((await f.request(`/api/routes/${created.id}`, { method: 'PUT', body: { ...created, redirectStatus: 301 } })).status, 502);
   assert.equal(f.store.snapshot().routes.find((route) => route.id === created.id).redirectStatus, 302);
-  const exported = await (await f.request('/api/export')).json();
-  assert.equal(exported.routes.find((route) => route.id === created.id).redirectURL, input.redirectURL);
+  const stored = f.store.snapshot().routes.find((route) => route.id === created.id);
+  assert.equal(stored.redirectURL, input.redirectURL);
 });
 
 test('static directory paths and port lists validate, persist and publish through the API', async (t) => {

@@ -196,6 +196,10 @@ a:hover {
 .sidebar .mantine-NavLink-label {
   font-size: 13px;
   font-weight: 500;
+  /* Cap-based centering leaves the lowercase mass ~1px below the icon center,
+     which reads as the text hugging the bottom of the icon. */
+  position: relative;
+  top: -1px;
 }
 .sidebar-bottom {
   margin-top: auto;
@@ -661,6 +665,64 @@ a:hover {
   background: var(--bg);
   color: var(--accent);
   margin-bottom: 24px;
+}
+/* Auth and device cards: the symbol rides beside the title, the brand header
+   stays quiet, and the escape hatch sits under a hairline. */
+.auth-panel:has(> form) {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 22px;
+  max-width: 408px;
+  padding: 30px 32px;
+  border-radius: 20px;
+}
+.auth-panel:has(> form) > * {
+  grid-column: 1 / -1;
+}
+.auth-panel:has(> form) .brand {
+  grid-row: 1;
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: -0.4px;
+}
+.auth-panel:has(> form) .brand-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+.auth-panel:has(> form) .brand-mark svg {
+  width: 18px;
+  height: 18px;
+}
+.auth-panel:has(> form) > .auth-symbol {
+  grid-column: 1;
+  grid-row: 2;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: var(--soft);
+  margin: 0;
+}
+.auth-panel:has(> form) > .auth-symbol svg {
+  width: 26px;
+  height: 26px;
+}
+.auth-panel:has(> form) > h1 {
+  grid-column: 2;
+  grid-row: 2;
+  margin: 0;
+  font-size: 23px;
+  letter-spacing: -0.5px;
+}
+.auth-panel:has(> form) > form {
+  grid-row: 3;
+}
+.auth-panel:has(> form) > .text-button {
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 .recovery-code {
   display: block;
@@ -1357,16 +1419,27 @@ textarea):focus-visible {
     padding: 6px 2px;
     display: flex;
     flex-direction: column;
+    align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 2px;
     color: var(--muted);
   }
   .sidebar .mantine-NavLink-section {
     margin: 0;
   }
+  /* Mantine's body is flex:1, which swallows the free space and pins the icon to
+     the top; make it content-sized so justify-content can center the pair, and
+     flex it so the label loses the block line-height leading. */
+  .sidebar .mantine-NavLink-body {
+    flex: 0 0 auto;
+    overflow: visible;
+    display: flex;
+    justify-content: center;
+  }
   .sidebar .mantine-NavLink-label {
     font-size: 10px;
-    line-height: 1.3;
+    line-height: 1.2;
+    top: 0;
   }
   .sidebar .mantine-NavLink-root[data-active],
   .sidebar .mantine-NavLink-root:hover {
@@ -1534,6 +1607,10 @@ textarea):focus-visible {
     padding: 32px 24px;
     border-radius: 20px;
   }
+  .auth-panel:has(> form) {
+    padding: 26px 22px;
+    row-gap: 20px;
+  }
   .mantine-Modal-inner {
     padding: 16px;
   }
@@ -1546,7 +1623,9 @@ textarea):focus-visible {
     right: 16px;
   }
 }
-/* Phone cards keep identity, details and actions in the same order. */
+/* Phone cards use one 2x2 unit: the icon centers in a left column spanning both
+   rows, the identity sits top-right and the detail bottom-right, then a footer
+   holds the state on the left and the inline icon actions on the right. */
 @media (max-width: 760px) {
   .route-list,
   .service-list,
@@ -1554,7 +1633,7 @@ textarea):focus-visible {
   .folder-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
+    gap: 10px;
     overflow: visible;
     border: 0;
     background: transparent;
@@ -1564,81 +1643,142 @@ textarea):focus-visible {
   .service-row,
   .domain-row,
   .folder-card {
-    padding: 18px;
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    align-items: start;
+    gap: 4px 12px;
+    padding: 14px 16px;
     border: 1px solid var(--line);
     border-radius: 16px;
     background: var(--surface);
     box-shadow: var(--card-shadow);
   }
-  .route-row,
-  .service-row,
-  .domain-row {
-    display: grid;
-    grid-template-columns: 36px minmax(0, 1fr);
-    gap: 14px 12px;
-    align-items: start;
-  }
+  /* A card border replaces the shared list separators, including on the last row. */
   .service-row:last-child,
   .domain-row:last-child {
     border-bottom: 1px solid var(--line);
   }
+  /* One 2x2 unit per card: the icon centers in a left column that spans both
+     rows, while the identity sits top-right and the detail bottom-right. */
   .route-row > .service-icon,
   .service-row > .service-icon,
-  .domain-row > .service-icon {
+  .folder-card > .service-icon {
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / span 2;
+    align-self: center;
+    justify-self: center;
     width: 36px;
     height: 36px;
   }
-  .route-info,
+  .domain-row > .service-icon {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: center;
+    width: 36px;
+    height: 36px;
+  }
+  .route-info {
+    display: contents;
+  }
+  .route-info > strong,
   .service-name,
-  .domain-identity {
+  .folder-name {
     grid-column: 2;
     grid-row: 1;
-    display: grid;
-    gap: 8px;
+    min-width: 0;
     padding: 0;
   }
   .route-info > strong,
   .service-name > strong,
+  .folder-name,
   .domain-identity h2 {
     font-size: 16px;
-    line-height: 1.5;
-    margin: 0;
+    font-weight: 600;
+    line-height: 1.35;
   }
-  .route-info > .route-endpoints {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-    margin: 0;
-    line-height: 1.6;
+  /* Identity and detail each hold to a single elided line. */
+  .route-info > strong,
+  .service-name > strong,
+  .folder-name,
+  .service-port,
+  .folder-path,
+  .route-endpoints > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .route-endpoints > span:first-child {
-    text-align: left;
-  }
-  .route-endpoints > .inline-arrow {
-    transform: rotate(90deg);
-    width: 16px;
-    height: 16px;
-  }
-  .service-port {
+  .route-info > .route-endpoints,
+  .service-port,
+  .folder-path {
     grid-column: 2;
     grid-row: 2;
+    min-width: 0;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  /* Phone routes show the arrow and its destination, without the listener. */
+  .route-info > .route-endpoints {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .route-endpoints > span:first-child {
+    display: none;
+  }
+  .route-endpoints > .inline-arrow {
+    flex: none;
+    width: 15px;
+    height: 15px;
+  }
+  .route-endpoints > span:last-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .service-name {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .status-text {
+    flex: none;
+  }
+  /* Domains keep their two-line identity and fact grid. */
+  .domain-identity {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: 0;
+  }
+  .domain-identity > code {
+    font-size: 13px;
+    overflow-wrap: anywhere;
   }
   .domain-row .domain-facts {
     grid-column: 2;
+    grid-row: 2;
     margin: 0;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    gap: 2px 12px;
+    line-height: 1.35;
+  }
+  .domain-row .domain-facts span {
+    font-size: 11px;
   }
   .domain-note {
     grid-column: 2;
+    grid-row: auto;
+    margin: 0;
+    font-size: 12px;
   }
+  /* Footer: the state control stays left, the inline icon actions stay right. */
   .route-footer,
   .service-actions,
-  .domain-row .domain-actions,
-  .folder-actions {
+  .folder-actions,
+  .domain-row .domain-actions {
     grid-column: 1 / -1;
     grid-row: auto;
     display: flex;
@@ -1646,22 +1786,32 @@ textarea):focus-visible {
     justify-content: flex-end;
     gap: 4px;
     margin: 0;
-    padding-top: 12px;
+    padding-top: 8px;
     border-top: 1px solid var(--line);
-    min-height: 57px;
   }
   .route-footer {
     justify-content: space-between;
   }
   .route-footer > .mantine-Switch-root {
-    display: grid;
+    display: flex;
     align-items: center;
-    min-width: 44px;
-    min-height: 44px;
+    min-height: 36px;
   }
-  .route-actions {
+  .route-footer > .route-actions {
     margin: 0;
+    padding: 0;
+    border: 0;
     gap: 4px;
+  }
+  /* ActionIcon, not Button, is the inline row action; size it for touch. */
+  .route-actions .mantine-ActionIcon-root,
+  .service-actions .mantine-ActionIcon-root,
+  .folder-actions .mantine-ActionIcon-root,
+  .domain-row .domain-actions .mantine-ActionIcon-root {
+    width: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
   }
   .domain-actions > .icon-button {
     margin-left: 0;
@@ -1682,30 +1832,6 @@ textarea):focus-visible {
   }
   .page-heading > .secondary .mantine-Button-label > span {
     display: none;
-  }
-}
-@media (max-width: 760px) {
-  .folder-card {
-    display: grid;
-    grid-template-columns: 36px minmax(0, 1fr);
-    gap: 14px 12px;
-    align-items: start;
-  }
-  .folder-card > .service-icon {
-    grid-column: 1;
-    grid-row: 1;
-    width: 36px;
-    height: 36px;
-  }
-  .folder-name {
-    grid-column: 2;
-    grid-row: 1;
-    font-size: 16px;
-    line-height: 1.5;
-  }
-  .folder-path {
-    grid-column: 2;
-    grid-row: 2;
   }
 }
 @media (prefers-reduced-motion: reduce) {

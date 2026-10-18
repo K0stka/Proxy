@@ -406,11 +406,6 @@ export function createApp({
           json(res, await edge('/sites/inspect', { method: 'POST', body: spec }));
           return;
         }
-        if (path === '/api/export' && req.method === 'GET') {
-          res.setHeader('content-disposition', 'attachment; filename="proxy-configuration.json"');
-          json(res, { version: 2, ...store.snapshot(), settings: settingsFromPolicy(policy) });
-          return;
-        }
         if (path === '/api/routes' && req.method === 'POST') {
           const input = await bodyJSON(req);
           const route = parse(routeSchema, { ...input, id: randomUUID(), published: false });
