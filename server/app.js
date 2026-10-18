@@ -1,3 +1,4 @@
+import { errorPageTypes } from '../shared/pages.js';
 import http from 'node:http';
 import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { join, resolve, extname, sep } from 'node:path';
@@ -57,7 +58,7 @@ export function createApp({
   function configuredFolders() {
     const snapshot = store.snapshot();
     const folders = new Map(snapshot.sites.map((site) => [site.directory, site]));
-    for (const site of [...snapshot.routes.map((route) => route.staticSite), snapshot.pages.notFoundSite, snapshot.pages.badGatewaySite])
+    for (const site of [...snapshot.routes.map((route) => route.staticSite), ...errorPageTypes.map(([, key]) => snapshot.pages[key + 'Site'])])
       if (site && !folders.has(site.directory)) folders.set(site.directory, site);
     return [...folders.values()];
   }
@@ -77,14 +78,14 @@ export function createApp({
     return validateSnapshot(policy, {
       ...old,
       routes: old.routes.map((route) => ({ ...route, staticSite: update(route.staticSite) })),
-      pages: { ...old.pages, notFoundSite: update(old.pages.notFoundSite), badGatewaySite: update(old.pages.badGatewaySite) },
+      pages: { ...old.pages, ...Object.fromEntries(errorPageTypes.map(([, key]) => [key + 'Site', update(old.pages[key + 'Site'])])) },
       sites: [...old.sites.filter((site) => site.directory !== previous), spec],
     });
   }
   function pageSnapshot(code, value) {
     const spec = parse(errorPageSchema, value), old = store.snapshot();
-    const [siteKey, documentKey] = code === 404
-      ? ['notFoundSite', 'notFoundDocument'] : ['badGatewaySite', 'badGatewayDocument'];
+    const [, key] = errorPageTypes.find(([value]) => value === code);
+    const siteKey = key + 'Site', documentKey = key + 'Document';
     const next = validateSnapshot(policy, { ...old, pages: {
       ...old.pages, [siteKey]: spec.site, [documentKey]: spec.document,
     } });
@@ -276,12 +277,12 @@ export function createApp({
             const next = folderSnapshot(spec, previous);
             await edge('/sites/inspect', { method: 'POST', body: spec });
             const affected = { ...defaultPages };
-            for (const [key, documentKey] of [['notFoundSite', 'notFoundDocument'], ['badGatewaySite', 'badGatewayDocument']])
+            for (const [key, documentKey] of errorPageTypes.map(([, key]) => [key + 'Site', key + 'Document']))
               if (next.pages[key]?.directory === spec.directory) {
                 affected[key] = next.pages[key]; affected[documentKey] = next.pages[documentKey];
               }
-            if (affected.notFoundSite || affected.badGatewaySite) await checkPages(affected);
-          } else if (input?.kind === 'page' && [404, 502].includes(input.code)) {
+            if (errorPageTypes.some(([, key]) => affected[key + 'Site'])) await checkPages(affected);
+          } else if (input?.kind === 'page' && errorPageTypes.some(([code]) => code === input.code)) {
             await checkPages(pageSnapshot(input.code, value).selection);
           } else if (input?.kind === 'route' && [0, 1, 2].includes(input.step)) {
             const base = parse(routeFields.pick({ name: true, kind: true }).strip(), value);
@@ -305,7 +306,7 @@ export function createApp({
           json(res, { ok: true });
           return;
         }
-        const singlePage = path.match(/^\/api\/pages\/(404|502)$/);
+        const singlePage = path.match(/^\/api\/pages\/(404|500|502)$/);
         if (singlePage && req.method === 'PUT') {
           const input = await bodyJSON(req);
           json(res, await serial(async () => {
@@ -380,7 +381,7 @@ export function createApp({
             const old = store.snapshot();
             if (
               old.routes.some((route) => route.staticSite?.directory === directory) ||
-              [old.pages.notFoundSite, old.pages.badGatewaySite].some(
+              errorPageTypes.map(([, key]) => old.pages[key + 'Site']).some(
                 (site) => site?.directory === directory,
               )
             )

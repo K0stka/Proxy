@@ -148,3 +148,22 @@ test('legacy folder filters stay intact until shared profiles are explicitly sav
   assert.deepEqual(configured.pages.badGatewaySite, rules);
   assert(!snapshotSchema.safeParse({ ...migrated, sites: [rules, rules] }).success);
 });
+
+
+test('older snapshots gain a default 500 page and custom 500 bundles render separately', () => {
+  const legacy = { ...defaultPages };
+  for (const key of ['internalErrorTitle', 'internalErrorText', 'internalErrorSite', 'internalErrorDocument']) delete legacy[key];
+  const migrated = pagesSchema.parse(legacy);
+  assert.equal(migrated.internalErrorSite, null);
+  assert.equal(migrated.internalErrorDocument, 'index.html');
+  const output = render(policy(), { routes: [route({ published: true })], pages: migrated }, {
+    revision: 'test', directory: '/runtime/test', readyDomains: ['krychlic.com'],
+    errorSites: { 500: { directory: 'errors/server', exposed: ['notice.html', 'style.css'], html: 'Custom internal error' } },
+  });
+  assert.equal(output.pages['500.html'], 'Custom internal error');
+  assert.match(output.config, /error_page 500 \/_proxy\/error-documents\/500;/);
+  assert.match(output.config, /\/_proxy\/errors\/500\/style.css/);
+  const shared = { directory: 'errors/server', include: ['*.html'], exclude: [] };
+  const updated = snapshotSchema.parse({ routes: [], sites: [shared], pages: { ...migrated, internalErrorSite: { directory: shared.directory } } });
+  assert.deepEqual(updated.pages.internalErrorSite, shared);
+});

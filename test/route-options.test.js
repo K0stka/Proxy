@@ -30,12 +30,12 @@ test('destination picker offers normalized running services and explains unavail
   const options = serviceEndpoints(services, 'http');
   assert.equal(options.length, 2);
   assert.equal(options[0].reason, '');
-  assert.equal(portLabel(options[0].port), '9000 (8080) / TCP');
+  assert.equal(portLabel(options[0].port), '9000:8080 (TCP)');
   assert.ok(options.every((option) => option.port.hostPort > 0));
   assert.equal(options[1].reason, 'Container is exited');
   const udp = serviceEndpoints(services, 'udp');
   assert.equal(udp.length, 1);
-  assert.equal(portLabel(udp[0].port), '5353 (53) / UDP');
+  assert.equal(portLabel(udp[0].port), '5353:53 (UDP)');
   assert.equal(new Set([...options, ...udp].map((option) => option.key)).size, 3);
 });
 

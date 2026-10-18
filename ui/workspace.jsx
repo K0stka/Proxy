@@ -3,7 +3,7 @@ import { Alert, Paper, NavLink, Menu, Switch, Tooltip } from '@mantine/core';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Waypoints,
-  ShieldCheck,
+  Settings as SettingsIcon,
   Plus,
   Server,
   Globe,
@@ -14,7 +14,6 @@ import {
   LogOut,
   Trash2,
   Pencil,
-  ChevronRight,
   ArrowRight,
 } from 'lucide-react';
 import { api } from './api.js';
@@ -25,6 +24,7 @@ import {
   listener,
   destination,
   destinationLabel,
+  portLabel,
   visibleServicePorts,
   serviceProxies,
 } from './routes.js';
@@ -225,7 +225,7 @@ export default function Workspace({ onLogout, onRecovery }) {
             ['Services', Server],
             ['Folders', FolderOpen],
             ['Domains', Globe],
-            ['Settings', ShieldCheck],
+            ['Settings', SettingsIcon],
           ].map(([name, Icon]) => (
             <NavLink
               component="button"
@@ -320,6 +320,7 @@ export default function Workspace({ onLogout, onRecovery }) {
               {['Services', 'Folders'].includes(page) && (
                 <Button
                   className="secondary"
+                  aria-label="Refresh"
                   disabled={working}
                   onClick={async () => {
                     setWorking(true);
@@ -339,7 +340,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                   }}
                 >
                   <RefreshCw size={15} />
-                  Refresh
+                  <span>Refresh</span>
                 </Button>
               )}
             </div>
@@ -358,6 +359,7 @@ export default function Workspace({ onLogout, onRecovery }) {
                 Configuration out of sync.
                 <Button
                   className="secondary"
+                  aria-label="Refresh"
                   disabled={working}
                   onClick={async () => {
                     setWorking(true);
@@ -392,12 +394,6 @@ export default function Workspace({ onLogout, onRecovery }) {
                           component="article"
                           withBorder={true}
                         >
-                          <Switch
-                            checked={route.published}
-                            disabled={working || !edgeReady}
-                            aria-label={`${route.published ? 'Disable' : 'Enable'} ${route.name}`}
-                            onChange={() => action(route, route.published ? 'disable' : 'publish')}
-                          />
                           <div className="service-icon">
                             <Icon size={20} />
                           </div>
@@ -413,41 +409,49 @@ export default function Workspace({ onLogout, onRecovery }) {
                             <strong>{route.name}</strong>
                             <span className="route-endpoints">
                               <span>
-                                {forwarding && `${route.kind.toUpperCase()}: `}
                                 {listener(route)}
                               </span>
                               <ArrowRight className="inline-arrow" size={20} aria-label="to" />
                               <span title={destination(route)}>
                                 {destinationLabel(route, state.discovery)}
+                                {forwarding && <small className="route-protocol"> ({route.kind.toUpperCase()})</small>}
                               </span>
                             </span>
                           </Button>
-                          <div className="route-actions">
-                            <Tooltip label="Edit proxy">
-                              <Button
-                                className="icon-button"
-                                onClick={() =>
-                                  setWizard({
-                                    kind: 'route',
-                                    initial: route,
-                                  })
-                                }
-                                aria-label={`Edit ${route.name}`}
-                              >
-                                <Pencil size={17} />
-                              </Button>
-                            </Tooltip>
-                            <Tooltip label="Delete proxy">
-                              <Button
-                                className="icon-button"
-                                color="red.6"
-                                disabled={working || (route.published && !edgeReady)}
-                                onClick={() => setConfirmation(route)}
-                                aria-label={`Delete ${route.name}`}
-                              >
-                                <Trash2 size={17} />
-                              </Button>
-                            </Tooltip>
+                          <div className="route-footer">
+                            <Switch
+                              checked={route.published}
+                              disabled={working || !edgeReady}
+                              aria-label={`${route.published ? 'Disable' : 'Enable'} ${route.name}`}
+                              onChange={() => action(route, route.published ? 'disable' : 'publish')}
+                            />
+                            <div className="route-actions">
+                              <Tooltip label="Edit proxy">
+                                <Button
+                                  className="icon-button"
+                                  onClick={() =>
+                                    setWizard({
+                                      kind: 'route',
+                                      initial: route,
+                                    })
+                                  }
+                                  aria-label={`Edit ${route.name}`}
+                                >
+                                  <Pencil size={17} />
+                                </Button>
+                              </Tooltip>
+                              <Tooltip label="Delete proxy">
+                                <Button
+                                  className="icon-button"
+                                  color="red.6"
+                                  disabled={working || (route.published && !edgeReady)}
+                                  onClick={() => setConfirmation(route)}
+                                  aria-label={`Delete ${route.name}`}
+                                >
+                                  <Trash2 size={17} />
+                                </Button>
+                              </Tooltip>
+                            </div>
                           </div>
                         </Paper>
                       );
@@ -488,66 +492,53 @@ export default function Workspace({ onLogout, onRecovery }) {
                     {server.name}: {server.error}
                   </Alert>
                 ))}
-                {portServices.length > 0 && (
-                  <div className="service-list">
-                    <div className="service-columns" aria-hidden="true">
-                      <span />
-                      <span>Service</span>
-                      <span>Host</span>
-                      <span>Host port</span>
-                      <span>Container port</span>
-                      <span>Protocol</span>
-                      <span />
+                {state.discovery.servers.filter((host) => portServices.some((service) => service.server === host.id)).map((host) => (
+                  <section className="service-host-group" key={host.id} aria-label={host.name}>
+                    <h2><Server size={18} />{host.name}<code>{host.address}</code></h2>
+                    <div className="service-list">
+                      {portServices.filter((service) => service.server === host.id).flatMap((service) => service.ports.map((port) => {
+                        const proxies = serviceProxies(state.routes, service, port);
+                        const edit = (route) => setWizard({ kind: 'route', initial: route });
+                        const button = (
+                          <Button
+                            className="icon-button"
+                            aria-label={`${proxies.length ? 'Edit' : 'Create'} proxy for ${service.name} ${portLabel(port)}`}
+                            disabled={!proxies.length && service.state !== 'running'}
+                            onClick={proxies.length > 1 ? undefined : () =>
+                              proxies.length ? edit(proxies[0]) : connect(service, port)}
+                          >
+                            {proxies.length ? <Pencil size={17} /> : <Plus size={17} />}
+                          </Button>
+                        );
+                        return (
+                          <Paper className="service-row" component="article" withBorder
+                            key={`${service.server}:${service.containerId}:${service.name}:${port.hostPort}:${port.containerPort}:${port.protocol}`}>
+                            <div className="service-icon"><Server size={20} /></div>
+                            <div className="service-name">
+                              <strong>{service.name}</strong>
+                              {service.state !== 'running' && <span className="status-text">{service.state}</span>}
+                            </div>
+                            <code className="service-port">{portLabel(port)}</code>
+                            <div className="service-actions">
+                              {proxies.length > 1 ? (
+                                <Menu position="bottom-end" withinPortal>
+                                  <Menu.Target>{button}</Menu.Target>
+                                  <Menu.Dropdown>
+                                    {proxies.map((route) => (
+                                      <Menu.Item key={route.id} onClick={() => edit(route)}>
+                                        {route.name} · {listener(route)}
+                                      </Menu.Item>
+                                    ))}
+                                  </Menu.Dropdown>
+                                </Menu>
+                              ) : <Tooltip label={proxies.length ? 'Edit proxy' : 'Create proxy'}>{button}</Tooltip>}
+                            </div>
+                          </Paper>
+                        );
+                      }))}
                     </div>
-                    {portServices.flatMap((service) => service.ports.map((port) => {
-                      const proxies = serviceProxies(state.routes, service, port);
-                      const host = state.discovery.servers.find((server) => server.id === service.server);
-                      const edit = (route) => setWizard({ kind: 'route', initial: route });
-                      const button = (
-                        <Button
-                          className="secondary small"
-                          disabled={!proxies.length && service.state !== 'running'}
-                          onClick={proxies.length > 1 ? undefined : () =>
-                            proxies.length ? edit(proxies[0]) : connect(service, port)}
-                        >
-                          {proxies.length ? 'Edit proxy' : 'Create proxy'}
-                          <ChevronRight size={14} />
-                        </Button>
-                      );
-                      return (
-                        <Paper className="service-row" component="article" withBorder
-                          key={`${service.server}:${service.containerId}:${service.name}:${port.hostPort}:${port.containerPort}:${port.protocol}`}>
-                          <div className="service-icon"><Server size={20} /></div>
-                          <div className="service-name">
-                            <strong>{service.name}</strong>
-                            {service.state !== 'running' && <span className="status-text">{service.state}</span>}
-                          </div>
-                          <div className="service-host">
-                            <span>{host?.name ?? service.serverName ?? service.server}</span>
-                            <code>{port.targetHost}</code>
-                          </div>
-                          <code className="service-host-port"><span className="mobile-field-label">Host port</span>{port.hostPort}</code>
-                          <code className="service-container-port"><span className="mobile-field-label">Container port</span>{port.containerPort}</code>
-                          <code className="service-protocol">{port.protocol.toUpperCase()}</code>
-                          <div className="service-actions">
-                            {proxies.length > 1 ? (
-                              <Menu position="bottom-end" withinPortal>
-                                <Menu.Target>{button}</Menu.Target>
-                                <Menu.Dropdown>
-                                  {proxies.map((route) => (
-                                    <Menu.Item key={route.id} onClick={() => edit(route)}>
-                                      {route.name} · {listener(route)}
-                                    </Menu.Item>
-                                  ))}
-                                </Menu.Dropdown>
-                              </Menu>
-                            ) : button}
-                          </div>
-                        </Paper>
-                      );
-                    }))}
-                  </div>
-                )}
+                  </section>
+                ))}
                 {!portServices.length && !state.discovery.error && (
                   <div className="empty-state">
                     <Server size={28} />
@@ -591,13 +582,9 @@ export default function Workspace({ onLogout, onRecovery }) {
                   >
                     <div className="service-icon"><Globe size={20} /></div>
                     <div className="domain-identity">
-                      <div className="section-title">
-                        <span className="status-text">
-                          {d.staging ? 'Staging' : d.ready ? 'Ready' : 'Pending'}
-                        </span>
-                      </div>
                       <h2>{d.name}</h2>
-                      <code>{d.subdomains ? `${d.name}, *.${d.name}` : d.name}</code>
+                      <span className="status-text">{d.staging ? 'Staging' : d.ready ? 'Ready' : 'Pending'}</span>
+                      {d.subdomains && <code>*.{d.name}</code>}
                     </div>
                     <div className="domain-facts">
                       <div>
@@ -621,7 +608,8 @@ export default function Workspace({ onLogout, onRecovery }) {
                     )}
                     <div className="domain-actions">
                       <Button
-                        className="secondary"
+                        className="icon-button"
+                        aria-label={`Edit ${d.name}`}
                         onClick={() =>
                           setWizard({
                             kind: 'domains',
@@ -632,10 +620,11 @@ export default function Workspace({ onLogout, onRecovery }) {
                           })
                         }
                       >
-                        <Pencil size={15} /> Edit
+                        <Pencil size={17} />
                       </Button>
                       <Button
-                        className="secondary"
+                        className="icon-button"
+                        aria-label={`Check certificate for ${d.name}`}
                         onClick={async () => {
                           try {
                             await api('/certificates/retry', {
@@ -650,11 +639,11 @@ export default function Workspace({ onLogout, onRecovery }) {
                           }
                         }}
                       >
-                        <RefreshCw size={15} />
-                        Check
+                        <RefreshCw size={17} />
                       </Button>
                       <Button
                         className="icon-button"
+                        color="red.6"
                         aria-label={`Delete ${d.name}`}
                         onClick={async () => {
                           try {

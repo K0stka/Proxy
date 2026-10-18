@@ -73,6 +73,11 @@ test(
         res.end('{"error":"missing resource"}');
         return;
       }
+      if (req.url === '/internal-error') {
+        res.writeHead(500, { 'content-type': 'text/plain' });
+        res.end('Private backend error');
+        return;
+      }
       if (req.url === '/api-error') {
         res.writeHead(502, { 'content-type': 'application/json' });
         res.end('{"error":"application response"}');
@@ -499,11 +504,15 @@ test(
       },
     );
     await t.test(
-      'application gateway errors always use the shared page; application 404 bodies are preserved',
+      'application 500 and gateway errors use shared pages; application 404 bodies are preserved',
       async () => {
         const response = await request('app.krychlic.com', '/api-error');
         assert.equal(response.status, 502);
         assert(response.body.includes('Back soon.'));
+        const internal = await request('app.krychlic.com', '/internal-error');
+        assert.equal(internal.status, 500);
+        assert(internal.body.includes('Something went wrong.'));
+        assert(!internal.body.includes('Private backend error'));
         const missing = await request('app.krychlic.com', '/not-found');
         assert.equal(missing.status, 404);
         assert.equal(missing.body, '{"error":"missing resource"}');

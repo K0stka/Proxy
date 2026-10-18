@@ -1,5 +1,5 @@
 import { Button } from './controls.jsx';
-import { TextInput, Alert, Paper, Group, Tooltip } from '@mantine/core';
+import { TextInput, Alert, Paper, Tooltip } from '@mantine/core';
 import React, { useState } from 'react';
 import { FolderOpen, Pencil, Trash2, GitPullRequest } from 'lucide-react';
 import { api } from './api.js';
@@ -152,21 +152,18 @@ export default function Folders({ catalog, onEdit, onSaved }) {
             key={folder.directory}
             component="article"
             withBorder={true}
-            p="lg"
           >
-            <Group justify="space-between" wrap="nowrap" align="center">
+            <div className="folder-content">
               <div className="folder-heading">
                 <FolderOpen size={22} />
                 <div>
                   <h3>
-                    {folder.directory
-                      .split('/')[0]
-                      .replace(/^./u, (letter) => letter.toLocaleUpperCase())}
+                    {folder.directory.split('/').at(-1).replace(/^./u, (letter) => letter.toLocaleUpperCase())}
                   </h3>
                   <code>/sites/{folder.directory}</code>
                 </div>
               </div>
-              <Group gap="xs" wrap="nowrap">
+              <div className="folder-actions">
                 <Tooltip label="Edit folder">
                   <Button
                     className="icon-button"
@@ -203,8 +200,8 @@ export default function Folders({ catalog, onEdit, onSaved }) {
                     <Trash2 size={17} />
                   </Button>
                 </Tooltip>
-              </Group>
-            </Group>
+              </div>
+            </div>
           </Paper>
         ))}
       </div>

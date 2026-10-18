@@ -1,3 +1,4 @@
+import { errorPageTypes } from '../shared/pages.js';
 import { Button, NumberField, Disclosure } from './controls.jsx';
 import { TextInput, Switch, Stack, Group, Text, Anchor, Alert } from '@mantine/core';
 import React, { useState, useEffect } from 'react';
@@ -198,26 +199,19 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout,
       </section>
       <section id="error-pages" className="settings-section" aria-labelledby="error-pages-heading">
         <h2 id="error-pages-heading">Error pages</h2>
-        <div className="error-pages-grid">
-          {[
-            ['404', state.pages.notFoundSite, state.pages.notFoundDocument],
-            ['502', state.pages.badGatewaySite, state.pages.badGatewayDocument],
-          ].map(([code, site, document]) => (
-            <article className="error-page-card" key={code}>
-              <div className="error-page-heading">
-                <div>
-                  <span className="error-page-code">{code}</span>
-                  <h3>{code === '404' ? 'Not found' : 'Service unavailable'}</h3>
-                </div>
-                <Button
-                  className="secondary"
-                  aria-label={`Edit ${code} page`}
-                  onClick={() => onEditPage(Number(code))}
-                >
-                  <Pencil size={14} /> Edit
-                </Button>
+        <div className="error-page-list">
+          {errorPageTypes.map(([code, key, label]) => (
+            <article className="error-page-row" key={code}>
+              <span className="error-page-code">{code}</span>
+              <div className="error-page-info">
+                <h3>{label}</h3>
+                <code>{state.pages[key + 'Site']
+                  ? `/sites/${state.pages[key + 'Site'].directory}/${state.pages[key + 'Document']}`
+                  : 'Built-in page'}</code>
               </div>
-              <code>{site ? `/sites/${site.directory}/${document}` : 'Built-in page'}</code>
+              <Button className="icon-button" aria-label={`Edit ${code} page`} onClick={() => onEditPage(code)}>
+                <Pencil size={17} />
+              </Button>
             </article>
           ))}
         </div>

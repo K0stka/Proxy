@@ -1,3 +1,4 @@
+import { errorPageTypes } from '../shared/pages.js';
 import { compareNames } from './order.js';
 export const isWebsite = (route) => route.kind === 'http' || route.kind === 'static';
 export const routeSubdomain = (name) =>
@@ -19,7 +20,7 @@ export const destination = (route) =>
     : `${route.targetHost.includes(':') ? `[${route.targetHost}]` : route.targetHost}:${route.kind === 'udp' ? (route.portStart === route.portEnd ? route.portStart : `${route.portStart}–${route.portEnd}`) : route.targetPort}`;
 export const kindName = { http: 'Service', static: 'Static site', tcp: 'TCP', udp: 'UDP' };
 export const portLabel = (port) =>
-  `${port.hostPort || 'Container only'} (${port.containerPort}) / ${port.protocol.toUpperCase()}`;
+  `${port.hostPort ? port.hostPort + ':' : ''}${port.containerPort} (${port.protocol.toUpperCase()})`;
 export const visibleServicePorts = (service) =>
   service.ports
     .filter((port) => port.hostPort > 0 && port.usable && !port.restricted)
@@ -108,7 +109,7 @@ export function folderRules(state, directory) {
   return (
     state.sites.find((site) => site.directory === directory) ??
     state.routes.find((route) => route.staticSite?.directory === directory)?.staticSite ??
-    [state.pages.notFoundSite, state.pages.badGatewaySite].find(
+    errorPageTypes.map(([, key]) => state.pages[key + 'Site']).find(
       (site) => site?.directory === directory,
     ) ??
     blankSite(directory)

@@ -1,3 +1,4 @@
+import { errorPageTypes } from '../shared/pages.js';
 import { Button, SelectField, NumberField, Disclosure } from './controls.jsx';
 import { TagsInput, Stepper, Group, Alert, TextInput, Switch, Checkbox } from '@mantine/core';
 import React, { useState, useEffect, useRef } from 'react';
@@ -836,8 +837,9 @@ export function RouteWizard({ initial, state, onClose, onSaved, publishOnly = fa
 }
 export function ErrorPagesWizard({ state, code = 404, onClose, onSaved }) {
   const { step, setStep } = useNavigation();
-  const siteKey = code === 404 ? 'notFoundSite' : 'badGatewaySite';
-  const documentKey = code === 404 ? 'notFoundDocument' : 'badGatewayDocument';
+  const [, key] = errorPageTypes.find(([value]) => value === code);
+  const siteKey = key + 'Site';
+  const documentKey = key + 'Document';
   const [value, setValue] = useWizardField('errorPage', {
     site: state.pages[siteKey],
     document: state.pages[documentKey],
@@ -959,7 +961,7 @@ export function ErrorPagesWizard({ state, code = 404, onClose, onSaved }) {
           ) : (
             <div className="builtin-page">
               <span>{code}</span>
-              <h2>{code === 404 ? state.pages.notFoundTitle : state.pages.badGatewayTitle}</h2>
+              <h2>{state.pages[key + 'Title']}</h2>
             </div>
           )}
         </>

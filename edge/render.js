@@ -1,3 +1,4 @@
+import { errorPageTypes } from '../shared/pages.js';
 import { isIP } from 'node:net';
 import { coveredDomain, validateSnapshot, Problem, snapshotHash } from '../shared/model.js';
 
@@ -20,7 +21,7 @@ function assetLocation(uri, file, { internal = false } = {}) {
   return `location = ${quote(uri)} { ${internal ? 'internal; types {} default_type text/html; charset utf-8;' : ''} alias ${quote(file)}; disable_symlinks on; add_header X-Content-Type-Options nosniff always; limit_except GET { deny all; } }`;
 }
 const errorLocations = (dir, errors, include404 = true) =>
-  (include404 ? [404, 502] : [502])
+  (include404 ? [404, 500, 502] : [500, 502])
     .map((code) => {
       const prefix = `/_proxy/errors/${code}/`;
       const documentUri = `/_proxy/error-documents/${code}`;
@@ -102,8 +103,13 @@ proxy_intercept_errors on;
 location /api/ {
 ${adminProxy}
 proxy_intercept_errors off;
+error_page 500 = @admin_api_error;
 error_page 502 = @admin_api_unavailable;
 error_page 504 = @admin_api_timeout;
+}
+location @admin_api_error {
+default_type application/json;
+return 500 '{"error":"Management service error. Check the operation result before retrying."}';
 }
 location @admin_api_unavailable {
 default_type application/json;
@@ -194,14 +200,9 @@ ${stream.join('\n')}
 `;
   return {
     config,
-    pages: {
-      '404.html':
-        errorSites[404]?.html ??
-        errorPage(404, snapshot.pages.notFoundTitle, snapshot.pages.notFoundText),
-      '502.html':
-        errorSites[502]?.html ??
-        errorPage(502, snapshot.pages.badGatewayTitle, snapshot.pages.badGatewayText),
-    },
+    pages: Object.fromEntries(errorPageTypes.map(([code, key]) => [
+      `${code}.html`, errorSites[code]?.html ?? errorPage(code, snapshot.pages[key + 'Title'], snapshot.pages[key + 'Text']),
+    ])),
     hash: activeHash(snapshot),
   };
 }

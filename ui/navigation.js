@@ -12,7 +12,7 @@ export function createNavigation(browser) {
     const [, section, action, name] = url.pathname.split('/');
     const kind = section === 'domains' && ['new', 'edit'].includes(action) ? 'domains' : action;
     const domainName = section === 'domains' && action === 'edit' ? name : null;
-    const code = ['files', 'settings'].includes(section) && kind === 'pages' ? (name === '502' ? 502 : 404) : null;
+    const code = ['files', 'settings'].includes(section) && kind === 'pages' ? ([404, 500, 502].includes(Number(name)) ? Number(name) : 404) : null;
     const page = code !== null ? 'Settings' : section === 'files' ? 'Folders' : pages.find((name) => name.toLowerCase() === section) ?? 'Routes';
     const saved = browser.history.state?.proxyNavigation;
     const matches = (saved?.page === page || (saved?.page === 'Files' && ['Folders', 'Settings'].includes(page))) && saved.wizard?.kind === kind &&

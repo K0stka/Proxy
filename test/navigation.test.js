@@ -106,6 +106,7 @@ test('old Files links resolve to Folders and Settings without losing wizard stat
     ['/files', 'Folders', '/folders'],
     ['/files/folder?step=1', 'Folders', '/folders/folder'],
     ['/files/pages/502?step=1', 'Settings', '/settings/pages/502'],
+    ['/settings/pages/500?step=1', 'Settings', '/settings/pages/500'],
   ]) {
     const tab = browser([{ hash: path, state: null }]);
     const nav = createNavigation(tab);
@@ -113,7 +114,7 @@ test('old Files links resolve to Folders and Settings without losing wizard stat
     assert.equal(tab.location.pathname, expectedPath);
     if (path.includes('?')) assert.equal(nav.getSnapshot().step, 1);
     if (path.includes('/pages/')) {
-      assert.equal(nav.getSnapshot().wizard.code, 502);
+      assert.equal(nav.getSnapshot().wizard.code, Number(path.split('/').at(-1).split('?')[0]));
       nav.setWizard(null);
       assert.equal(tab.location.pathname, '/settings/error-pages');
     }

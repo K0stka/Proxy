@@ -1,3 +1,4 @@
+import { errorPageTypes } from '../shared/pages.js';
 import { open } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { Problem, parse, staticSiteSchema, siteDocument } from '../shared/model.js';
@@ -160,10 +161,7 @@ export async function prepareSites(snapshot) {
     sites[route.id] = await inspectSite(route.staticSite);
     count += sites[route.id].count;
   }
-  for (const [code, key, documentKey] of [
-    [404, 'notFoundSite', 'notFoundDocument'],
-    [502, 'badGatewaySite', 'badGatewayDocument'],
-  ]) {
+  for (const [code, key, documentKey] of errorPageTypes.map(([code, key]) => [code, key + 'Site', key + 'Document'])) {
     if (!snapshot.pages[key]) continue;
     const manifest = await inspectSite(snapshot.pages[key]);
     const document = snapshot.pages[documentKey];

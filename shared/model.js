@@ -170,10 +170,14 @@ export const pagesSchema = z
     notFoundText: z.string().max(240),
     badGatewayTitle: z.string().trim().min(1).max(100),
     badGatewayText: z.string().max(240),
+    internalErrorTitle: z.string().trim().min(1).max(100).default('Something went wrong.'),
+    internalErrorText: z.string().max(240).default('An unexpected error occurred. Please try again shortly.'),
     notFoundDocument: siteDocument.default('index.html'),
     badGatewayDocument: siteDocument.default('index.html'),
     notFoundSite: staticSiteSchema.nullable().default(null),
     badGatewaySite: staticSiteSchema.nullable().default(null),
+    internalErrorDocument: siteDocument.default('index.html'),
+    internalErrorSite: staticSiteSchema.nullable().default(null),
     // Accept older saved configurations, but discard the removed page setting.
     gatewayTimeoutSite: z.unknown().optional(),
   })
@@ -188,6 +192,10 @@ export const defaultPages = {
   badGatewayDocument: 'index.html',
   notFoundSite: null,
   badGatewaySite: null,
+  internalErrorTitle: 'Something went wrong.',
+  internalErrorText: 'An unexpected error occurred. Please try again shortly.',
+  internalErrorDocument: 'index.html',
+  internalErrorSite: null,
 };
 export const snapshotSchema = z
   .object({
@@ -212,6 +220,7 @@ export const snapshotSchema = z
       ...snapshot.pages,
       notFoundSite: resolveSite(snapshot.pages.notFoundSite),
       badGatewaySite: resolveSite(snapshot.pages.badGatewaySite),
+      internalErrorSite: resolveSite(snapshot.pages.internalErrorSite),
     };
     return { routes, pages, sites: [...profiles.values()] };
   });

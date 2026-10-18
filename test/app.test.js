@@ -30,6 +30,7 @@ async function fixture(t, { empty = false } = {}) {
         )
       : policy(),
     certificatePolicyStore = new Store(':memory:');
+  await writeFile(join(directory, 'index.html'), '<meta name="style-nonce" content="__PROXY_STYLE_NONCE__">');
   let fail = false;
   const applies = [];
   const filesCalls = [];
@@ -65,7 +66,7 @@ async function fixture(t, { empty = false } = {}) {
         };
       }
       if (path === '/pages/validate') {
-        for (const [key, documentKey] of [['notFoundSite', 'notFoundDocument'], ['badGatewaySite', 'badGatewayDocument']]) {
+        for (const [key, documentKey] of [['notFoundSite', 'notFoundDocument'], ['internalErrorSite', 'internalErrorDocument'], ['badGatewaySite', 'badGatewayDocument']]) {
           const site = options.body[key];
           if (site && !['index.html', 'app.js'].filter(fileFilter(site)).includes(options.body[documentKey]))
             throw new Problem(400, 'Error page document must be exposed by its folder rules');
@@ -327,6 +328,26 @@ test('wizard validation checks the current step without writes and error pages s
   assert.equal((await f.request('/api/pages/404', { method: 'PUT', body: notFound })).status, 200);
   assert.deepEqual(f.store.snapshot().pages.badGatewaySite, gateway.site);
   assert.deepEqual(f.store.snapshot().pages.notFoundSite, notFound.site);
+});
+
+test('500 page validation, saving and shared-folder updates stay independent of other error pages', async (t) => {
+  const f = await fixture(t), before = f.store.snapshot().pages;
+  const spec = { directory: 'errors/internal', include: [], exclude: [] };
+  const invalid = { site: spec, document: 'missing.html' };
+  assert.equal((await f.request('/api/validate', { method: 'POST', body: { kind: 'page', code: 500, value: invalid } })).status, 400);
+  assert.equal((await f.request('/api/pages/500', { method: 'PUT', body: invalid })).status, 400);
+  assert.deepEqual(f.store.snapshot().pages, before);
+  const selection = { site: spec, document: 'index.html' };
+  assert.equal((await f.request('/api/pages/500', { method: 'PUT', body: selection, authenticated: false })).status, 401);
+  assert.equal((await f.request('/api/pages/500', { method: 'PUT', body: selection })).status, 200);
+  assert.deepEqual(f.store.snapshot().pages, { ...before, internalErrorSite: spec });
+  assert.equal((await f.request('/api/sites/config', { method: 'PUT', body: spec })).status, 200);
+  assert.equal((await f.request('/api/sites/config', { method: 'DELETE', body: { directory: spec.directory } })).status, 409);
+  const moved = { ...spec, directory: 'errors/server' };
+  assert.equal((await f.request('/api/sites/config', { method: 'PUT', body: { ...moved, previousDirectory: spec.directory } })).status, 200);
+  assert.deepEqual(f.store.snapshot().pages.internalErrorSite, moved);
+  assert.equal((await f.request('/api/pages/500', { method: 'PUT', body: { site: null, document: 'index.html' } })).status, 200);
+  assert.equal(f.store.snapshot().pages.internalErrorSite, null);
 });
 
 test('domain CRUD, global preferences and admin origins preserve private access and certificate boundaries', async (t) => {

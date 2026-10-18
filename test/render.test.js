@@ -73,7 +73,7 @@ test('unknown TLS rejects; covered catchall is a regex so apex routes retain exa
 
 test('shared error documents have an explicit HTML content type despite extensionless internal URLs', () => {
   const output = render(policy(), snapshot([]), options).config;
-  for (const code of [404, 502]) {
+  for (const code of [404, 500, 502]) {
     assert.ok(output.includes(`location = "/_proxy/error-documents/${code}" { internal; types {} default_type text/html; charset utf-8;`));
   }
 });
