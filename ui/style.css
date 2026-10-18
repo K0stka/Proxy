@@ -1,13 +1,31 @@
+/* Shared surfaces keep native controls, cards and overlays in the same palette. */
 :root {
-  --bg: var(--mantine-color-body);
-  --surface: var(--mantine-color-default);
-  --ink: var(--mantine-color-text);
-  --muted: var(--mantine-color-dimmed);
-  --line: var(--mantine-color-default-border);
-  --soft: var(--mantine-color-default-hover);
-  --accent: var(--mantine-primary-color-filled);
+  --bg: #f4f5f2;
+  --surface: #ffffff;
+  --ink: #1d3037;
+  --muted: #64767d;
+  --line: #dce3df;
+  --soft: #edf1ed;
+  --accent: #1d816c;
+  --mantine-color-body: var(--bg);
+  --mantine-color-text: var(--ink);
+  --mantine-color-dimmed: var(--muted);
+  --mantine-color-default: var(--surface);
+  --mantine-color-default-border: var(--line);
+  --mantine-color-default-hover: var(--soft);
+  --card-shadow: 0 2px 3px #18332a03, 0 8px 24px #18332a04;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
+}
+:root[data-mantine-color-scheme='dark'] {
+  --bg: #101c21;
+  --surface: #18282e;
+  --ink: #e5eeea;
+  --muted: #9caeae;
+  --line: #2d4045;
+  --soft: #20343a;
+  --accent: #6fc1ad;
+  --card-shadow: 0 8px 24px #00000012;
 }
 * {
   box-sizing: border-box;
@@ -31,9 +49,9 @@ p {
   margin: 0;
 }
 h1 {
-  font-size: 30px;
+  font-size: 36px;
   font-weight: 650;
-  letter-spacing: -0.9px;
+  letter-spacing: -1.4px;
   line-height: 1.25;
 }
 .wizard-heading h1:focus {
@@ -94,7 +112,7 @@ a:hover {
 }
 .app-shell {
   display: grid;
-  grid-template-columns: 228px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   height: 100dvh;
   overflow: hidden;
 }
@@ -102,12 +120,13 @@ a:hover {
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  border-right: 1px solid var(--line);
-  padding: 28px 16px 20px;
+  border-right: 1px solid #ffffff08;
+  padding: 36px 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
-  background: var(--surface);
+  gap: 54px;
+  color: #edf4ef;
+  background: #152a32;
 }
 .brand {
   display: flex;
@@ -117,10 +136,19 @@ a:hover {
   letter-spacing: -0.7px;
   font-weight: 650;
 }
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #bce4d3;
+  color: #163d34;
+  box-shadow: inset 0 0 0 1px #ffffff30;
+}
 .brand svg {
-  color: var(--accent);
-  width: 26px;
-  height: 26px;
+  width: 23px;
+  height: 23px;
 }
 .sidebar .brand {
   padding: 0 12px;
@@ -131,8 +159,38 @@ a:hover {
   gap: 6px;
 }
 .sidebar .mantine-NavLink-root {
-  border-radius: var(--mantine-radius-md);
-  padding: 12px;
+  position: relative;
+  border-radius: 10px;
+  padding: 14px;
+  color: #aabdc2;
+  transition: background 150ms, color 150ms;
+}
+.sidebar .mantine-NavLink-root:hover {
+  background: #ffffff08;
+  color: #ffffff;
+}
+.sidebar .mantine-NavLink-root[data-active] {
+  background: #c5eadc14;
+  color: #c5eadc;
+}
+.sidebar .mantine-NavLink-root[data-active]::before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  height: 22px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #bce4d3;
+}
+.sidebar .mantine-NavLink-section {
+  margin-inline-end: 14px;
+}
+.sidebar-bottom .mantine-Button-root {
+  color: #aabdc2;
+}
+.sidebar-bottom .mantine-Button-root:hover {
+  color: #fff;
+  background: #ffffff08;
 }
 .sidebar .mantine-NavLink-label {
   font-size: 13px;
@@ -140,7 +198,8 @@ a:hover {
 }
 .sidebar-bottom {
   margin-top: auto;
-  padding: 12px;
+  padding: 18px 0 0;
+  border-top: 1px solid #ffffff12;
 }
 .workspace {
   min-width: 0;
@@ -152,7 +211,7 @@ a:hover {
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 40px;
+  padding: 56px 48px;
 }
 .page-heading,
 .section-title {
@@ -163,6 +222,8 @@ a:hover {
 }
 .page-heading {
   margin-bottom: 32px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--line);
 }
 .section-title {
   margin-bottom: 20px;
@@ -196,13 +257,14 @@ a:hover {
 .route-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 .route-row {
   display: flex;
   align-items: center;
   gap: 16px;
   min-width: 0;
+  padding: 22px 24px;
 }
 .service-icon {
   display: grid;
@@ -211,8 +273,9 @@ a:hover {
   height: 42px;
   flex-shrink: 0;
   border: 1px solid var(--line);
-  border-radius: var(--mantine-radius-md);
-  color: var(--muted);
+  border-radius: 13px;
+  color: var(--accent);
+  background: var(--soft);
 }
 .route-info {
   flex: 1;
@@ -221,9 +284,9 @@ a:hover {
 }
 .route-info > strong {
   display: block;
-  font-size: 14px;
+  font-size: 15px;
   overflow-wrap: anywhere;
-  font-weight: 550;
+  font-weight: 600;
 }
 .route-info > span {
   display: flex;
@@ -257,7 +320,8 @@ a:hover {
   flex-direction: column;
   gap: 18px;
   min-height: 280px;
-  border: 1px dashed var(--line);
+  border: 1px solid var(--line);
+  background: var(--surface);
   border-radius: var(--mantine-radius-lg);
   color: var(--muted);
 }
@@ -297,12 +361,12 @@ a:hover {
 .discovered-service {
   min-width: 0;
 }
-.discovered-service.proxied,
-.route-row.proxy-disabled {
-  border-color: var(--mantine-color-gray-6);
-}
 .discovered-service.proxy-enabled {
-  border-color: var(--mantine-primary-color-filled);
+  border-top: 2px solid var(--accent);
+}
+.route-row.proxy-disabled .service-icon {
+  color: var(--muted);
+  background: var(--bg);
 }
 .service-heading strong {
   overflow-wrap: anywhere;
@@ -344,7 +408,7 @@ a:hover {
   min-width: 0;
 }
 .folder-heading > svg {
-  color: var(--muted);
+  color: var(--accent);
 }
 .folder-heading {
   display: flex;
@@ -420,7 +484,7 @@ a:hover {
   color: var(--muted);
 }
 .settings-tabs {
-  max-width: 920px;
+  max-width: 960px;
 }
 .settings-pane {
   min-width: 0;
@@ -460,7 +524,7 @@ a:hover {
   gap: 56px;
   max-width: 1040px;
   margin: 0 auto;
-  padding: 48px 32px;
+  padding: 56px 40px;
   align-items: start;
 }
 .wizard-body.single-page {
@@ -674,15 +738,17 @@ a:hover {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: 32px;
+  background: radial-gradient(ellipse at 20% 10%, #71a99218, transparent 65%), var(--bg);
 }
 .auth-panel {
   width: 100%;
-  max-width: 400px;
-  padding: 32px;
+  max-width: 440px;
+  padding: 40px;
   border: 1px solid var(--line);
   background: var(--surface);
-  border-radius: var(--mantine-radius-lg);
+  border-radius: 24px;
+  box-shadow: 0 24px 80px #152a3210;
 }
 .auth-panel .brand {
   margin-bottom: 36px;
@@ -700,8 +766,15 @@ a:hover {
   margin-top: 16px;
 }
 .auth-symbol {
-  color: var(--muted);
-  margin-bottom: 16px;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--bg);
+  color: var(--accent);
+  margin-bottom: 24px;
 }
 .recovery-code {
   display: block;
@@ -735,122 +808,452 @@ a:hover {
   pointer-events: auto;
   overflow-wrap: anywhere;
 }
-@media (max-width: 1000px) {
+
+.mantine-Paper-root {
+  background: var(--surface);
+  border-color: var(--line);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+}
+.mantine-Button-root {
+  height: 40px;
+  border-radius: 10px;
+  transition: background 150ms, box-shadow 150ms;
+}
+.mantine-Button-root.primary {
+  box-shadow: 0 3px 7px #156b5a18;
+}
+.mantine-ActionIcon-root {
+  border-radius: 10px;
+}
+.mantine-Input-input {
+  min-height: 42px;
+  border-color: var(--line);
+  background: var(--surface);
+}
+.mantine-Switch-track {
+  cursor: pointer;
+}
+.filter-tabs,
+.segmented {
+  background: var(--soft);
+  border: 0;
+  border-radius: 12px;
+  gap: 2px;
+}
+.filter-tabs .mantine-Button-root,
+.segmented .mantine-Button-root {
+  height: 34px;
+  color: var(--muted);
+}
+.filter-tabs .mantine-Button-root[aria-pressed='true'],
+.segmented .mantine-Button-root[aria-pressed='true'] {
+  background: var(--surface);
+  box-shadow: 0 1px 4px #152a3210;
+  color: var(--ink);
+}
+.settings-tabs .mantine-Tabs-list {
+  gap: 24px;
+}
+.settings-tabs .mantine-Tabs-tab {
+  padding: 14px 0;
+  color: var(--muted);
+  font-weight: 500;
+}
+.settings-tabs .mantine-Tabs-tab[data-active] {
+  color: var(--accent);
+}
+.settings-pane {
+  padding: 32px;
+}
+.domain-actions {
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.domain-actions > .icon-button {
+  margin-left: auto;
+}
+.error-page-code {
+  color: var(--accent);
+  font-size: 36px;
+  letter-spacing: -1.5px;
+}
+.wizard-main fieldset {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+}
+.wizard-steps {
+  padding-top: 8px;
+}
+.type-choice {
+  background: var(--bg);
+  cursor: pointer;
+}
+.type-choice[aria-pressed='true'] {
+  background: var(--soft);
+}
+.mantine-Modal-content,
+.mantine-Modal-header {
+  background: var(--surface);
+}
+.mantine-Modal-title {
+  font-weight: 600;
+  font-size: 20px;
+  letter-spacing: -0.4px;
+}
+.mantine-Modal-overlay {
+  backdrop-filter: blur(5px);
+}
+:where(button, a, input, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+@media (min-width: 761px) and (max-width: 1100px) {
   .app-shell {
-    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-columns: 192px minmax(0, 1fr);
+  }
+  .sidebar {
+    padding-inline: 16px;
+  }
+  .sidebar .mantine-NavLink-root[data-active]::before {
+    left: -16px;
   }
   .workspace > main {
-    padding: 32px 24px;
-  }
-  .route-row {
-    flex-wrap: wrap;
-  }
-  .route-actions {
-    flex-basis: 100%;
-    margin-left: 58px;
+    padding: 36px 28px;
   }
   .folder-grid,
-  .domain-grid {
-    grid-template-columns: 1fr;
+  .domain-grid,
+  .error-pages-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .port-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+  .wizard-body {
+    grid-template-columns: 140px minmax(0, 1fr);
+    gap: 28px;
+    padding: 36px 24px;
   }
-  .port-row > .hint {
-    grid-column: 1 / -1;
-    font-size: 12px;
-  }
-  .port-row > .mantine-Button-root {
-    grid-column: 2;
-    grid-row: 1;
+  .route-row {
+    gap: 12px;
+    padding: 18px;
   }
 }
 @media (max-width: 760px) {
   h1 {
-    font-size: 26px;
+    font-size: 30px;
+    letter-spacing: -1px;
   }
   .app-shell {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
   }
   .sidebar {
-    position: relative;
+    flex-shrink: 0;
     height: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-    padding: 16px;
-    gap: 16px;
+    overflow: visible;
+    border: 0;
+    padding: calc(12px + env(safe-area-inset-top)) 20px 12px;
+    gap: 0;
   }
   .sidebar .brand {
     padding: 0;
+    font-size: 20px;
+  }
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+  }
+  .brand-mark svg {
+    width: 20px;
+    height: 20px;
   }
   .sidebar nav {
-    flex-direction: row;
-    overflow-x: auto;
-    gap: 4px;
+    position: fixed;
+    z-index: 20;
+    inset: auto 0 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    padding: 8px max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    gap: 2px;
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -8px 24px #152a3206;
   }
   .sidebar .mantine-NavLink-root {
-    width: auto;
-    flex-shrink: 0;
-    padding: 10px;
+    min-height: 52px;
+    padding: 6px 2px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    color: var(--muted);
   }
   .sidebar .mantine-NavLink-section {
-    margin-inline-end: 7px;
+    margin: 0;
+  }
+  .sidebar .mantine-NavLink-label {
+    font-size: 10px;
+    line-height: 1.3;
+  }
+  .sidebar .mantine-NavLink-root[data-active],
+  .sidebar .mantine-NavLink-root:hover {
+    color: var(--accent);
+    background: var(--soft);
+  }
+  .sidebar .mantine-NavLink-root[data-active]::before {
+    display: none;
   }
   .sidebar-bottom {
     position: absolute;
-    top: 8px;
-    right: 12px;
+    top: calc(6px + env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .sidebar-bottom .mantine-Button-root {
+    width: 44px;
+    height: 44px;
     padding: 0;
   }
+  .sidebar-bottom .mantine-Button-label > span {
+    display: none;
+  }
+  .sidebar-bottom svg {
+    width: 18px;
+    height: 18px;
+  }
+  .workspace {
+    flex: 1;
+    scrollbar-gutter: auto;
+    scroll-padding-bottom: 24px;
+    margin-bottom: calc(77px + env(safe-area-inset-bottom));
+  }
   .workspace > main {
-    padding: 28px 16px;
+    padding: 28px max(20px, env(safe-area-inset-right)) 28px max(20px, env(safe-area-inset-left));
   }
   .page-heading {
     margin-bottom: 24px;
+    padding-bottom: 22px;
     gap: 12px;
   }
+  .page-heading > .mantine-Button-root {
+    padding-inline: 12px;
+    flex-shrink: 0;
+  }
+  .routes-toolbar {
+    margin-bottom: 18px;
+  }
+  .filter-tabs {
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+  .filter-tabs > .mantine-Button-root {
+    flex: 1;
+    min-width: 0;
+    padding-inline: 5px;
+    font-size: 12px;
+    height: 38px;
+  }
+  .route-list {
+    gap: 14px;
+  }
+  .route-row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 14px 12px;
+    padding: 18px;
+  }
+  .route-row > .mantine-Switch-root {
+    grid-column: 3;
+    grid-row: 1;
+    display: grid;
+    place-items: center;
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .route-row > .service-icon {
+    grid-column: 1;
+    grid-row: 1;
+    width: 40px;
+    height: 40px;
+  }
+  .route-info {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .route-info > strong {
+    font-size: 16px;
+  }
+  .route-info > span {
+    line-height: 1.7;
+    gap: 4px 8px;
+    overflow-wrap: anywhere;
+  }
+  .route-actions {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+  .mantine-ActionIcon-root {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .mantine-Button-root {
+    min-height: 44px;
+    height: auto;
+  }
+  .mantine-Input-input {
+    min-height: 46px;
+    font-size: 16px;
+  }
+  .mantine-InputWrapper-description {
+    font-size: 12px;
+  }
+  .folder-grid,
+  .domain-grid,
   .error-pages-grid,
   .field-pair {
     grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
   }
-  .route-actions {
-    margin-left: 0;
+  .service-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
   }
-  .wizard-body {
+  .discovered-service,
+  .folder-card,
+  .domain-card,
+  .error-page-card {
+    padding: 20px;
+  }
+  .folder-card > .mantine-Group-root {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .folder-card > .mantine-Group-root > .mantine-Group-root {
+    margin-left: auto;
+  }
+  .domain-facts {
+    gap: 16px;
+    line-height: 1.5;
+  }
+  .inventory-status {
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+  .server-group > h2 {
+    gap: 8px;
+  }
+  .server-group > h2 > code {
+    overflow-wrap: anywhere;
+  }
+  .settings-tabs .mantine-Tabs-list {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    margin-bottom: 24px;
+  }
+  .settings-tabs .mantine-Tabs-tab {
+    font-size: 12px;
+    padding: 14px 2px;
+  }
+  .settings-pane {
+    padding: 22px 18px;
+  }
+  .settings-pane > .mantine-Group-root {
+    gap: 12px;
+  }
+  .key-row {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .key-row > .mantine-Group-root {
+    margin-left: auto;
+  }
+  .wizard-body,
+  .wizard-body.single-page {
     display: block;
     padding: 24px 20px 0;
   }
   .wizard-steps {
     position: static;
-    margin-bottom: 32px;
+    padding: 0;
+    margin-bottom: 24px;
   }
   .wizard-steps .mantine-Stepper-stepBody {
     display: none;
   }
-  .wizard-steps .mantine-Stepper-step[data-progress] .mantine-Stepper-stepBody {
-    display: block;
-  }
   .wizard-heading {
-    margin-bottom: 28px;
+    margin-bottom: 24px;
   }
-  .wizard-actions {
-    gap: 24px;
-    flex-wrap: wrap;
+  .wizard-main fieldset {
+    padding: 20px 16px;
+    gap: 22px;
+  }
+  .wizard-actions,
+  .single-page .wizard-actions {
+    position: sticky;
+    bottom: 0;
+    padding: 16px 0;
+    margin-top: 24px;
+    gap: 8px;
+    justify-content: space-between;
+    background: var(--bg);
+  }
+  .wizard-actions > .mantine-Group-root {
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+  .wizard-actions .mantine-Button-root {
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+  .type-grid {
+    gap: 10px;
+  }
+  .type-choice {
+    padding: 16px 12px;
   }
   .review-list > div {
-    grid-template-columns: 100px minmax(0, 1fr);
-    gap: 16px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
     padding: 16px;
   }
-  .settings-pane {
-    padding: 20px;
+  .file-summary {
+    flex-wrap: wrap;
+    gap: 10px;
   }
-  .settings-tabs .mantine-Tabs-list {
-    flex-wrap: nowrap;
-    overflow-x: auto;
+  .builtin-page {
+    padding: 24px;
+  }
+  .auth-shell {
+    padding: 24px;
   }
   .auth-panel {
-    padding: 28px 24px;
+    padding: 32px 24px;
+    border-radius: 20px;
+  }
+  .mantine-Modal-inner {
+    padding: 16px;
+  }
+  .mantine-Modal-body,
+  .mantine-Modal-header {
+    padding: 20px;
+  }
+  .toast-stack {
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    right: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
   }
 }

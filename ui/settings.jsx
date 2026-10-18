@@ -134,7 +134,7 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
         <Tabs.Tab value="backup">Backup</Tabs.Tab>
       </Tabs.List>
       <Tabs.Panel value="general">
-        <Paper withBorder p="xl" radius="lg" className="settings-pane">
+        <Paper withBorder radius="lg" className="settings-pane">
           <form onSubmit={savePreferences}>
             <Stack gap="lg">
               <h2>Admin panel</h2>
@@ -165,7 +165,7 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
         </Paper>
       </Tabs.Panel>
       <Tabs.Panel value="certificates">
-        <Paper withBorder p="xl" radius="lg" className="settings-pane">
+        <Paper withBorder radius="lg" className="settings-pane">
           <form onSubmit={savePreferences}>
             <Stack gap="lg">
               <h2>Certificates</h2>
@@ -207,7 +207,7 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
         </Paper>
       </Tabs.Panel>
       <Tabs.Panel value="access">
-        <Paper withBorder p="xl" radius="lg" className="settings-pane">
+        <Paper withBorder radius="lg" className="settings-pane">
           <Group justify="space-between" mb="lg">
             <h2>Passkeys</h2>
             <Button className="secondary" onClick={addKey} loading={busy}>
@@ -254,7 +254,7 @@ export default function Settings({ state, refresh, report, onRecovery, onLogout 
         </Paper>
       </Tabs.Panel>
       <Tabs.Panel value="backup">
-        <Paper withBorder p="xl" radius="lg" className="settings-pane">
+        <Paper withBorder radius="lg" className="settings-pane">
           <Stack gap="lg">
             <h2>Configuration backup</h2>
             <Text size="sm" c="dimmed">

@@ -213,7 +213,9 @@ export default function Workspace({ onLogout, onRecovery }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <Waypoints />
+          <span className="brand-mark">
+            <Waypoints />
+          </span>
           Proxy
         </div>
         <nav aria-label="Main navigation">
@@ -239,6 +241,7 @@ export default function Workspace({ onLogout, onRecovery }) {
         <div className="sidebar-bottom">
           <Button
             className="text-button"
+            aria-label="Sign out"
             onClick={async () => {
               try {
                 await api('/auth/logout', {
@@ -251,7 +254,7 @@ export default function Workspace({ onLogout, onRecovery }) {
             }}
           >
             <LogOut size={14} />
-            Sign out
+            <span>Sign out</span>
           </Button>
         </div>
       </aside>
@@ -380,7 +383,6 @@ export default function Workspace({ onLogout, onRecovery }) {
                           key={route.id}
                           component="article"
                           withBorder={true}
-                          p="md"
                         >
                           <Switch
                             checked={route.published}

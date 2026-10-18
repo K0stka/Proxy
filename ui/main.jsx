@@ -101,7 +101,10 @@ function AuthScreen({ status, onAuth }) {
     <div className="auth-shell">
       <div className="auth-panel">
         <div className="brand">
-          <Waypoints /> Proxy
+          <span className="brand-mark">
+            <Waypoints />
+          </span>
+          Proxy
         </div>
         <div className="auth-symbol">
           <Fingerprint size={32} />
@@ -231,7 +234,14 @@ function App() {
   );
 }
 const theme = createTheme({
-  primaryColor: 'cyan',
+  primaryColor: 'teal',
+  primaryShade: 6,
+  colors: {
+    teal: [
+      '#e9f6f3', '#ceebe3', '#a0d7c9', '#6fc1ad', '#45ad92',
+      '#29977e', '#1d816c', '#156b5a', '#105648', '#0b453a',
+    ],
+  },
   defaultRadius: 'md',
   fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   headings: {

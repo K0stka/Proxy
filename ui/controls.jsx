@@ -13,7 +13,7 @@ import {
 export function Button({ className = '', type = 'button', children, ...props }) {
   if (className.includes('icon-button'))
     return (
-      <ActionIcon variant="subtle" color="gray" size="lg" type={type} {...props}>
+      <ActionIcon className={className} variant="subtle" color="gray" size="lg" type={type} {...props}>
         {children}
       </ActionIcon>
     );
