@@ -117,7 +117,7 @@ Open TCP 80/443 and the published custom ingress ranges in the host and provider
 
 In **Settings → General**, set a public hostname covered by a configured domain, for example `proxy.krychlic.com`. Point its DNS record at the VPS. The edge creates a fixed HTTPS proxy to the loopback management port once a production certificate covers it; no custom endpoint or management-port exception is needed. Clearing the hostname disables public access. The hostname is reserved, so ordinary routes cannot claim it.
 
-Management API errors remain JSON, including gateway failures, so action errors can be shown in toasts. Browser pages and proxied websites use the shared HTML error pages.
+Management API errors remain JSON, including gateway failures, so action errors can be shown in toasts. Proxied websites use the shared HTML error pages. The management hostname uses trusted built-in errors and blocks custom error assets.
 
 The private Tailscale Serve address remains independent of public DNS, the edge, and Let's Encrypt: `https://byttorrent.pancake-ghost.ts.net:8443` for the example above. Both addresses use passkeys and exact Host/Origin checks. Sessions and passkeys are scoped to their hostname/origin. Existing private-host passkeys remain valid. On first access at the other hostname, enter the recovery code to authorize creating a passkey there, then save the newly rotated recovery code. Cancelling that passkey prompt still shows the recovery code; you can register the passkey later with a one-time link from **Settings → Devices**. Recovery revokes other sessions but preserves existing passkeys. Private availability still requires the control container and host Tailscale service to be running.
 
@@ -203,7 +203,7 @@ Startup scripts briefly use directory ownership and identity/capability setup pe
 
 Back up `control_state`, `edge_state`, `certbot_state`, `tls`, `sites/` and the Komodo stack environment to encrypted storage. Stop the stack before a raw volume copy so SQLite's database/WAL are consistent, or use SQLite's online backup facility. Restore the matching state volumes together, preserve UIDs/GID, then verify routing and renewal. Do not run `docker compose down --volumes` on your deployed stack.
 
-Public request access logs are disabled to avoid retaining URLs, cookies or application data. Management audit logging is disabled; Docker bounds process logs. NGINX logs only critical operational failures. Maintain the host, Tailscale, Docker, pinned base images and dependencies; rebuild and repeat tests when updating. Environment changes require recreating containers; UI changes apply directly.
+Public request access logs are disabled to avoid retaining URLs, cookies or application data. Administrative security events are logged without request bodies or secrets; Docker bounds process logs. NGINX logs only critical operational failures. Maintain the host, Tailscale and Docker. See [Security maintenance](SECURITY-UPDATES.md) for daily tested image rebuilds, automatic tested npm updates, and rollback. Environment changes require recreating containers; UI changes apply directly.
 
 ## Verify
 

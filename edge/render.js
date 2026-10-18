@@ -86,6 +86,10 @@ export function render(
   }
   const adminDomain = coveredDomain(policy.adminHostname, policy.domains)?.name;
   if (policy.adminHostname && !policy.certificates.staging && ready.has(adminDomain) && (policy.adminHostname === adminDomain || wildcard.has(adminDomain))) {
+    const adminHeaders = `add_header X-Content-Type-Options nosniff always;
+add_header X-Frame-Options DENY always;
+add_header Referrer-Policy no-referrer always;
+add_header Strict-Transport-Security "max-age=31536000" always;`;
     const adminProxy = `proxy_pass http://127.0.0.1:3001;
 proxy_set_header Host ${policy.adminHostname};
 proxy_set_header X-Forwarded-Proto https;
@@ -96,22 +100,43 @@ proxy_set_header Proxy "";
 proxy_connect_timeout 5s;
 proxy_read_timeout 180s;`;
     http.push(`server { ${policy.ingressIPs.map((ip) => listen(ip, 80)).join(' ')} server_name ${policy.adminHostname}; location / { return 308 https://${policy.adminHostname}$request_uri; } }`);
+    const adminAPI = `${adminProxy}
+proxy_intercept_errors off;
+error_page 429 = @admin_api_throttled;
+error_page 500 = @admin_api_error;
+error_page 502 = @admin_api_unavailable;
+error_page 504 = @admin_api_timeout;`;
     http.push(`server {
 ${policy.ingressIPs.map((ip) => listen(ip, 443, 'ssl')).join(' ')}
 server_name ${policy.adminHostname}; ${certLines(adminDomain)}
 if ($ssl_server_name != $host) { return 421; }
 client_max_body_size 1m;
-${errorLocations(directory, errorSites)}
+${adminHeaders}
+error_page 500 502 503 504 /_proxy/admin-unavailable;
+location = /_proxy/admin-unavailable {
+internal;
+default_type text/html;
+${adminHeaders}
+add_header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" always;
+add_header Cache-Control no-store always;
+return 502 '<!doctype html><html lang="en"><meta charset="utf-8"><title>Management unavailable</title><h1>Management temporarily unavailable</h1><p>Try again shortly or use the private management address.</p></html>';
+}
+location ^~ /_proxy/ { return 404; }
 location / {
 ${adminProxy}
 proxy_intercept_errors on;
 }
 location /api/ {
-${adminProxy}
-proxy_intercept_errors off;
-error_page 500 = @admin_api_error;
-error_page 502 = @admin_api_unavailable;
-error_page 504 = @admin_api_timeout;
+${adminAPI}
+}
+location /api/auth/ {
+limit_req zone=proxy_auth burst=20 nodelay;
+limit_req_status 429;
+${adminAPI}
+}
+location @admin_api_throttled {
+default_type application/json;
+return 429 '{"error":"Too many sign-in attempts. Wait a minute."}';
 }
 location @admin_api_error {
 default_type application/json;
@@ -215,8 +240,7 @@ ${r.upstreamTLS ? `proxy_ssl_server_name on; proxy_ssl_name ${r.upstreamServerNa
       );
     }
   }
-  const config = `load_module /usr/lib/nginx/modules/ngx_stream_module.so;
-pid /tmp/nginx.pid;
+  const config = `pid /tmp/nginx.pid;
 error_log stderr crit;
 worker_processes 2;
 worker_shutdown_timeout 30s;
@@ -231,6 +255,8 @@ fastcgi_temp_path /tmp/fastcgi_temp;
 uwsgi_temp_path /tmp/uwsgi_temp;
 scgi_temp_path /tmp/scgi_temp;
 access_log off;
+map $request_method $proxy_auth_key { default ""; POST $binary_remote_addr; }
+limit_req_zone $proxy_auth_key zone=proxy_auth:1m rate=20r/m;
 map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 ${http.join('\n')}
 }

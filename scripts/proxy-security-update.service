@@ -1,0 +1,17 @@
+[Unit]
+Description=Test and deploy proxy security updates
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/proxy-security-update.py
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=45min
+TimeoutStopSec=5min
+StandardOutput=journal
+StandardError=journal
+

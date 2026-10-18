@@ -6,6 +6,7 @@ secrets
 config.json
 .env
 .env.*
+!.env.example
 sites
 *.db*
 data/

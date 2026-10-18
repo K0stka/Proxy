@@ -91,12 +91,14 @@ const run = (args, input) =>
     input,
   });
 const smoke = ['compose', '-p', 'proxy-smoke', '-f', 'test/compose.yaml'];
-run(['compose', '-p', 'proxy', '--progress', 'quiet', 'build']);
+const source = process.env.PROXY_TEST_SOURCE ?? process.cwd();
+if (process.env.PROXY_SKIP_BUILD !== 'true')
+  run(['compose', '-p', 'proxy', '--progress', 'quiet', 'build']);
 run([
   'run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL',
   ...['NET_BIND_SERVICE', 'CHOWN', 'FOWNER', 'SETUID', 'SETGID', 'SETPCAP'].flatMap(cap => ['--cap-add', cap]),
   ...['/state', '/cert-policy', '/cert-requests', '/runtime', '/ipc', '/certbot', '/tls', '/cert-status'].flatMap(path => ['--tmpfs', path + ':rw,nosuid,size=1m']),
-  '--mount', `type=bind,source=${resolve('test/startup.test.js')},target=/checks/startup.test.js,readonly`,
+  '--mount', `type=bind,source=${resolve(source, 'test/startup.test.js')},target=/checks/startup.test.js,readonly`,
   '--env', 'PROXY_STARTUP_TEST=true', '--entrypoint', 'node',
   'proxy-edge', '--test', '/checks/startup.test.js',
 ]);
@@ -151,7 +153,7 @@ run([
   '--security-opt',
   'no-new-privileges:true',
   '--mount',
-  `type=bind,source=${resolve('certificates')},target=/checks,readonly`,
+  `type=bind,source=${resolve(source, 'certificates')},target=/checks,readonly`,
   '--entrypoint',
   'python',
   'proxy-certificates',

@@ -1,7 +1,7 @@
-FROM node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019
+FROM node:26-alpine3.24
 ARG PROXY_FILES_UID=1000
 ARG PROXY_GIT_SSH_PATH=
-RUN apk add --no-cache git openssh-client ca-certificates setpriv \
+RUN apk upgrade --no-cache && apk add --no-cache git openssh-client ca-certificates setpriv \
     && addgroup -g 10000 proxy && mkdir /ipc /sites \
     && if ! getent passwd "$PROXY_FILES_UID" >/dev/null; then adduser -D -H -u "$PROXY_FILES_UID" -G proxy files; fi
 # Preserve ~ expansion in the VPS user's existing SSH config.
@@ -20,3 +20,5 @@ COPY --chmod=755 containers/git-ssh.sh /usr/local/bin/proxy-git-ssh
 USER 0:10000
 ENTRYPOINT ["proxy-start", "files"]
 CMD ["node", "files/main.js"]
+
+LABEL org.krychlic.proxy.managed=true

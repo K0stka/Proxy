@@ -68,13 +68,15 @@ export class Auth {
     return s;
   }
   rate(req) {
-    const key = req.socket.remoteAddress ?? 'local',
+    // Public per-client throttling runs at NGINX, before client addresses are lost.
+    // This separate ceiling bounds total authentication work per origin.
+    const key = 'global',
       now = Date.now();
     for (const [k, times] of this.rates)
       if (!times.some((t) => now - t < 60000)) this.rates.delete(k);
     if (this.rates.size > 1000) throw new Problem(429, 'Try again in a minute');
     const list = (this.rates.get(key) ?? []).filter((t) => now - t < 60000);
-    if (list.length >= 20) throw new Problem(429, 'Too many sign-in attempts. Wait a minute.');
+    if (list.length >= 1000) throw new Problem(429, 'Too many sign-in attempts. Wait a minute.');
     list.push(now);
     this.rates.set(key, list);
   }
@@ -120,7 +122,7 @@ export class Auth {
     for (const [key, p] of this.pending) if (p.expires < now) this.pending.delete(key);
     if (this.pending.size > 100) throw new Problem(429, 'Too many pending sign-ins');
     const id = randomToken();
-    this.pending.set(hash(id), { ...value, expires: now + 300000 });
+    this.pending.set(hash(id), { ...value, epoch: this.store.get('authEpoch', 0), expires: now + 300000 });
     this.cookie(res, 'proxy_challenge', id, 300);
   }
   consume(req, res, type) {
@@ -132,7 +134,18 @@ export class Auth {
     this.cookie(res, 'proxy_challenge', '', 0);
     if (!pending || pending.type !== type || pending.expires < Date.now())
       throw new Problem(400, 'Sign-in expired. Start again.');
+    this.checkEpoch(pending);
     return pending;
+  }
+  checkEpoch(pending) {
+    if (pending.epoch !== this.store.get('authEpoch', 0))
+      throw new Problem(403, 'Authorization changed. Start again.');
+  }
+  revokeAuthorizations() {
+    this.store.set('sessions', []);
+    this.store.set('deviceTokens', []);
+    this.store.set('authEpoch', this.store.get('authEpoch', 0) + 1);
+    this.pending.clear();
   }
   async handle(path, req, res, body) {
     if (path === '/api/auth/status' && req.method === 'GET') {
@@ -183,6 +196,9 @@ export class Auth {
       }
       if (!result.verified || !result.registrationInfo)
         throw new Problem(400, 'Passkey registration failed');
+      this.checkEpoch(pending);
+      if (!pending.initial && this.require(req, true).token !== pending.session)
+        throw new Problem(403, 'Enrollment state changed. Start again.');
       const c = result.registrationInfo.credential;
       const latest = this.credentials();
       if (pending.initial && latest.length)
@@ -249,6 +265,7 @@ export class Auth {
       }
       if (!result.verified || !result.registrationInfo)
         throw new Problem(400, 'Device registration failed');
+      this.checkEpoch(pending);
       const c = result.registrationInfo.credential;
       this.store.transaction(() => {
         const links = this.store.get('deviceTokens', []);
@@ -313,6 +330,7 @@ export class Auth {
         throw new Problem(400, 'Passkey sign-in could not be verified');
       }
       if (!result.verified) throw new Problem(400, 'Passkey sign-in failed');
+      this.checkEpoch(pending);
       const latest = this.credentials(),
         active = latest.find((c) => c.id === credential.id);
       if (!active || active.counter !== credential.counter)
@@ -333,7 +351,7 @@ export class Auth {
       const recoveryCode = randomToken();
       this.store.transaction(() => {
         this.store.set('recovery', hash(recoveryCode));
-        this.store.set('sessions', []);
+        this.revokeAuthorizations();
       });
       return { ...this.issue(req, res), recoveryCode };
     }
@@ -367,11 +385,10 @@ export class Auth {
       if (credentials.length < 2)
         throw new Problem(400, 'Add another device before removing the last one');
       if (!credentials.some((c) => c.id === body.id)) throw new Problem(404, 'Device not found');
-      this.store.set(
-        'credentials',
-        credentials.filter((c) => c.id !== body.id),
-      );
-      this.store.set('sessions', []);
+      this.store.transaction(() => {
+        this.store.set('credentials', credentials.filter((c) => c.id !== body.id));
+        this.revokeAuthorizations();
+      });
       this.cookie(res, 'proxy_session', '', 0);
       return { ok: true };
     }

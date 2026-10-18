@@ -5,6 +5,7 @@ import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { join, resolve, extname, sep } from 'node:path';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { Auth } from './auth.js';
+import { auditEvent } from './audit.js';
 import { Discovery } from './komodo.js';
 import {
   Problem,
@@ -46,6 +47,7 @@ export function createApp({
   filesRequest = unixRequest,
   filesSocket = '/files-ipc/files.sock',
   distDir = resolve('dist'),
+  auditLog = (record) => console.info(JSON.stringify(record)),
 }) {
   const deployment = { origin: policy.origin, ingressIPs: policy.ingressIPs };
   if (!store.get('settings')) store.set('settings', settingsFromPolicy(policy));
@@ -209,6 +211,13 @@ export function createApp({
       }
       const url = new URL(req.url, origin),
         path = url.pathname;
+      const event = auditEvent(path, req.method);
+      if (event) res.once('finish', () => {
+        try {
+          auditLog({ type: 'audit', time: new Date().toISOString(), event,
+            method: req.method, origin, status: res.statusCode });
+        } catch { console.error('Audit log unavailable'); }
+      });
       if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method))
         throw new Problem(405, 'Method not allowed');
       const mutation = req.method !== 'GET';

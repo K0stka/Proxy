@@ -121,7 +121,7 @@ On website routes, NGINX-generated upstream connection failures display a static
 - The edge applier exposes only a permissioned internal Unix socket and typed routing operations. It validates the schema and destination policy independently, renders fixed templates, and invokes fixed NGINX commands. No arbitrary NGINX directives, uploaded executable templates, shell, file paths, or user-controlled includes.
 - Application state and proxy state are separate. Apply serially: validate → render versioned candidate → `nginx -t` → atomic switch → graceful reload → verify new worker/listener state → record applied revision. A successful reload signal alone is not success. Restore the last good revision on failure. Unchanged discovery never reloads the proxy.
 - Website traffic continues if the UI or Core is unavailable. In-flight streams may drain on old workers during reload; set and document a finite drain policy rather than promising indefinite connections or immediate revocation. An urgent disable requires terminating affected connections as well as removing the listener.
-- Rotate and bound logs; redact cookies, credentials, query strings, and request bodies. Management audit logging is disabled. Keep encrypted backups of route state and certificates, with secrets handled separately. Test restoration.
+- Rotate and bound logs; redact cookies, credentials, query strings, and request bodies. Administrative security events use bounded process logs without request bodies or credentials. Keep encrypted backups of route state and certificates, with secrets handled separately. Test restoration.
 
 ## BitTorrent boundary
 

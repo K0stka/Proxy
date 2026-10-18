@@ -34,6 +34,7 @@ async function fixture(t, { empty = false } = {}) {
   let fail = false;
   const applies = [];
   const filesCalls = [];
+  const auditRecords = [];
   const app = createApp({
     policy: p,
     store,
@@ -45,6 +46,7 @@ async function fixture(t, { empty = false } = {}) {
     certStatusDir: directory,
     certRequestDir: join(directory, 'requests'),
     development: true,
+    auditLog: (record) => auditRecords.push(record),
     filesRequest: async (_socket, path, options) => {
       filesCalls.push({ path, ...options });
       return path === '/repositories' ? [] : { changed: true };
@@ -142,10 +144,25 @@ async function fixture(t, { empty = false } = {}) {
     request,
     applies,
     filesCalls,
+    auditRecords,
     directory,
     setFail: (value) => (fail = value),
   };
 }
+
+test('audit records capture operation outcomes without credentials or request bodies', async (t) => {
+  const f = await fixture(t);
+  const secret = randomToken();
+  await f.request('/api/auth/recover', { method: 'POST', authenticated: false, body: { code: secret } });
+  await f.request('/api/routes', { method: 'POST', body: route() });
+  await f.request('/api/state');
+  assert.deepEqual(f.auditRecords.map(({ event, status }) => ({ event, status })), [
+    { event: 'auth.recovery', status: 403 }, { event: 'admin.routes.changed', status: 200 },
+  ]);
+  assert(!JSON.stringify(f.auditRecords).includes(secret));
+  for (const record of f.auditRecords)
+    assert.deepEqual(Object.keys(record).sort(), ['event', 'method', 'origin', 'status', 'time', 'type']);
+});
 test('passkey names persist without changing credentials or sessions and require authorization', async (t) => {
   const f = await fixture(t);
   const credential = { id: randomToken(), publicKey: 'existing-key', counter: 7, rpID: 'localhost', created: '2026-10-17T12:00:00Z' };
@@ -618,7 +635,7 @@ test('drafts stay private; failed publish and live edits preserve working state'
   assert.equal((await f.request(`/api/routes/${draft.id}`, { method: 'DELETE' })).status, 200);
   assert.equal(f.applies.length, appliesBeforeDelete);
 });
-test('persistent SQLite state survives reopen and old audit tables are removed', async (t) => {
+test('persistent SQLite state survives reopen without deleting old audit records', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'proxy-store-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   let store = new Store(join(directory, 'state.db'));
@@ -637,8 +654,8 @@ test('persistent SQLite state survives reopen and old audit tables are removed',
   assert.deepEqual(store.get('settings'), settingsFromPolicy(policy()));
   assert(!JSON.stringify(store.get('settings')).includes('100.101.102.103'));
   assert.equal(
-    store.db.prepare("SELECT name FROM sqlite_master WHERE name='audit'").get(),
-    undefined,
+    store.db.prepare('SELECT detail FROM audit').get().detail,
+    'old entry',
   );
   store.close();
 });

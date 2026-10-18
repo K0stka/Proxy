@@ -95,7 +95,7 @@ class CertificateTests(unittest.TestCase):
                 return original_run(args, **kwargs)
 
             domain = {"name": "example.net"}
-            with patch.object(worker, "write_credentials"), patch.object(worker.subprocess, "run", side_effect=command), patch.object(worker, "export_certificate", side_effect=lambda name, stage: export(name, stage, base / "tls", base / "certbot")):
+            with patch.object(worker, "write_credentials"), patch.object(worker.subprocess, "run", side_effect=command), patch.object(worker, "export_certificate", side_effect=lambda name, stage, **kwargs: export(name, stage, base / "tls", base / "certbot", **kwargs)):
                 status = worker.check_domain(domain, self.settings(), base / "status")
                 self.assertTrue(status["ready"])
                 live = base / "tls" / "live" / "example.net"

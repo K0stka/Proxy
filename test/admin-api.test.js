@@ -8,7 +8,7 @@ import { render } from '../edge/render.js';
 import { policy, snapshot } from './fixtures.js';
 
 test(
-  'admin API keeps upstream and NGINX-generated errors as JSON while pages use shared HTML',
+  'admin isolates custom assets, uses safe errors and limits each authentication client separately',
   { skip: process.env.PROXY_ADMIN_API_TEST !== 'true', timeout: 15000 },
   async (t) => {
     const directory = await mkdtemp('/tmp/admin-api-');
@@ -41,6 +41,7 @@ test(
       revision: 'test',
       readyDomains: [domain],
       wildcardDomains: [domain],
+      errorSites: { 404: { directory: 'untrusted', exposed: ['index.html', 'evil.js'] } },
     });
     await writeFile(`${directory}/nginx.conf`, output.config);
     for (const [name, text] of Object.entries(output.pages))
@@ -67,14 +68,16 @@ test(
           nginx.kill('SIGTERM');
         });
     });
-    const request = (path) =>
+    const request = (path, method = 'GET', localAddress) =>
       new Promise((resolve, reject) => {
         https
-          .get(
+          .request(
             {
               hostname: '127.0.0.1',
               port: 443,
               path,
+              method,
+              localAddress,
               servername: p.adminHostname,
               headers: { host: p.adminHostname },
               rejectUnauthorized: false,
@@ -85,11 +88,11 @@ test(
               res.on('data', (chunk) => (body += chunk));
               res.on('error', reject);
               res.on('end', () =>
-                resolve({ status: res.statusCode, type: res.headers['content-type'], body }),
+                resolve({ status: res.statusCode, type: res.headers['content-type'], headers: res.headers, body }),
               );
             },
           )
-          .on('error', reject);
+          .on('error', reject).end();
       });
     let response;
     for (let i = 0; i < 30; i++) {
@@ -106,6 +109,16 @@ test(
     const page = await request('/routes');
     assert.equal(page.status, 502);
     assert.match(page.type, /text\/html/);
+    assert.match(page.headers['content-security-policy'], /default-src 'none'/);
+    assert.equal(page.headers['x-frame-options'], 'DENY');
+    assert(!page.body.includes('<script'));
+    assert.equal((await request('/_proxy/errors/404/index.html')).status, 404);
+    let limited;
+    for (let i = 0; i < 22; i++) limited = await request('/api/auth/login/options', 'POST', '127.0.0.2');
+    assert.equal(limited.status, 429);
+    assert.match(limited.type, /application\/json/);
+    assert.match(JSON.parse(limited.body).error, /Too many sign-in attempts/);
+    assert.equal((await request('/api/auth/login/options', 'POST', '127.0.0.3')).status, 502);
     backend.closeAllConnections();
     await new Promise((resolve) => backend.close(resolve));
     const unavailable = await request('/api/sites/pull');

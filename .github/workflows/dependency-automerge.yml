@@ -1,0 +1,45 @@
+name: Merge tested dependency updates
+on:
+  workflow_run:
+    workflows: ['Security checks']
+    types: [completed]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  merge:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge only the tested Dependabot revision and dependency-only changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: python
+        run: |
+          import base64, json, os, re, subprocess
+          repo, sha = os.environ['REPO'], os.environ['TESTED_SHA']
+          def api(path, *args):
+              return json.loads(subprocess.check_output(['gh', 'api', path, *args], text=True))
+          for pr in api(f'repos/{repo}/commits/{sha}/pulls'):
+              if pr['state'] != 'open' or pr['user']['login'] != 'dependabot[bot]' or pr['head']['sha'] != sha or pr['head']['repo']['full_name'] != repo or pr['base']['ref'] != 'main':
+                  continue
+              files = api(f'repos/{repo}/pulls/{pr["number"]}/files')
+              if not files or any(f['filename'] not in ['package.json', 'package-lock.json'] for f in files):
+                  continue
+              def manifest(ref):
+                  content = api(f'repos/{repo}/contents/package.json?ref={ref}')
+                  return json.loads(base64.b64decode(content['content']))
+              before, after = manifest(pr['base']['sha']), manifest(sha)
+              compatible = True
+              for group in ['dependencies', 'devDependencies']:
+                  old, new = before.pop(group, {}), after.pop(group, {})
+                  if old.keys() != new.keys():
+                      compatible = False
+                  for name in old.keys() & new.keys():
+                      if not re.fullmatch(r'\d+\.\d+\.\d+', old[name]) or not re.fullmatch(r'\d+\.\d+\.\d+', new[name]) or old[name].split('.')[0] != new[name].split('.')[0]:
+                          compatible = False
+              if not compatible or before != after:
+                  continue
+              api(f'repos/{repo}/pulls/{pr["number"]}/merge', '--method', 'PUT', '-f', f'sha={sha}', '-f', 'merge_method=squash')
