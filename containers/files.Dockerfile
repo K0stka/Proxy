@@ -17,6 +17,7 @@ COPY edge/sites.js ./edge/sites.js
 COPY files ./files
 COPY --chmod=755 containers/start.sh /usr/local/bin/proxy-start
 COPY --chmod=755 containers/git-ssh.sh /usr/local/bin/proxy-git-ssh
+RUN chmod -R a+rX /app
 USER 0:10000
 ENTRYPOINT ["proxy-start", "files"]
 CMD ["node", "files/main.js"]

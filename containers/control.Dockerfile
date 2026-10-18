@@ -22,6 +22,7 @@ COPY package.json ./
 COPY server ./server
 COPY shared ./shared
 COPY --chmod=755 containers/start.sh /usr/local/bin/proxy-start
+RUN chmod -R a+rX /app
 USER 0:10000
 ENV PROXY_STATE=/state PROXY_LISTEN_HOST=0.0.0.0
 EXPOSE 3001

@@ -13,7 +13,7 @@ COPY edge ./edge
 COPY shared ./shared
 COPY containers/edge-entrypoint.sh /usr/local/bin/proxy-as-edge
 COPY --chmod=755 containers/start.sh /usr/local/bin/proxy-start
-RUN chmod 755 /usr/local/bin/proxy-as-edge
+RUN chmod 755 /usr/local/bin/proxy-as-edge && chmod -R a+rX /app
 USER 0:10000
 ENTRYPOINT ["proxy-start", "edge"]
 CMD ["node", "edge/main.js"]

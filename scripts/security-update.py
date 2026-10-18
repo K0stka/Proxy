@@ -23,6 +23,9 @@ SERVICES = ('control', 'edge', 'files', 'certificates')
 
 
 def run(args, *, cwd=None, capture=False, **kwargs):
+    # Git checkout files become non-root container inputs; private state keeps 0077.
+    if args[0] == 'git':
+        kwargs.setdefault('umask', 0o022)
     return subprocess.check_output(args, cwd=cwd, text=True, **kwargs) if capture else subprocess.check_call(args, cwd=cwd, **kwargs)
 
 

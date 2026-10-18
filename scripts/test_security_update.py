@@ -9,6 +9,13 @@ spec.loader.exec_module(updater)
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_git_checks_out_readable_sources_without_relaxing_other_commands(self):
+        with patch.object(updater.subprocess, 'check_call') as call:
+            updater.run(['git', 'merge', '--ff-only', 'revision'])
+            self.assertEqual(call.call_args.kwargs['umask'], 0o022)
+            updater.run(['docker', 'compose', 'up', '-d'])
+            self.assertNotIn('umask', call.call_args.kwargs)
+
     def test_reconstructed_images_preserve_startup_without_embedding_runtime_secrets(self):
         changes = updater.rollback_configuration({
             'Entrypoint': ['proxy-start', 'control'], 'Cmd': ['node', 'server/main.js'],
