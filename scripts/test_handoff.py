@@ -13,6 +13,19 @@ spec.loader.exec_module(handoff)
 
 
 class HandoffTests(unittest.TestCase):
+    def test_komodo_operator_stop_is_preserved_without_status_agents(self):
+        broker = handoff.Broker.__new__(handoff.Broker)
+        broker.config = {'komodoManaged': True}
+        broker.state = {'edge': {'container': 'edge'}, 'control': {'container': 'control'}}
+        broker.lock = __import__('threading').RLock()
+        broker.routes, broker.persist = Mock(), Mock()
+        with patch.object(handoff, 'inspect', return_value={'State': {'Status': 'exited'}}), patch.object(handoff, 'audit'):
+            broker.watch_agents()
+        self.assertEqual(broker.state['paused'], ['control', 'edge'])
+        with patch.object(handoff, 'inspect', return_value={'State': {'Status': 'running'}}), patch.object(handoff, 'audit'):
+            broker.watch_agents()
+        self.assertEqual(broker.state['paused'], [])
+
     def test_generation_names_use_commit_and_monotonic_role_counter(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

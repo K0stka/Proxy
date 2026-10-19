@@ -235,6 +235,15 @@ def main():
             raise RuntimeError('Checkout changed during validation')
         run(['git', 'merge', '--ff-only', revision], cwd=repo)
         if Path('/var/lib/proxy-handoff/state.json').exists():
+            template_path = Path('/var/lib/proxy-handoff/templates.json')
+            templates = json.loads(template_path.read_text())
+            if templates.get('komodoManaged'):
+                fresh = json.loads(run(compose(repo) + ['config', '--format', 'json'], capture=True))
+                for service in ['control', 'edge']:
+                    templates[service]['config']['Env'] = [key + '=' + str(value) for key, value in
+                        fresh['services'][service].get('environment', {}).items() if value is not None]
+                temporary = template_path.with_suffix('.new')
+                temporary.write_text(json.dumps(templates)); temporary.chmod(0o600); temporary.replace(template_path)
             mapping_path = Path('/var/lib/proxy-handoff/image-revisions.json')
             mapping = json.loads(mapping_path.read_text()) if mapping_path.exists() else {}
             for service in ['control', 'edge']:
@@ -257,7 +266,7 @@ def main():
             shutil.rmtree(candidate)
     (args.state / 'last-success.json').write_text(json.dumps({
         'time': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-        'revision': run(['git', 'rev-parse', 'HEAD'], cwd=repo, capture=True).strip(),
+        'revision': revision,
         'backup': str(work / 'control-backup.db'),
     }))
     # Keep the current rollback images and seven private SQLite recovery snapshots.

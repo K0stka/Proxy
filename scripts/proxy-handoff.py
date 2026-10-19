@@ -493,6 +493,20 @@ class Broker:
 
     def watch_agents(self):
         if getattr(self, 'config', {}).get('komodoManaged'):
+            with self.lock:
+                paused = set(self.state.get('paused', []))
+                before = paused.copy()
+                for role in ['edge', 'control']:
+                    status = inspect(self.state[role]['container'])['State']['Status']
+                    if status in ['exited', 'dead', 'paused']:
+                        paused.add(role)
+                    elif status == 'running':
+                        paused.discard(role)
+                if paused != before:
+                    self.state['paused'] = sorted(paused)
+                    self.routes()
+                    self.persist()
+                    audit('operator_state', paused=sorted(paused), source='komodo')
             return
         with self.lock:
             states = {}
@@ -611,10 +625,14 @@ class Broker:
         return self.activate(candidate, snapshot=snapshot)
 
     def deploy(self, images):
+        self.watch_agents()
         if self.state.get('paused'):
             raise RuntimeError('Proxy was stopped by the operator')
         if set(images) != {'edge', 'control'} or any(not re.fullmatch(r'sha256:[0-9a-f]{64}', value) for value in images.values()):
             raise ValueError('Expected immutable edge/control image IDs')
+        if self.config.get('komodoManaged'):
+            # The root updater may refresh environment values after tests pass.
+            self.config = json.loads((STATE / 'templates.json').read_text())
         control = self.new('control', images['control'])
         try:
             edge = self.new('edge', images['edge'], self.state['snapshot'], reserved=[control['ip']])

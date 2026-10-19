@@ -2,6 +2,7 @@
 """Root-only Compose inventory of the actual active/draining proxy containers."""
 import hashlib
 import hmac
+import fcntl
 import json
 from pathlib import Path
 import urllib.request
@@ -68,6 +69,11 @@ def notify(root):
     settings = root / 'komodo.json'
     if not settings.exists():
         return False
+    with open('/var/lib/proxy-security-updates/update.lock', 'a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
     config = json.loads(settings.read_text())
     body = b'{"ref":"refs/heads/main"}'
     signature = hmac.new(config['secret'].encode(), body, hashlib.sha256).hexdigest()
