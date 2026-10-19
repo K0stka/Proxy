@@ -35,14 +35,26 @@ if (paused) {
 }
 // Compose up is restricted to existing files/certificates services with no recreation.
 // The root-owned manifest also lists every actual active/draining edge/controller.
-let deployment = await komodo.execute("DeployStack", { stack: "proxy" });
-const deploymentId = (deployment as any)._id?.$oid ?? (deployment as any).id;
-if (!deploymentId) throw new Error("Missing Komodo deployment update ID");
-while (deployment.status === "InProgress") {
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-  deployment = await komodo.read("GetUpdate", { id: deploymentId });
+for (let attempt = 0; ; attempt++) {
+  let deployment: any;
+  try {
+    deployment = await komodo.execute("DeployStack", { stack: "proxy" });
+    const deploymentId = deployment._id?.$oid ?? deployment.id;
+    if (!deploymentId) throw new Error("Missing Komodo deployment update ID");
+    while (deployment.status === "InProgress") {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      deployment = await komodo.read("GetUpdate", { id: deploymentId });
+    }
+    if (!deployment.success) {
+      const busy = deployment.logs?.some((log: any) => log.stderr?.includes("Resource is busy"));
+      throw new Error(busy ? "Resource is busy" : "Komodo stack inventory deployment failed");
+    }
+    break;
+  } catch (error) {
+    if (attempt >= 19 || !String(error).includes("Resource is busy")) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
 }
-if (!deployment.success) throw new Error("Komodo stack inventory deployment failed");
 await komodo.write("UpdateStack", { id: "proxy", config: {
   ignore_services: [...manualIgnores, ...draining],
 } });
