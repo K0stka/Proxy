@@ -2,6 +2,7 @@
 # These status agents make normal Komodo image builds/deploys safe for live traffic.
 services:
   control:
+    ports: !reset []
     environment:
       PROXY_HANDOFF_AGENT: 'true'
   edge:

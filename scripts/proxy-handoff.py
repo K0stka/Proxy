@@ -180,6 +180,7 @@ class Broker:
         self.lock = threading.RLock()
         self.config = json.loads((STATE / 'templates.json').read_text())
         self.state = json.loads((STATE / 'state.json').read_text())
+        self.agent_stopped_since = {}
         self.vip = self.config['vip']
         if ipaddress.ip_address(self.vip).version != 4:
             raise RuntimeError('This deployment requires one IPv4 ingress address')
@@ -220,11 +221,11 @@ class Broker:
         all_entries = [edge, *[e for e in self.state['draining'] if e['role'] == 'edge']]
         listeners = {tuple(p) for entry in all_entries for p in entry['ports']}
         for proto, port in sorted(listeners):
-            backends = {entry['ip']: int(entry['id'] == edge['id'])
+            backends = {entry['ip']: int(entry['id'] == edge['id'] and 'edge' not in self.state.get('paused', []))
                         for entry in all_entries if [proto, port] in entry['ports']}
             configure_service(self.vip, proto, port, backends)
         control = self.state['control']
-        backends = {entry['ip']: int(entry['id'] == control['id']) for entry in
+        backends = {entry['ip']: int(entry['id'] == control['id'] and 'control' not in self.state.get('paused', [])) for entry in
                     [control, *[e for e in self.state['draining'] if e['role'] == 'control']]}
         configure_service('127.0.0.1', 'tcp', 3001, backends)
 
@@ -244,7 +245,8 @@ class Broker:
         config = copy.deepcopy(template['config'])
         config['Image'] = image
         config['Labels'] = {'org.krychlic.proxy.generation': identifier, 'org.krychlic.proxy.role': role}
-        env = dict(value.split('=', 1) for value in config['Env'])
+        env = {key: value for key, value in (item.split('=', 1) for item in config['Env'])
+               if key.startswith('PROXY_') or key in ['PORT', 'NODE_ENV', 'TZ']}
         env.pop('PROXY_HANDOFF_AGENT', None)
         host = copy.deepcopy(template['host'])
         host['NetworkMode'] = 'host'
@@ -384,11 +386,42 @@ class Broker:
 
     def refresh_certificates(self):
         with self.lock:
-            if self.state['edge'].get('legacy'):
+            if self.state['edge'].get('legacy') or self.state.get('paused'):
                 return
             if request(self.state['edge']['socket'], 'GET', '/certificates/changed').get('changed'):
                 edge = self.new('edge', self.state['edge']['image'], self.state['snapshot'])
                 self.activate(edge, reason='certificate')
+
+    def watch_agents(self):
+        with self.lock:
+            states = {}
+            for role in ['edge', 'control', 'files', 'certificates']:
+                try:
+                    states[role] = inspect('proxy-' + role + '-1')['State']['Status']
+                except ControlError as error:
+                    if error.status != 404:
+                        raise
+                    states[role] = 'missing'
+            down = all(value == 'missing' for value in states.values())
+            for role in ['edge', 'control']:
+                paused = self.state.setdefault('paused', [])
+                if states[role] == 'exited' or down:
+                    since = self.agent_stopped_since.setdefault(role, time.time())
+                    if role not in paused and time.time() - since >= 5:
+                        paused.append(role)
+                        self.routes()
+                        for entry in [self.state[role], *[e for e in self.state['draining'] if e['role'] == role]]:
+                            docker('POST', '/containers/' + entry['container'] + '/stop?t=1')
+                        self.persist()
+                        audit('operator_stopped', role=role)
+                else:
+                    self.agent_stopped_since.pop(role, None)
+                    if states[role] == 'running' and role in paused:
+                        docker('POST', '/containers/' + self.state[role]['container'] + '/start')
+                        paused.remove(role)
+                        self.routes()
+                        self.persist()
+                        audit('operator_started', role=role)
 
     def reap(self):
         with self.lock:
@@ -421,6 +454,8 @@ class Broker:
             raise
 
     def deploy(self, images):
+        if self.state.get('paused'):
+            raise RuntimeError('Proxy was stopped by the operator')
         if set(images) != {'edge', 'control'} or any(not re.fullmatch(r'sha256:[0-9a-f]{64}', value) for value in images.values()):
             raise ValueError('Expected immutable edge/control image IDs')
         control = self.new('control', images['control'])
@@ -573,6 +608,7 @@ def main():
                 time.sleep(5)
                 try:
                     broker.reap()
+                    broker.watch_agents()
                     ticks += 1
                     if ticks % 6 == 0:
                         broker.refresh_certificates()

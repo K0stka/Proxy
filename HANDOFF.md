@@ -37,6 +37,10 @@ Compose's `proxy-control-1` and `proxy-edge-1` become unprivileged status agents
 when `PROXY_HANDOFF_ENABLED=true` is set in the deployment environment. This keeps
 ordinary Komodo builds/redeploys from replacing live traffic-handling generations.
 Application version changes are activated only by the tested host updater.
+An explicit Komodo/Compose stop is propagated to the active application after
+5–10 seconds; start resumes it. Brief recreation of the agents does not stop the
+application. An operator stop also stops that role's draining instances and
+interrupts their connections deliberately.
 
 Host prerequisites: `ipvsadm`, nftables and the kernel `ip_vs_rr` module. The
 current deployment supports its single public IPv4 ingress address; other address

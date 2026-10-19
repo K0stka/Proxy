@@ -82,6 +82,29 @@ class HandoffTests(unittest.TestCase):
             broker.drop_destinations.assert_called_once_with(candidate)
             audit.assert_called_once_with('rollback', generation='new')
 
+    def test_agent_recreation_keeps_traffic_but_explicit_stop_propagates(self):
+        broker = handoff.Broker.__new__(handoff.Broker)
+        broker.lock = __import__('threading').RLock()
+        broker.agent_stopped_since = {}
+        broker.state = {'edge': {'container': 'active'}, 'control': {},
+                        'draining': [{'role': 'edge', 'container': 'draining'}]}
+        broker.routes, broker.persist = Mock(), Mock()
+        def state(name):
+            return {'State': {'Status': 'created' if name == 'proxy-edge-1' else 'running'}}
+        with patch.object(handoff, 'inspect', side_effect=state), patch.object(handoff, 'docker') as docker:
+            broker.watch_agents()
+            docker.assert_not_called()
+        def stopped(name):
+            return {'State': {'Status': 'exited' if name == 'proxy-edge-1' else 'running'}}
+        with patch.object(handoff, 'inspect', side_effect=stopped), patch.object(handoff, 'docker') as docker, patch.object(handoff, 'audit'):
+            with patch.object(handoff.time, 'time', return_value=0):
+                broker.watch_agents()
+                docker.assert_not_called()
+            with patch.object(handoff.time, 'time', return_value=5):
+                broker.watch_agents()
+                self.assertEqual(docker.call_count, 2)
+                self.assertIn('edge', broker.state['paused'])
+
 
 if __name__ == '__main__':
     unittest.main()
