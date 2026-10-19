@@ -53,7 +53,7 @@ def handoff(images):
             self.sock.settimeout(self.timeout)
             config = json.loads(Path('/var/lib/proxy-handoff/templates.json').read_text())
             self.sock.connect(str(Path(config['ipc']) / 'edge.sock'))
-    connection = Connection('localhost', timeout=40)
+    connection = Connection('localhost', timeout=90)
     try:
         connection.request('POST', '/deploy', json.dumps(images), {'Content-Type': 'application/json'})
         response = connection.getresponse()

@@ -61,8 +61,8 @@ class UnixHTTP(http.client.HTTPConnection):
         self.close()
 
 
-def request(path, method, url, body=None):
-    with UnixHTTP(path) as connection:
+def request(path, method, url, body=None, timeout=35):
+    with UnixHTTP(path, timeout=timeout) as connection:
         connection.request(method, url, None if body is None else json.dumps(body),
                            {'Content-Type': 'application/json'})
         response = connection.getresponse()
@@ -255,6 +255,7 @@ class Broker:
         host['Binds'] = [f"{m['Source']}:{m['Destination']}:{'rw' if m['RW'] else 'ro'}"
                          for m in template['mounts'] if role != 'edge' or m['Destination'] not in ['/runtime', '/ipc']]
         if role == 'edge':
+            host['Tmpfs']['/ipc'] = 'rw,noexec,nosuid,size=1m,mode=2770,uid=10002,gid=10000'
             directory = STATE / identifier
             directory.mkdir(mode=0o700)
             with sqlite3.connect(directory / 'edge.db') as db:
@@ -284,10 +285,11 @@ class Broker:
             result = docker('POST', '/containers/create?name=proxy-generation-' + identifier, config)
             entry['container'] = result['Id']
             docker('POST', '/containers/' + entry['container'] + '/start')
-            for _ in range(100):
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
                 try:
                     if role == 'edge':
-                        status = request(entry['socket'], 'GET', '/status')
+                        status = request(entry['socket'], 'GET', '/status', timeout=1)
                         if not status.get('available') or status.get('error'):
                             raise RuntimeError('Candidate configuration is unavailable')
                         entry['status'] = status
@@ -306,6 +308,7 @@ class Broker:
                     time.sleep(.1)
             raise RuntimeError('Candidate failed readiness verification')
         except BaseException:
+            audit('candidate_failed', role=role, generation=identifier)
             self.remove(entry)
             self.state['pending'] = [e for e in self.state['pending'] if e['id'] != identifier]
             self.persist()
