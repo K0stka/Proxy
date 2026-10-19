@@ -9,6 +9,7 @@
   "scripts": {
     "setup": "node scripts/setup.js",
     "dev": "node scripts/dev.js",
+    "preview:mock": "npm run build && node scripts/preview.js",
     "build": "vite build",
     "start": "node --env-file-if-exists=.env server/main.js",
     "edge": "node --env-file-if-exists=.env edge/main.js",

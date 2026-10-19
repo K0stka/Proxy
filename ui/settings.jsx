@@ -7,11 +7,8 @@ import Modal from './dialog.jsx';
 import { api } from './api.js';
 import { useNavigation } from './navigation.js';
 import { compareNames } from './order.js';
-const when = (value) =>
-  new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+import DiscordAlerts from './discord.jsx';
+import { formatDateTime as when } from './date-time.js';
 export default function Settings({ state, refresh, report, onLogout, onEditPage }) {
   const { settingsSection } = useNavigation();
   const [preferences, setPreferences] = useState(state.settings);
@@ -218,6 +215,9 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
             </article>
           ))}
         </div>
+      </section>
+      <section id="notifications" className="settings-section" aria-label="Discord notifications">
+        <DiscordAlerts />
       </section>
       <section id="access" className="settings-section" aria-labelledby="access-heading">
         <Group justify="space-between" mb="lg">

@@ -58,7 +58,7 @@ function staticLocations(manifest, route, overrides) {
 export function render(
   policy,
   raw,
-  { revision, directory, readyDomains = [], wildcardDomains = readyDomains, staticSites = {}, errorSites = {}, bindIP },
+  { revision, directory, readyDomains = [], wildcardDomains = readyDomains, staticSites = {}, errorSites = {}, bindIP, monitorPort },
 ) {
   const snapshot = validateSnapshot(policy, raw),
     routes = snapshot.routes.filter((r) => r.published),
@@ -254,14 +254,19 @@ proxy_temp_path /tmp/proxy_temp;
 fastcgi_temp_path /tmp/fastcgi_temp;
 uwsgi_temp_path /tmp/uwsgi_temp;
 scgi_temp_path /tmp/scgi_temp;
-access_log off;
+${monitorPort ? httpMonitoring(routes, policy.adminHostname, monitorPort) : 'access_log off;'}
 map $request_method $proxy_auth_key { default ""; POST $binary_remote_addr; }
 limit_req_zone $proxy_auth_key zone=proxy_auth:1m rate=20r/m;
 map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 ${http.join('\n')}
 }
 stream {
-access_log off;
+${monitorPort ? `map_hash_bucket_size 128;
+map "$server_addr:$protocol:$server_port" $monitor_service { default catch-all;
+${routes.filter((r) => ['tcp', 'udp'].includes(r.kind)).flatMap((r) => portRanges(r).flatMap(({ start, end }) => Array.from({ length: end - start + 1 }, (_, i) => `"${bindIP ?? r.ingressIP}:${r.kind.toUpperCase()}:${start + i}" ${r.id};`))).join('\n')}
+}
+log_format proxy_monitor escape=json '{"protocol":"$protocol","service":"$monitor_service","address":"$remote_addr","status":"$status","bytes":"$bytes_sent","signal":"none"}';
+access_log syslog:server=127.0.0.1:${monitorPort},tag=proxy_stream proxy_monitor;` : 'access_log off;'}
 ${stream.join('\n')}
 }
 `;
@@ -272,4 +277,22 @@ ${stream.join('\n')}
     ])),
     hash: activeHash(snapshot),
   };
+}
+
+function httpMonitoring(routes, adminHostname, port) {
+  const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const matches = routes.filter((r) => ['http', 'static', 'redirect'].includes(r.kind))
+    .toSorted((a, b) => b.path.length - a.path.length)
+    .map((r) => `${quote(`~^${escape(r.hostname)}:${escape(r.path)}${r.path === '/' ? '' : '(?:[/?]|$)'}`)} ${r.id};`);
+  return `map "$host:$request_uri" $monitor_service {
+default catch-all;
+${adminHostname ? `${quote(`~^${escape(adminHostname)}:`)} management;` : ''}
+${matches.join('\n')}
+}
+map $request_uri $monitor_signal {
+default none;
+${quote('~*^[^?]*(?:\\.env|\\.git|wp-login|wp-admin|xmlrpc\\.php|/phpmyadmin|/vendor/phpunit|%2e%2e|\\.\\./)')} probe;
+}
+log_format proxy_monitor escape=json '{"protocol":"http","service":"$monitor_service","address":"$remote_addr","status":"$status","bytes":"$bytes_sent","signal":"$monitor_signal","url":"$scheme://$host$request_uri","method":"$request_method"}';
+access_log syslog:server=127.0.0.1:${port},tag=proxy_http proxy_monitor;`;
 }

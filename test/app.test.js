@@ -19,6 +19,7 @@ import http from 'node:http';
 import { generateKeyPairSync, randomBytes, createHash, sign } from 'node:crypto';
 import { isoCBOR } from '@simplewebauthn/server/helpers';
 import { fileFilter } from '../edge/sites.js';
+import { LogStore, logQuery } from '../shared/log-store.js';
 
 async function fixture(t, { empty = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'proxy-app-')),
@@ -36,6 +37,7 @@ async function fixture(t, { empty = false } = {}) {
   const applies = [];
   const filesCalls = [];
   const auditRecords = [];
+  const edgeArchive = new LogStore(':memory:');
   const app = createApp({
     policy: p,
     store,
@@ -48,12 +50,23 @@ async function fixture(t, { empty = false } = {}) {
     certRequestDir: join(directory, 'requests'),
     development: true,
     auditLog: (record) => auditRecords.push(record),
+    notificationRequest: async () => new Response(null, { status: 204 }),
     filesRequest: async (_socket, path, options) => {
       filesCalls.push({ path, ...options });
       return path === '/repositories' ? [] : { changed: true };
     },
     edgeRequest: async (_socket, path, options) => {
       if (path === '/status') return { available: true };
+      if (path.startsWith('/alerts?')) return { events: [], latest: 0 };
+      if (path.startsWith('/logs?') || path.startsWith('/log-summary?')) {
+        if (fail) throw new Problem(503, 'Edge unavailable');
+        const url = new URL(path, 'http://edge'), query = logQuery(url.searchParams);
+        return url.pathname === '/logs' ? edgeArchive.history(query) : edgeArchive.summary(query);
+      }
+      if (path === '/monitoring') {
+        if (fail) throw new Problem(503, 'Edge unavailable');
+        return { events: [], services: [], startedAt: '2026-10-19T00:00:00Z' };
+      }
       if (path === '/probe') {
         assert.equal(options.body.host, '100.101.102.103');
         assert.equal(options.body.port, 3000);
@@ -135,6 +148,7 @@ async function fixture(t, { empty = false } = {}) {
     app.server.closeAllConnections();
     await new Promise((resolve) => app.server.close(resolve));
     store.close();
+    edgeArchive.close();
     certificatePolicyStore.close();
     await rm(directory, { recursive: true, force: true });
   });
@@ -146,6 +160,7 @@ async function fixture(t, { empty = false } = {}) {
     applies,
     filesCalls,
     auditRecords,
+    edgeArchive,
     directory,
     setFail: (value) => (fail = value),
   };
@@ -177,7 +192,63 @@ test('audit records capture operation outcomes without credentials or request bo
   ]);
   assert(!JSON.stringify(f.auditRecords).includes(secret));
   for (const record of f.auditRecords)
-    assert.deepEqual(Object.keys(record).sort(), ['event', 'method', 'origin', 'status', 'time', 'type']);
+    assert.deepEqual(Object.keys(record).sort(), ['event', 'method', 'origin', 'source', 'status', 'time', 'type', 'url']);
+});
+
+test('monitoring is private, exposes sanitized audit outcomes and preserves audit access during edge outages', async (t) => {
+  const f = await fixture(t);
+  assert.equal((await f.request('/api/monitoring', { authenticated: false })).status, 401);
+  const secret = randomToken();
+  await f.request('/api/auth/recover', { method: 'POST', authenticated: false, body: { code: secret } });
+  const data = await (await f.request('/api/monitoring')).json();
+  assert.deepEqual(data.traffic.events, []);
+  assert(data.audit.events.some((e) => e.event === 'auth.recovery' && e.status === 403));
+  assert(!JSON.stringify(data).includes(secret));
+  f.setFail(true);
+  const unavailable = await (await f.request('/api/monitoring')).json();
+  assert.equal(unavailable.traffic, null);
+  assert(unavailable.audit.events.length > 0);
+});
+
+test('archived logs and webhook settings require authentication and CSRF and never reveal saved webhook URLs', async (t) => {
+  const f = await fixture(t);
+  for (const path of ['/api/logs?component=control', '/api/notifications/discord'])
+    assert.equal((await f.request(path, { authenticated: false })).status, 401);
+  const url = `https://discord.com/api/webhooks/123456789012345678/${'private_token_'.repeat(5)}`;
+  assert.equal((await f.request('/api/notifications/discord', { method: 'PUT', body: { enabled: true, webhookURL: url }, extra: { 'x-csrf-token': 'wrong' } })).status, 403);
+  const saved = await f.request('/api/notifications/discord', { method: 'PUT', body: { enabled: true, webhookURL: url } });
+  assert.equal(saved.status, 200);
+  assert(!JSON.stringify(await saved.json()).includes('private_token'));
+  assert(!JSON.stringify(await (await f.request('/api/state')).json()).includes('private_token'));
+  const history = await (await f.request('/api/logs?component=control&kind=audit')).json();
+  assert(history.events.some((e) => e.event === 'admin.notifications.changed'));
+  assert(!JSON.stringify(history).includes('private_token'));
+  assert.equal(history.storage.days, 30);
+  assert.equal((await f.request('/api/logs?before=-1')).status, 400);
+  assert.equal((await f.request('/api/logs?component=secret')).status, 400);
+  assert.equal((await f.request('/api/notifications/discord/test', { method: 'POST' })).status, 200);
+  assert.equal((await f.request('/api/notifications/discord', { method: 'DELETE' })).status, 200);
+});
+
+test('period log views and full NDJSON downloads are private and export more than one page', async (t) => {
+  const f = await fixture(t), now = Date.now();
+  const bounds = new URLSearchParams({ from: new Date(now - 3600000).toISOString(), to: new Date(now + 1000).toISOString() });
+  for (let i = 0; i < 240; i++) f.edgeArchive.append({ time: new Date(now - i * 1000).toISOString(),
+    type: 'traffic', service: 'catch-all', event: `Request ${i}`, source: '203.0.113.44', url: `https://unknown.example.net/path/${i}`, status: 404 });
+  for (const path of ['/api/logs/view', '/api/logs/download'])
+    assert.equal((await f.request(`${path}?${bounds}`, { authenticated: false })).status, 401);
+  const view = await (await f.request(`/api/logs/view?${bounds}`)).json();
+  assert.equal(view.events.length, 100);
+  assert.equal(view.summary.totals.count, 240);
+  const download = await f.request(`/api/logs/download?${bounds}`);
+  assert.equal(download.status, 200);
+  assert.match(download.headers.get('content-disposition'), /attachment/);
+  const records = (await download.text()).trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(records.length, 240);
+  assert.equal(new Set(records.map((e) => e.id)).size, 240);
+  assert(records.every((e) => e.source === '203.0.113.44' && e.url.startsWith('https://unknown.example.net/path/')));
+  f.setFail(true);
+  assert.equal((await f.request(`/api/logs/download?${bounds}`)).status, 503);
 });
 test('passkey names persist without changing credentials or sessions and require authorization', async (t) => {
   const f = await fixture(t);

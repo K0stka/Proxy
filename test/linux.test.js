@@ -181,6 +181,30 @@ test(
     });
     edge = start();
     await ready();
+    await t.test('catch-all syslog monitoring retains request URLs and source IPs', async () => {
+      for (let i = 0; i < 5; i++) await request('whatever.invalid', '/.env?secret=never-retain', false);
+      let result;
+      for (let i = 0; i < 50; i++) {
+        result = await edgeRequest('/monitoring');
+        if (result.events.some((e) => e.type === 'alert' && e.event === 'Repeated exploit-path probes')) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert(result.events.some((e) => e.type === 'alert' && e.service === 'catch-all'));
+      assert(result.events.some((e) => e.url === 'http://whatever.invalid/.env?secret=never-retain' && e.source === '127.0.0.1'));
+      const history = await edgeRequest('/logs?kind=alert');
+      assert.equal(history.storage.days, 30);
+      assert(history.events.some((e) => e.service === 'catch-all'));
+      const longPath = '/trace?query=' + 'x'.repeat(3000);
+      await request('whatever.invalid', longPath, false);
+      let logged;
+      for (let i = 0; i < 50; i++) {
+        logged = (await edgeRequest('/logs')).events.find((e) => e.url === 'http://whatever.invalid' + longPath);
+        if (logged) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert(logged, 'URLs longer than the old 2 KiB event limit are retained in full');
+      assert.equal(logged.source, '127.0.0.1');
+    });
     await t.test(
       'reachability probes use the edge network and reject metadata/management endpoints',
       async () => {
@@ -242,6 +266,7 @@ test(
       route({
         name: 'UDP',
         kind: 'udp',
+        timeout: 5,
         hostname: '',
         published: true,
         ingressIP: '127.0.0.1',
@@ -611,6 +636,15 @@ test(
       assert.equal((await request('app.krychlic.com')).body, 'hello from home');
       assert.equal((await request('example.net')).status, 200);
     });
+    await t.test('configured HTTP traffic is attributed to the route', async () => {
+      let result;
+      for (let i = 0; i < 50; i++) {
+        result = await edgeRequest('/monitoring');
+        if (result.events.some((e) => e.type === 'traffic' && e.service === routes[0].id)) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert(result.events.some((e) => e.type === 'traffic' && e.service === routes[0].id));
+    });
     await t.test('covered unknown hostname gets 404; uncovered TLS fails', async () => {
       const missing = await request('missing.krychlic.com');
       assert.equal(missing.status, 404);
@@ -618,6 +652,15 @@ test(
       assert.equal((await request('whatever.invalid', '/', false)).status, 404);
       await assert.rejects(request('unrelated.invalid'));
       await assert.rejects(request('deep.app.krychlic.com'));
+      for (let i = 0; i < 5; i++) await request('missing.krychlic.com', '/.git/config?secret=never-retain');
+      let result;
+      for (let i = 0; i < 50; i++) {
+        result = await edgeRequest('/monitoring');
+        if (result.events.some((e) => e.type === 'traffic' && e.service === 'catch-all' && e.event === 'Exploit-path probe')) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert(result.events.some((e) => e.type === 'traffic' && e.service === 'catch-all' && e.event === 'Exploit-path probe'));
+      assert(result.events.some((e) => e.url === 'https://missing.krychlic.com/.git/config?secret=never-retain' && e.source === '127.0.0.1'));
     });
     await t.test(
       'source restrictions reject spoofed forwarding headers and mismatched SNI/Host',
@@ -710,6 +753,26 @@ test(
           s.send(Buffer.from('ping'), port, '127.0.0.1');
         });
     });
+    await t.test('raw TCP traffic is attributed to its route and protocol', async () => {
+      const tcpRoute = routes.find((r) => r.kind === 'tcp' && !r.streamTLS);
+      let result;
+      for (let i = 0; i < 50; i++) {
+        result = await edgeRequest('/monitoring');
+        if (result.events.some((e) => e.type === 'traffic' && e.service === tcpRoute.id && e.protocol === 'tcp')) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert(result.events.some((e) => e.type === 'traffic' && e.service === tcpRoute.id && e.protocol === 'tcp'));
+    });
+    await t.test('completed UDP sessions are attributed to their route', async () => {
+      const udpRoute = routes.find((r) => r.kind === 'udp');
+      let result;
+      for (let i = 0; i < 70; i++) {
+        result = await edgeRequest('/monitoring');
+        if (result.events.some((e) => e.type === 'traffic' && e.service === udpRoute.id && e.protocol === 'udp')) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      assert(result.events.some((e) => e.type === 'traffic' && e.service === udpRoute.id && e.protocol === 'udp'));
+    });
     await t.test(
       'TCP TLS termination presents the configured certificate and forwards bytes',
       async () =>
@@ -775,12 +838,16 @@ test(
       assert(!response.body.includes('127.0.0.2'));
     });
     await t.test('saved routing resumes after edge process restart', async () => {
+      const priorAlerts = (await edgeRequest('/logs?kind=alert')).events.map((e) => e.id);
       for (const s of connections) s.destroy();
       await stop();
       edge = start();
       await ready();
       assert.equal((await request('example.net')).body, 'hello from home');
       assert.equal((await edgeRequest('/status')).routes.length, routes.length);
+      const retained = (await edgeRequest('/logs?kind=alert')).events;
+      assert(priorAlerts.length > 0);
+      assert(priorAlerts.every((id) => retained.some((e) => e.id === id)));
     });
   },
 );

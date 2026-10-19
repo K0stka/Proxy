@@ -1,6 +1,12 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 
+export async function activeController() {
+  const generation = process.env.PROXY_CONTROL_GENERATION;
+  if (!generation) return true;
+  return JSON.parse(await readFile('/handoff/active.json', 'utf8')).id === generation;
+}
+
 // Only root's read-only registry selects the destination; request headers never do.
 export async function forwardHandoff(req, res) {
   const generation = process.env.PROXY_CONTROL_GENERATION;

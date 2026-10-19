@@ -6,7 +6,11 @@ import { join, resolve, extname, sep } from 'node:path';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { Auth } from './auth.js';
 import { auditEvent } from './audit.js';
-import { forwardHandoff } from './handoff.js';
+import { Monitor } from '../shared/monitor.js';
+import { LogStore, logQuery } from '../shared/log-store.js';
+import { DiscordAlerts } from './discord.js';
+import { logView, logPage, logCursor, logParameters } from './logs.js';
+import { forwardHandoff, activeController } from './handoff.js';
 import { Discovery } from './komodo.js';
 import {
   Problem,
@@ -49,11 +53,14 @@ export function createApp({
   filesSocket = '/files-ipc/files.sock',
   distDir = resolve('dist'),
   auditLog = (record) => console.info(JSON.stringify(record)),
+  notificationRequest = fetch,
 }) {
   const deployment = { origin: policy.origin, ingressIPs: policy.ingressIPs };
   if (!store.get('settings')) store.set('settings', settingsFromPolicy(policy));
   const auth = new Auth(store, { origin: policy.origin, bootstrapToken, development });
   const publicAuth = new Map();
+  const archive = new LogStore(join(stateDir, 'logs.db'));
+  const monitoring = new Monitor({ archive });
   let queue = Promise.resolve();
   const serial = (fn) => {
     const next = queue.then(fn);
@@ -61,6 +68,9 @@ export function createApp({
     return next;
   };
   const edge = (path, options) => edgeRequest(edgeSocket, path, options);
+  const discord = new DiscordAlerts({ store, archive, edge, routes: () => store.snapshot().routes, request: notificationRequest });
+  const notificationTimer = setInterval(() => activeController().then((active) => active && discord.tick()).catch(() => {}), 10000);
+  notificationTimer.unref();
   function configuredFolders() {
     const snapshot = store.snapshot();
     const folders = new Map(snapshot.sites.map((site) => [site.directory, site]));
@@ -220,8 +230,11 @@ export function createApp({
       const event = auditEvent(path, req.method);
       if (event) res.once('finish', () => {
         try {
-          auditLog({ type: 'audit', time: new Date().toISOString(), event,
-            method: req.method, origin, status: res.statusCode });
+          const record = { type: 'audit', time: new Date().toISOString(), event,
+            method: req.method, origin, status: res.statusCode, source: req.socket.remoteAddress,
+            url: `${origin}${req.url}` };
+          monitoring.audit(record);
+          auditLog(record);
         } catch { console.error('Audit log unavailable'); }
       });
       if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method))
@@ -235,6 +248,53 @@ export function createApp({
       }
       if (path.startsWith('/api/')) {
         requestAuth.require(req, mutation);
+        if (path === '/api/logs/view' && req.method === 'GET') {
+          json(res, await logView(archive, edge, url.searchParams)); return;
+        }
+        if (path === '/api/logs/download' && req.method === 'GET') {
+          const query = logQuery(url.searchParams);
+          let cursor = {}, page = await logPage(archive, edge, query, cursor, { strict: true });
+          res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store',
+            'content-disposition': `attachment; filename="proxy-logs-${(query.from ?? new Date().toISOString()).slice(0, 10)}.ndjson"` });
+          while (!res.destroyed) {
+            for (const event of page.events) {
+              if (res.destroyed) return;
+              if (!res.write(JSON.stringify(event) + '\n')) await new Promise((resolve) => {
+                const finish = () => { res.off('drain', finish); res.off('close', finish); resolve(); };
+                res.once('drain', finish); res.once('close', finish);
+              });
+            }
+            if (!page.next) break;
+            cursor = logCursor(page.next);
+            page = await logPage(archive, edge, query, cursor, { strict: true });
+          }
+          res.end(); return;
+        }
+        if (path === '/api/logs' && req.method === 'GET') {
+          const query = logQuery(url.searchParams), component = url.searchParams.get('component') ?? 'edge';
+          if (!['edge', 'control'].includes(component)) throw new Problem(400, 'Invalid log component');
+          json(res, component === 'control' ? archive.history(query) : await edge(`/logs?${logParameters(query)}`, { timeout: 3000 }));
+          return;
+        }
+        if (path === '/api/notifications/discord' && req.method === 'GET') {
+          json(res, discord.status()); return;
+        }
+        if (path === '/api/notifications/discord' && req.method === 'PUT') {
+          const input = await bodyJSON(req);
+          json(res, await serial(() => discord.save(input))); return;
+        }
+        if (path === '/api/notifications/discord' && req.method === 'DELETE') {
+          await bodyJSON(req); json(res, await serial(() => discord.remove())); return;
+        }
+        if (path === '/api/notifications/discord/test' && req.method === 'POST') {
+          await bodyJSON(req); json(res, await serial(() => discord.test())); return;
+        }
+        if (path === '/api/monitoring' && req.method === 'GET') {
+          let traffic = null;
+          try { traffic = await edge('/monitoring', { timeout: 1500 }); } catch {}
+          json(res, { traffic, audit: monitoring.snapshot(), notifications: discord.status() });
+          return;
+        }
         if (path === '/api/state' && req.method === 'GET') {
           let edgeStatus;
           try {
@@ -571,11 +631,12 @@ export function createApp({
           },
           e instanceof Problem ? e.status : 500,
         );
-      else res.end();
+      else res.destroy();
     }
   });
   server.requestTimeout = 30000;
   server.headersTimeout = 10000;
   server.keepAliveTimeout = 5000;
+  server.on('close', () => { clearInterval(notificationTimer); archive.close(); });
   return { server, auth, discovery, apply };
 }

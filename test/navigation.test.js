@@ -53,7 +53,7 @@ test('browser history and refresh preserve pages, wizard steps and unsaved field
   nav.setPage('Settings');
   assert.equal(nav.getSnapshot().settingsSection, 'general');
   nav.setSettingsSection('certificates');
-  assert.equal(tab.location.pathname, '/settings/certificates');
+  assert.equal(tab.location.pathname, '/settings');
   assert.equal(createNavigation(tab.reload()).getSnapshot().settingsSection, 'certificates');
   nav.setPage('Folders');
   assert.equal(createNavigation(tab.reload()).getSnapshot().page, 'Folders');
@@ -132,7 +132,18 @@ test('old Files links resolve to Folders and Settings without losing wizard stat
     if (path.includes('/pages/')) {
       assert.equal(nav.getSnapshot().wizard.code, Number(path.split('/').at(-1).split('?')[0]));
       nav.setWizard(null);
-      assert.equal(tab.location.pathname, '/settings/error-pages');
+      assert.equal(tab.location.pathname, '/settings');
     }
+  }
+});
+
+test('settings always uses the canonical path while old section links and notification anchors still work', () => {
+  for (const [path, section] of [['/settings', 'general'], ['/settings/general', 'general'],
+    ['/settings/certificates', 'certificates'], ['/settings#notifications', 'notifications']]) {
+    const tab = browser([{ hash: path, state: null }]), nav = createNavigation(tab);
+    assert.equal(tab.location.pathname, '/settings');
+    assert.equal(tab.location.hash, '');
+    assert.equal(nav.getSnapshot().settingsSection, section);
+    assert.equal(createNavigation(tab.reload()).getSnapshot().settingsSection, section);
   }
 });

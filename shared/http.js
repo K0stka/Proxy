@@ -45,7 +45,7 @@ export function unixRequest(
         let size = 0;
         response.on('data', (c) => {
           size += c.length;
-          if (size > 2_000_000) response.destroy(new Error('Response too large'));
+          if (size > 8_000_000) response.destroy(new Error('Response too large'));
           else chunks.push(c);
         });
         response.on('error', reject);

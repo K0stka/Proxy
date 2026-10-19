@@ -16,6 +16,7 @@ const authEvents = new Map([
 export function auditEvent(path, method) {
   if (method === 'GET') return null;
   if (path.startsWith('/api/auth/')) return authEvents.get(path.slice(10)) ?? null;
+  if (/^\/api\/notifications\/discord(?:\/test)?$/.test(path)) return 'admin.notifications.changed';
   if (/^\/api\/routes(?:\/[0-9a-f-]{36}(?:\/(publish|disable|sync))?)?$/.test(path))
     return 'admin.routes.changed';
   if (/^\/api\/(settings|preferences|pages(?:\/(404|500|502))?|domains(?:\/[^/]+)?|sites\/(config|pull)|reconcile|certificates\/retry)$/.test(path))

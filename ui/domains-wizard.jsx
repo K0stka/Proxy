@@ -56,7 +56,7 @@ export default function DomainWizard({ initial, emailConfigured, onClose, onSave
         <>
           {!emailConfigured && (
             <p className="hint">
-              Set the shared email in <a href="/settings/certificates">Settings → Certificates</a>{' '}
+              Set the shared email in <a href="/settings#certificates">Settings → Certificates</a>{' '}
               before saving a domain.
             </p>
           )}

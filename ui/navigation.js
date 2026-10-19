@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-const pages = ['Routes', 'Services', 'Folders', 'Domains', 'Settings'];
+const pages = ['Routes', 'Services', 'Folders', 'Domains', 'Logs', 'Settings'];
 const kinds = ['route', 'folder', 'pages', 'domains'];
 
 export function createNavigation(browser) {
@@ -8,13 +8,17 @@ export function createNavigation(browser) {
   const drafts = new Map();
   function read() {
     const legacy = browser.location.hash?.startsWith('#/') ? browser.location.hash.slice(1) : '';
-    const url = new URL(legacy || `${browser.location.pathname}${browser.location.search}`, 'https://proxy.invalid');
+    const url = new URL(legacy || `${browser.location.pathname}${browser.location.search}${browser.location.hash ?? ''}`, 'https://proxy.invalid');
     const [, section, action, name] = url.pathname.split('/');
     const kind = section === 'domains' && ['new', 'edit'].includes(action) ? 'domains' : action;
     const domainName = section === 'domains' && action === 'edit' ? name : null;
     const code = ['files', 'settings'].includes(section) && kind === 'pages' ? ([404, 500, 502].includes(Number(name)) ? Number(name) : 404) : null;
     const page = code !== null ? 'Settings' : section === 'files' ? 'Folders' : pages.find((name) => name.toLowerCase() === section) ?? 'Routes';
     const saved = browser.history.state?.proxyNavigation;
+    const settingsSections = ['general', 'certificates', 'error-pages', 'access', 'notifications'];
+    const settingsSection = settingsSections.includes(url.hash.slice(1)) ? url.hash.slice(1)
+      : settingsSections.includes(kind) ? kind
+      : saved?.page === 'Settings' ? saved.settingsSection ?? 'general' : 'general';
     const matches = (saved?.page === page || (saved?.page === 'Files' && ['Folders', 'Settings'].includes(page))) && saved.wizard?.kind === kind &&
       (!domainName || (saved.wizard.initial?.name ?? saved.wizard.domainName) === domainName) &&
       (code === null || (saved.wizard.code ?? 404) === code) &&
@@ -27,7 +31,7 @@ export function createNavigation(browser) {
     const requestedStep = Math.floor(Number(url.searchParams.get('step'))) || 0;
     return {
       page, wizard, id,
-      settingsSection: code !== null ? 'error-pages' : page === 'Settings' && ['general', 'certificates', 'error-pages', 'access'].includes(kind) ? kind : 'general',
+      settingsSection: code !== null ? 'error-pages' : page === 'Settings' ? settingsSection : 'general',
       step: wizard ? Math.min(maxStep, Math.max(0, requestedStep)) : 0,
       draft: drafts.get(id) ?? (wizard && saved?.id === id ? saved.draft : null) ?? {},
     };
@@ -40,7 +44,7 @@ export function createNavigation(browser) {
     const wizardPath = next.wizard?.kind === 'domains'
       ? domainName ? `/edit/${domainName}` : '/new'
       : next.wizard?.kind === 'pages' ? `/pages/${next.wizard.code ?? 404}` : `/${next.wizard?.kind}`;
-    const path = `/${next.page.toLowerCase()}${next.wizard ? `${wizardPath}?step=${next.step}` : next.page === 'Settings' ? `/${next.settingsSection ?? 'general'}` : ''}`;
+    const path = `/${next.page.toLowerCase()}${next.wizard ? `${wizardPath}?step=${next.step}` : ''}`;
     browser.history[method]({ ...browser.history.state, proxyNavigation: next }, '', path);
     for (const listener of listeners) listener();
   }

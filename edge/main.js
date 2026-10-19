@@ -34,6 +34,8 @@ import { render } from './render.js';
 import { inspectSite, prepareSites } from './sites.js';
 import { readDeployment } from '../shared/env.js';
 import { Store } from '../shared/store.js';
+import { startMonitor } from './monitor.js';
+import { LogStore, logQuery } from '../shared/log-store.js';
 
 process.umask(0o007);
 const run = promisify(execFile),
@@ -43,6 +45,8 @@ const runtime = process.env.PROXY_EDGE_STATE ?? '/runtime',
   socket = process.env.PROXY_EDGE_SOCKET ?? '/ipc/edge.sock';
 await mkdir(runtime, { recursive: true });
 const state = new Store(join(runtime, 'edge.db'));
+const logArchive = new LogStore(join(runtime, 'logs.db'));
+const traffic = await startMonitor({ archive: logArchive });
 let child,
   applied = null,
   snapshot = { routes: [], pages: defaultPages },
@@ -145,6 +149,7 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
     staticSites: content.sites,
     errorSites: content.errors,
     bindIP: process.env.PROXY_EDGE_BIND_IP,
+    monitorPort: traffic.port,
   });
   await mkdir(directory, { mode: 0o750 });
   await writeFile(join(directory, 'nginx.conf'), output.config, { mode: 0o640 });
@@ -156,6 +161,7 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
       maxBuffer: 65536,
     });
   } catch (error) {
+    traffic.monitor.add({ type: 'operation', service: 'management', severity: 'warning', event: 'NGINX configuration validation failed' });
     console.error('NGINX preflight failed:', String(error.stderr ?? 'unavailable').slice(0, 4096));
     await rm(directory, { recursive: true, force: true });
     throw new Problem(
@@ -201,10 +207,12 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
     applied = result;
     certFingerprint = certs.fingerprint;
     failed = null;
+    traffic.monitor.add({ type: 'operation', service: 'management', severity: 'info', event: 'NGINX configuration activated' });
     // Retain files for workers draining long-lived connections after a reload.
     setTimeout(() => cleanup().catch(() => {}), 3605000).unref();
     return result;
   } catch {
+    traffic.monitor.add({ type: 'operation', service: 'management', severity: 'warning', event: 'NGINX activation failed; restoring previous configuration' });
     if (previous) {
       await switchTo(previous);
       child.kill('SIGHUP');
@@ -246,6 +254,25 @@ try {
 }
 const server = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {
   try {
+    const logURL = new URL(req.url, 'http://edge.local');
+    if (logURL.pathname === '/logs' && req.method === 'GET') {
+      json(res, logArchive.history(logQuery(logURL.searchParams)));
+      return;
+    }
+    if (logURL.pathname === '/log-summary' && req.method === 'GET') {
+      json(res, logArchive.summary(logQuery(logURL.searchParams)));
+      return;
+    }
+    if (logURL.pathname === '/alerts' && req.method === 'GET') {
+      const after = logURL.searchParams.get('after') ?? '0';
+      if (!/^\d+$/.test(after) || !Number.isSafeInteger(Number(after))) throw new Problem(400, 'Invalid alert cursor');
+      json(res, { events: logArchive.alertsAfter(Number(after)), latest: logArchive.latestId() });
+      return;
+    }
+    if (req.url === '/monitoring' && req.method === 'GET') {
+      json(res, traffic.monitor.snapshot());
+      return;
+    }
     if (req.url === '/status' && req.method === 'GET') {
       json(res, { ...applied, error: failed });
       return;
@@ -323,6 +350,7 @@ const certTimer = setInterval(
       if (certs.fingerprint !== certFingerprint) await apply(snapshot, { refreshContent: false });
     }).catch(() => {
       failed = 'Certificate reload failed; current workers retained';
+      traffic.monitor.add({ type: 'operation', service: 'management', severity: 'warning', event: failed });
     }),
   30000,
 );
@@ -332,6 +360,8 @@ for (const signal of ['SIGINT', 'SIGTERM'])
     shuttingDown = true;
     clearInterval(certTimer);
     server.close();
+    traffic.close();
+    logArchive.close();
     child.kill('SIGQUIT');
     setTimeout(() => process.exit(0), 31000).unref();
   });

@@ -16,6 +16,7 @@ import {
   Pencil,
   ArrowRight,
   CornerUpRight,
+  Activity,
 } from 'lucide-react';
 import { api } from './api.js';
 import { useToast } from './toasts.jsx';
@@ -34,14 +35,9 @@ import Settings from './settings.jsx';
 import Modal from './dialog.jsx';
 import Folders, { FolderWizard } from './folders.jsx';
 import DomainWizard from './domains-wizard.jsx';
+import Monitoring from './monitoring.jsx';
 import { useNavigation } from './navigation.js';
-const when = (value) =>
-  value
-    ? new Date(value).toLocaleString(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      })
-    : '—';
+import { formatDateTime as when } from './date-time.js';
 const icons = {
   http: Globe,
   static: FolderOpen,
@@ -227,12 +223,14 @@ export default function Workspace({ onLogout }) {
             ['Services', Server],
             ['Folders', FolderOpen],
             ['Domains', Globe],
+            ['Logs', Activity],
             ['Settings', SettingsIcon],
           ].map(([name, Icon]) => (
             <NavLink
               component="button"
               type="button"
               key={name}
+              className={name === 'Settings' ? 'desktop-settings' : undefined}
               label={name}
               leftSection={<Icon size={18} />}
               active={page === name}
@@ -242,6 +240,10 @@ export default function Workspace({ onLogout }) {
           ))}
         </nav>
         <div className="sidebar-bottom">
+          <Button className="text-button phone-settings" aria-label="Settings"
+            aria-current={page === 'Settings' ? 'page' : undefined} onClick={() => setPage('Settings')}>
+            <SettingsIcon size={18} />
+          </Button>
           <Button
             className="text-button"
             aria-label="Sign out"
@@ -347,6 +349,8 @@ export default function Workspace({ onLogout }) {
                 </Button>
               )}
             </div>
+            {document.querySelector('meta[name="proxy-preview"]') && <Alert color="blue" role="status">Demo traffic · Discord uses your saved webhook</Alert>}
+            {page === 'Logs' && <Monitoring state={state} onLogout={onLogout} />}
             {state.edge.error && (
               <Alert className="notice error" role="alert" color="red" variant="light">
                 {state.edge.error}
