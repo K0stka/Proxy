@@ -13,6 +13,7 @@ import {
   settingsFromPolicy,
   defaultSettings,
   effectivePolicy,
+  snapshotHash,
 } from '../shared/model.js';
 import http from 'node:http';
 import { generateKeyPairSync, randomBytes, createHash, sign } from 'node:crypto';
@@ -149,6 +150,21 @@ async function fixture(t, { empty = false } = {}) {
     setFail: (value) => (fail = value),
   };
 }
+
+test('persistence failure rolls a managed edge back using the activated revision hashes', async (t) => {
+  const f = await fixture(t);
+  const created = await (await f.request('/api/routes', { method: 'POST', body: route() })).json();
+  const set = f.store.set.bind(f.store);
+  let fail = true;
+  f.store.set = (key, value) => {
+    if (key === 'snapshot' && fail) { fail = false; throw new Error('Simulated persistence failure'); }
+    return set(key, value);
+  };
+  assert.equal((await f.request(`/api/routes/${created.id}/publish`, { method: 'POST' })).status, 503);
+  assert.equal(f.applies.length, 2);
+  assert.equal(f.applies[1].expectedHash, snapshotHash(f.applies[0]));
+  assert.equal(f.store.snapshot().routes[0].published, false);
+});
 
 test('audit records capture operation outcomes without credentials or request bodies', async (t) => {
   const f = await fixture(t);

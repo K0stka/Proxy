@@ -147,7 +147,8 @@ export function createApp({
         });
         await edge('/apply', {
           method: 'POST',
-          body: { ...old, settings: settingsFromPolicy(oldPolicy) },
+          body: { ...old, settings: settingsFromPolicy(oldPolicy),
+            expectedHash: snapshotHash(next), expectedPolicyHash: policyHash(nextPolicy) },
           timeout: 35000,
         });
       } catch {
