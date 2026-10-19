@@ -14,7 +14,7 @@ def main():
         return subprocess.run(args, check=True, **kwargs)
     server = work / 'server.py'
     server.write_text('''import socket,threading,time
-for ip,marker in [('10.250.242.2',b'old:'),('10.250.242.3',b'new:')]:
+for ip,marker in [('10.250.241.2',b'old:'),('10.250.242.3',b'new:')]:
  def tcp(ip=ip,marker=marker):
   s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);s.bind((ip,31001));s.listen()
   def echo(c,a):
@@ -39,6 +39,7 @@ while True:time.sleep(1)
         run(['ip', 'link', 'set', 'pht-test', 'netns', name])
         run(['ip', 'addr', 'add', '10.250.241.1/30', 'dev', 'pht-host'])
         run(['ip', 'link', 'set', 'pht-host', 'up'])
+        run(['ip', 'route', 'add', '10.250.242.0/24', 'via', '10.250.241.2', 'dev', 'pht-host'])
         ns = ['ip', 'netns', 'exec', name]
         for args in [['ip', 'link', 'set', 'lo', 'up'], ['ip', 'addr', 'add', '10.250.241.2/30', 'dev', 'pht-test'], ['ip', 'link', 'set', 'pht-test', 'up'], ['ip', 'addr', 'add', '10.250.242.2/32', 'dev', 'lo'], ['ip', 'addr', 'add', '10.250.242.3/32', 'dev', 'lo']]:
             run(ns + args)
@@ -51,9 +52,6 @@ while True:time.sleep(1)
 }
 '''
         run(ns + ['nft', '-f', '-'], input=rules, text=True)
-        for proto in ['-t', '-u']:
-            run(ns + ['ipvsadm', '-A', proto, '10.250.241.2:31001', '-s', 'rr'])
-            run(ns + ['ipvsadm', '-a', proto, '10.250.241.2:31001', '-r', '10.250.242.2:31001', '-m', '-w', '1'])
         proc = subprocess.Popen(ns + ['python3', str(server)])
         time.sleep(1)
         tcp = socket.create_connection(('10.250.241.2', 31001), timeout=2)
@@ -70,8 +68,13 @@ while True:time.sleep(1)
         check(tcp, b'old:')
         check(udp, b'old:', True)
         for proto in ['-t', '-u']:
+            run(ns + ['ipvsadm', '-A', proto, '10.250.241.2:31001', '-s', 'rr'])
+            run(ns + ['ipvsadm', '-a', proto, '10.250.241.2:31001', '-r', '10.250.241.2:31001', '-m', '-w', '1'])
+        check(tcp, b'old:')
+        check(udp, b'old:', True)
+        for proto in ['-t', '-u']:
             run(ns + ['ipvsadm', '-a', proto, '10.250.241.2:31001', '-r', '10.250.242.3:31001', '-m', '-w', '1'])
-            run(ns + ['ipvsadm', '-e', proto, '10.250.241.2:31001', '-r', '10.250.242.2:31001', '-m', '-w', '0'])
+            run(ns + ['ipvsadm', '-e', proto, '10.250.241.2:31001', '-r', '10.250.241.2:31001', '-m', '-w', '0'])
         check(tcp, b'old:')
         check(udp, b'old:', True)
         with socket.create_connection(('10.250.241.2', 31001), timeout=2) as fresh:
@@ -80,14 +83,20 @@ while True:time.sleep(1)
         newudp.settimeout(2)
         check(newudp, b'new:', True)
         print('PASS: TCP/UDP handoff retains old sessions, moves new sessions, preserves client IP.', flush=True)
-        for port in [31002]:
+        run(ns + ['ipvsadm', '-A', '-t', '10.250.241.2:31002', '-s', 'rr'])
+        run(ns + ['ipvsadm', '-a', '-t', '10.250.241.2:31002', '-r', '10.250.242.3:31001', '-m'])
+        for ip, port in [('10.250.241.2', 31002), ('10.250.242.3', 31001)]:
             try:
-                socket.create_connection(('10.250.241.2', port), timeout=.3)
+                socket.create_connection((ip, port), timeout=.3)
             except OSError:
                 pass
             else:
                 raise AssertionError('Firewall bypass')
-        print('PASS: input firewall deny remains effective.', flush=True)
+        print('PASS: public deny and direct-generation isolation remain effective with live IPVS destinations.', flush=True)
+        run(ns + ['ipvsadm', '-A', '-t', '127.0.0.1:31001', '-s', 'rr'])
+        run(ns + ['ipvsadm', '-a', '-t', '127.0.0.1:31001', '-r', '10.250.242.3:31001', '-m'])
+        run(ns + ['python3', '-c', "import socket; s=socket.create_connection(('127.0.0.1',31001),timeout=2); s.sendall(b'local'); assert s.recv(1024)==b'new:127.0.0.1:local'"])
+        print('PASS: private loopback management handoff.', flush=True)
     finally:
         if proc:
             proc.terminate()

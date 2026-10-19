@@ -34,6 +34,12 @@ MAX_GENERATIONS = 16
 DRAIN_SECONDS = 3600
 
 
+class ControlError(RuntimeError):
+    def __init__(self, status):
+        super().__init__('Control operation failed: HTTP ' + str(status))
+        self.status = status
+
+
 def run(args, **kwargs):
     return subprocess.check_output(args, text=True, **kwargs).strip()
 
@@ -65,7 +71,7 @@ def request(path, method, url, body=None):
             raise RuntimeError('Oversized control response')
         value = json.loads(raw) if raw else None
         if response.status >= 400:
-            raise RuntimeError('Control operation failed: HTTP ' + str(response.status))
+            raise ControlError(response.status)
         return value
 
 
@@ -242,6 +248,7 @@ class Broker:
         env.pop('PROXY_HANDOFF_AGENT', None)
         host = copy.deepcopy(template['host'])
         host['NetworkMode'] = 'host'
+        host['CgroupParent'] = 'proxy-generations.slice'
         host.pop('PortBindings', None)
         host['Binds'] = [f"{m['Source']}:{m['Destination']}:{'rw' if m['RW'] else 'ro'}"
                          for m in template['mounts'] if role != 'edge' or m['Destination'] not in ['/runtime', '/ipc']]
@@ -258,7 +265,7 @@ class Broker:
             os.chown(directory / 'edge.db', 10002, 10000)
             os.chown(directory, 10002, 10000)
             host['Binds'].append(f'{directory}:/runtime:rw')
-            env.update(PROXY_EDGE_BIND_IP=ip, PROXY_EDGE_SOCKET='/runtime/edge.sock')
+            env.update(PROXY_EDGE_BIND_IP=ip, PROXY_EDGE_SOCKET='/runtime/edge.sock', PROXY_EDGE_MANAGED='true')
             entry['socket'] = str(directory / 'edge.sock')
             entry['ports'] = ports(snapshot, self.vip)
         else:
@@ -283,7 +290,9 @@ class Broker:
                             raise RuntimeError('Candidate configuration is unavailable')
                         entry['status'] = status
                         hostname = snapshot['settings'].get('adminHostname')
-                        if hostname:
+                        if hostname and any(hostname == domain or (
+                                hostname.endswith('.' + domain) and domain in status.get('wildcardDomains', []))
+                                for domain in status.get('readyDomains', [])):
                             verify_admin(ip, hostname)
                     else:
                         with closing(http.client.HTTPConnection(ip, 3001, timeout=1)) as connection:
@@ -302,11 +311,17 @@ class Broker:
 
     def remove(self, entry):
         if entry.get('container'):
-            docker('DELETE', '/containers/' + entry['container'] + '?force=true')
+            try:
+                docker('DELETE', '/containers/' + entry['container'] + '?force=true')
+            except ControlError as error:
+                if error.status != 404:
+                    raise
         if not entry.get('legacy'):
             # Never recursively delete an application-writable directory as root.
             # State directories are retained for manual recovery and later bounded cleanup.
-            run(['ip', 'address', 'del', entry['ip'] + '/32', 'dev', 'lo'])
+            current = json.loads(run(['ip', '-j', 'address', 'show', 'dev', 'lo']))
+            if any(info['local'] == entry['ip'] for interface in current for info in interface['addr_info']):
+                run(['ip', 'address', 'del', entry['ip'] + '/32', 'dev', 'lo'])
 
     def activate(self, edge, control=None, reason='configuration'):
         before = copy.deepcopy(self.state)
@@ -348,7 +363,32 @@ class Broker:
     def drop_destinations(self, entry):
         vip = self.vip if entry['role'] == 'edge' else '127.0.0.1'
         for proto, port in entry.get('ports', [['tcp', 3001]]):
-            run(['ipvsadm', '-d', *service_args(vip, proto, port), '-r', f"{entry['ip']}:{port}"])
+            key = service_args(vip, proto, port)
+            target = f"{entry['ip']}:{port}"
+            if any(line.startswith('-a ' + ' '.join(key) + ' ') and (' -r ' + target + ' ') in line
+                   for line in run(['ipvsadm', '-Sn']).splitlines()):
+                run(['ipvsadm', '-d', *key, '-r', target])
+
+    def recover(self):
+        active = {entry['id'] for entry in [self.state['edge'], self.state['control'], *self.state['draining']]}
+        for entry in self.state.get('pending', []):
+            if entry['id'] in active:
+                continue
+            names = run(['docker', 'ps', '-aq', '--filter', 'name=^proxy-generation-' + entry['id'] + '$'])
+            if names:
+                entry['container'] = names
+            self.drop_destinations(entry)
+            self.remove(entry)
+            audit('abandoned_candidate', generation=entry['id'])
+        self.state['pending'] = []
+
+    def refresh_certificates(self):
+        with self.lock:
+            if self.state['edge'].get('legacy'):
+                return
+            if request(self.state['edge']['socket'], 'GET', '/certificates/changed').get('changed'):
+                edge = self.new('edge', self.state['edge']['image'], self.state['snapshot'])
+                self.activate(edge, reason='certificate')
 
     def reap(self):
         with self.lock:
@@ -440,6 +480,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 elif (self.command, self.path) in [('GET', '/status'), ('GET', '/network'),
                        ('POST', '/probe'), ('POST', '/pages/validate'), ('POST', '/sites/inspect')]:
                     result = request(broker.state['edge']['socket'], self.command, self.path, body)
+                    if self.path == '/status':
+                        with closing(http.client.HTTPConnection(broker.state['control']['ip'], 3001, timeout=2)) as connection:
+                            connection.request('GET', '/healthz')
+                            if connection.getresponse().status != 200:
+                                raise RuntimeError('Active controller is unavailable')
                 else:
                     raise PermissionError('Unsupported control operation')
         except PermissionError:
@@ -514,6 +559,7 @@ def main():
     REGISTRY.mkdir(mode=0o755, exist_ok=True)
     os.chmod(REGISTRY, 0o755)
     broker = Broker()
+    broker.recover()
     broker.network()
     socket_path = Path(broker.config['ipc']) / 'edge.sock'
     socket_path.unlink(missing_ok=True)
@@ -522,10 +568,14 @@ def main():
         os.chown(socket_path, 0, 10000)
         os.chmod(socket_path, 0o660)
         def cleanup():
+            ticks = 0
             while True:
                 time.sleep(5)
                 try:
                     broker.reap()
+                    ticks += 1
+                    if ticks % 6 == 0:
+                        broker.refresh_certificates()
                 except Exception:
                     audit('cleanup_failed')
         threading.Thread(target=cleanup, daemon=True).start()

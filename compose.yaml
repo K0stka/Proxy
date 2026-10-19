@@ -24,7 +24,7 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN, FOWNER, SETUID, SETGID, SETPCAP]
     security_opt: [no-new-privileges:true]
-    ports: ['127.0.0.1:3001:3001']
+    ports: ['127.0.0.1:${PROXY_CONTROL_PORT:-3001}:3001']
     volumes:
       - control_state:/state
       - certificate_policy:/cert-policy

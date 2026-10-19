@@ -250,6 +250,10 @@ const server = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {
       json(res, { ...applied, error: failed });
       return;
     }
+    if (req.url === '/certificates/changed' && req.method === 'GET') {
+      json(res, { changed: (await certificates()).fingerprint !== certFingerprint });
+      return;
+    }
     if (req.url === '/probe' && req.method === 'POST') {
       const { host, port } = await bodyJSON(req);
       if (!safeTarget(host, port))
@@ -314,6 +318,7 @@ server.listen(socket, async () => {
 const certTimer = setInterval(
   () =>
     serial(async () => {
+      if (process.env.PROXY_EDGE_MANAGED === 'true') return;
       const certs = await certificates();
       if (certs.fingerprint !== certFingerprint) await apply(snapshot, { refreshContent: false });
     }).catch(() => {

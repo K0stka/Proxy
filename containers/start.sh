@@ -20,7 +20,7 @@ host_path() {
 role=$1
 shift
 if [ "${PROXY_HANDOFF_AGENT:-false}" = true ]; then
-    set -- node containers/handoff-agent.js
+    set -- node containers/handoff-agent.js "$role"
 fi
 case "$role" in
     control)

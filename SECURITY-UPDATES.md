@@ -14,6 +14,12 @@ time, method, management origin, and status; bodies and credentials are excluded
 
 ## Automatic updates
 
+The VPS now uses [connection-preserving handoffs](HANDOFF.md). Compose's control
+and edge containers are status agents when `PROXY_HANDOFF_ENABLED=true`; the
+tested updater activates application generations through the root-only broker
+operation. Public firewall checks still precede traffic dispatch. Old flows drain
+for at most one hour, with forced retirement recorded in persistent audit logs.
+
 Dependabot opens daily npm minor/patch updates. GitHub Actions runs the application
 checks and isolated container suite. A separate privileged workflow merges only a
 successful, current Dependabot revision that changes package.json/package-lock.json.

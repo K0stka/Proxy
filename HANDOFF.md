@@ -25,6 +25,8 @@ the generation, role, deadline policy and remaining count (null for pre-migratio
 connections that IPVS cannot count). At most 16 draining generations are allowed;
 further changes fail safely rather than evicting active sessions prematurely.
 The broker also refuses overlap when less than 512 MiB of memory is available.
+All generations share a 2 GiB memory ceiling and a 2,048-process ceiling, protecting
+the rest of the host from accumulation of old instances.
 
 Deployment audit: `/var/log/proxy-deployments.jsonl` and
 `journalctl -u proxy-handoff.service`. Persistent management audit:

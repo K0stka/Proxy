@@ -1,0 +1,7 @@
+[Unit]
+Description=Aggregate memory and process budget for overlapping proxy generations
+
+[Slice]
+MemoryHigh=1536M
+MemoryMax=2G
+TasksMax=2048
