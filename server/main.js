@@ -25,6 +25,7 @@ const app = createApp({
   certificatePolicyStore,
   store,
   stateDir,
+  logPath: process.env.PROXY_LOG_PATH,
   development,
   bootstrapToken: process.env.PROXY_BOOTSTRAP_TOKEN ?? '',
   edgeSocket: process.env.PROXY_EDGE_SOCKET ?? '/ipc/edge.sock',

@@ -11,9 +11,11 @@ import subprocess
 import tempfile
 
 
-def update():
+def update(log_root=None):
     # Keep verbose Docker progress out of Komodo's size-limited MongoDB document.
-    root = Path('/var/log/proxy-updates')
+    config = Path('/var/lib/proxy-handoff/log-storage.json')
+    root = log_root if log_root is not None else (
+        Path(json.loads(config.read_text())['root']) / 'host/updates' if config.exists() else Path('/var/log/proxy-updates'))
     root.mkdir(mode=0o700, exist_ok=True)
     descriptor, name = tempfile.mkstemp(prefix='update-', suffix='.log', dir=root)
     print('Detailed update log: ' + name, flush=True)

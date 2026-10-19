@@ -45,7 +45,7 @@ const runtime = process.env.PROXY_EDGE_STATE ?? '/runtime',
   socket = process.env.PROXY_EDGE_SOCKET ?? '/ipc/edge.sock';
 await mkdir(runtime, { recursive: true });
 const state = new Store(join(runtime, 'edge.db'));
-const logArchive = new LogStore(join(runtime, 'logs.db'));
+const logArchive = new LogStore(process.env.PROXY_LOG_PATH ?? join(runtime, 'logs.db'));
 const traffic = await startMonitor({ archive: logArchive });
 let child,
   applied = null,

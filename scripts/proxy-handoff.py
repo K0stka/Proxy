@@ -335,6 +335,10 @@ class Broker:
         host.pop('PortBindings', None)
         host['Binds'] = [f"{m['Source']}:{m['Destination']}:{'rw' if m['RW'] else 'ro'}"
                          for m in template['mounts'] if role != 'edge' or m['Destination'] not in ['/runtime', '/ipc']]
+        if self.config.get('logVolume'):
+            host['Binds'] = [mount for mount in host['Binds'] if mount.split(':')[1] not in ['/logs', '/audit']]
+            host['Binds'].append(self.config['logVolume'] + ':/logs:rw')
+            env['PROXY_LOG_PATH'] = '/logs/' + role + '/logs.db'
         if role == 'edge':
             host['Tmpfs']['/ipc'] = 'rw,noexec,nosuid,size=1m,mode=2770,uid=10002,gid=10000'
             directory = STATE / identifier
@@ -354,9 +358,10 @@ class Broker:
             entry['ports'] = ports(snapshot, self.vip)
         else:
             env.update(PROXY_LISTEN_HOST=ip, PROXY_CONTROL_GENERATION=identifier)
-            env['PROXY_AUDIT_PATH'] = '/audit/events.jsonl'
+            env['PROXY_AUDIT_PATH'] = '/logs/audit/events.jsonl' if self.config.get('logVolume') else '/audit/events.jsonl'
             host['Binds'].append(f'{REGISTRY}:/handoff:ro')
-            host['Binds'].append('/var/log/proxy-management-audit:/audit:rw')
+            if not self.config.get('logVolume'):
+                host['Binds'].append('/var/log/proxy-management-audit:/audit:rw')
         config['Env'] = [key + '=' + value for key, value in env.items()]
         config['HostConfig'] = host
         self.address(ip)
@@ -396,6 +401,15 @@ class Broker:
             raise
 
     def remove(self, entry):
+        if getattr(self, 'config', {}).get('logVolume') and entry.get('container'):
+            from proxy_log_storage import sync
+            # Flush a retiring legacy writer before its private directory is removed.
+            try:
+                docker('POST', '/containers/' + entry['container'] + '/stop?t=5')
+            except ControlError as error:
+                if error.status != 404:
+                    raise
+            sync(complete=True)
         if entry.get('container'):
             try:
                 docker('DELETE', '/containers/' + entry['container'] + '?force=true')
@@ -607,6 +621,9 @@ class Broker:
 
     def reap(self):
         with self.lock:
+            if getattr(self, 'config', {}).get('logVolume'):
+                from proxy_log_storage import sync
+                sync()
             for entry in list(self.state['draining']):
                 count = generation_count(entry)
                 forced = time.time() >= entry['deadline']
@@ -777,11 +794,16 @@ def initialize():
 
 
 def main():
+    global AUDIT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--initialize', action='store_true')
     args = parser.parse_args()
     os.umask(0o077)
-    audit_dir = Path('/var/log/proxy-management-audit')
+    log_config = STATE / 'log-storage.json'
+    log_root = Path(json.loads(log_config.read_text())['root']) if log_config.exists() else None
+    if log_root:
+        AUDIT = log_root / 'host/deployments.jsonl'
+    audit_dir = log_root / 'audit' if log_root else Path('/var/log/proxy-management-audit')
     audit_dir.mkdir(mode=0o750, exist_ok=True)
     os.chown(audit_dir, 0, 10000)
     os.chmod(audit_dir, 0o750)

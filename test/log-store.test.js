@@ -73,6 +73,28 @@ test('two generation writers share the retention budget and monotonic cursor', a
   assert.equal(a.latestId(), 20);
 });
 
+test('shared history survives generation retirement and reopening', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'proxy-shared-logs-'));
+  const file = join(dir, 'logs.db');
+  const old = new LogStore(file), active = new LogStore(file);
+  for (let i = 0; i < 120; i++) old.append(event(Date.now(), i));
+  old.flush();
+  for (let i = 120; i < 160; i++) active.append(event(Date.now(), i));
+  active.flush();
+  old.append(event(Date.now(), 160));
+  old.close();
+  assert.equal(active.status().count, 161);
+  assert.equal(active.summary().totals.requests, 161);
+  active.close();
+  const reopened = new LogStore(file);
+  t.after(async () => { reopened.close(); await rm(dir, { recursive: true, force: true }); });
+  assert.equal(reopened.status().count, 161);
+  assert.equal(reopened.latestId(), 161);
+  const first = reopened.history();
+  assert.equal(first.events.length, 100);
+  assert.equal(reopened.history({ before: first.next }).events.length, 61);
+});
+
 test('chart summaries count retained traffic and response outcomes in 60 real minute buckets', () => {
   let now = Date.parse('2026-10-19T14:30:25Z');
   const archive = new LogStore(':memory:', { now: () => now });

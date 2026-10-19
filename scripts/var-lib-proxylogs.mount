@@ -1,0 +1,14 @@
+[Unit]
+Description=Host access to the external proxy_logs volume
+Requires=docker.service
+After=docker.service
+Before=proxy-handoff.service
+
+[Mount]
+What=/var/lib/docker/volumes/proxy_logs/_data
+Where=/var/lib/proxylogs
+Type=none
+Options=bind
+
+[Install]
+WantedBy=multi-user.target

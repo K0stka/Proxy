@@ -2,10 +2,14 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 
 const configuration = JSON.parse(
   execFileSync('docker', ['compose', 'config', '--format', 'json'], { encoding: 'utf8' }),
 );
+assert.equal(configuration.volumes.logs.external, true);
+assert.equal(configuration.services.edge.volumes.find((m) => m.target === '/logs').type, 'volume');
+assert.equal(configuration.services.control.volumes.find((m) => m.target === '/logs').type, 'volume');
 for (const [name, service] of Object.entries(configuration.services)) {
   assert.notEqual(service.pull_policy, 'build');
   assert(!service.depends_on || Object.keys(service.depends_on).length === 0);
@@ -54,7 +58,7 @@ const hostStorage = JSON.parse(
 assert.deepEqual(Object.keys(hostStorage.services).sort(), ['certificates', 'control', 'edge', 'files']);
 for (const [name, service] of Object.entries(hostStorage.services)) {
   for (const mount of service.volumes) {
-    if (['/ipc', '/files-ipc'].includes(mount.target)) {
+    if (['/ipc', '/files-ipc', '/logs'].includes(mount.target)) {
       assert.equal(mount.type, 'volume');
       continue;
     }
@@ -97,7 +101,7 @@ if (process.env.PROXY_SKIP_BUILD !== 'true')
 run([
   'run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL',
   ...['NET_BIND_SERVICE', 'CHOWN', 'FOWNER', 'SETUID', 'SETGID', 'SETPCAP'].flatMap(cap => ['--cap-add', cap]),
-  ...['/state', '/cert-policy', '/cert-requests', '/runtime', '/ipc', '/certbot', '/tls', '/cert-status'].flatMap(path => ['--tmpfs', path + ':rw,nosuid,size=1m']),
+  ...['/state', '/cert-policy', '/cert-requests', '/runtime', '/ipc', '/certbot', '/tls', '/cert-status', '/logs'].flatMap(path => ['--tmpfs', path + ':rw,nosuid,size=1m']),
   '--mount', `type=bind,source=${resolve(source, 'test/startup.test.js')},target=/checks/startup.test.js,readonly`,
   '--env', 'PROXY_STARTUP_TEST=true', '--entrypoint', 'node',
   'proxy-edge', '--test', '/checks/startup.test.js',
@@ -187,4 +191,24 @@ try {
   ]);
 } finally {
   run([...smoke, 'down', '--volumes']);
+}
+
+// Destroy only an isolated test project; its explicitly external log volume survives.
+const project = 'proxy-log-check-' + randomUUID().slice(0, 8), logVolume = project + '-logs';
+const manifest = { services: { writer: {
+  image: 'proxy-edge', entrypoint: ['node', '--input-type=module', '-e'],
+  command: ["import { LogStore } from './shared/log-store.js'; const db=new LogStore('/logs/test.db'); db.append({time:new Date().toISOString(),type:'traffic',service:'catch-all',event:'persistent'}); db.close();"],
+  network_mode: 'none', read_only: true, cap_drop: ['ALL'], volumes: ['logs:/logs'],
+} }, volumes: { logs: { external: true, name: logVolume } } };
+const isolated = ['compose', '-p', project, '-f', '-'];
+run(['volume', 'create', logVolume]);
+try {
+  run([...isolated, 'run', '--rm', 'writer'], JSON.stringify(manifest));
+  run([...isolated, 'down', '--volumes'], JSON.stringify(manifest));
+  run(['volume', 'inspect', logVolume]);
+  manifest.services.writer.command = ["import assert from 'node:assert/strict'; import { LogStore } from './shared/log-store.js'; const db=new LogStore('/logs/test.db'); assert.equal(db.history().events[0].event,'persistent'); db.close(); console.log('PASS: external log history survives Compose destroy with volumes');"];
+  run([...isolated, 'run', '--rm', 'writer'], JSON.stringify(manifest));
+} finally {
+  run([...isolated, 'down', '--volumes'], JSON.stringify(manifest));
+  run(['volume', 'rm', logVolume]);
 }

@@ -55,6 +55,11 @@ not a Komodo administrative API key. API access is over the existing Tailscale l
   backs up SQLite, builds/tests images, activates and verifies them, and rolls back.
 - /usr/local/lib/proxy-maintenance.py and komodo_inventory.py: fixed root commands
   and actual-container Compose inventory/webhook publication.
+- var-lib-proxylogs.mount: exposes the external proxy_logs named volume at
+  /var/lib/proxylogs for host tools. This is a bind alias to the same data.
+- /usr/local/lib/proxy_log_storage.py: imports surviving legacy log records,
+  including final records before a retiring generation is deleted. Import workers
+  drop to the owning application UID; SQLite WAL files keep the correct owner.
 - Existing Ubuntu unattended security upgrades and logrotate. Host/Docker restarts
   still require maintenance; generation handoffs cannot survive a host reboot.
 
@@ -63,13 +68,16 @@ application containers receive no Docker socket, network-admin capability or
 Komodo write credentials. Host script changes require administrator installation;
 ordinary application updates do not silently replace privileged host programs.
 
-Detailed update output: /var/log/proxy-updates/update-*.log (root-only, latest seven
+Detailed update output: /var/lib/proxylogs/host/updates/update-*.log (root-only, latest seven
 runs). Komodo receives the log path and at most the last 16 KB, so verbose Docker
 progress cannot overflow its execution document. Builds pull current base images,
 refresh OS package layers daily, and cache unchanged layers between same-day runs.
 
-Deployment audit: /var/log/proxy-deployments.jsonl. Management audit:
-/var/log/proxy-management-audit/events.jsonl. Broker diagnostics:
+Deployment audit: /var/lib/proxylogs/host/deployments.jsonl. Management audit:
+/var/lib/proxylogs/audit/events.jsonl. Traffic and administration archives:
+/var/lib/proxylogs/edge/logs.db and /var/lib/proxylogs/control/logs.db. The Stack
+declares proxy_logs external, so Compose destroy, even with volumes, retains it.
+See [log storage](LOG-STORAGE.md) for migration and lifecycle details. Broker diagnostics:
 journalctl -u proxy-handoff.service. Local snapshots retain seven SQLite backups
 and the previous image set; off-server backup remains a separate responsibility.
 

@@ -30,9 +30,9 @@ The broker also refuses overlap when less than 512 MiB of memory is available.
 All generations share a 2 GiB memory ceiling and a 2,048-process ceiling, protecting
 the rest of the host from accumulation of old instances.
 
-Deployment audit: `/var/log/proxy-deployments.jsonl` and
+Deployment audit: `/var/lib/proxylogs/host/deployments.jsonl` and
 `journalctl -u proxy-handoff.service`. Persistent management audit:
-`/var/log/proxy-management-audit/events.jsonl`. Both files are private and rotated
+`/var/lib/proxylogs/audit/events.jsonl`. Both files are private and rotated
 for 14 archives. Application logs are available from the active container IDs in
 `/var/lib/proxy-handoff/state.json`; that file and templates are root-only.
 Komodo's Update Proxy Procedure owns version updates and the daily schedule.

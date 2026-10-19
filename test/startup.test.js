@@ -5,7 +5,7 @@ import { writeFileSync, statSync } from 'node:fs';
 
 test('startup prepares storage repeatedly and runs each role without setup privileges',
   { skip: process.env.PROXY_STARTUP_TEST !== 'true' }, () => {
-    const env = { ...process.env, PROXY_DATA_PATH: '', PROXY_SITES_PATH: '' };
+    const env = { ...process.env, PROXY_DATA_PATH: '', PROXY_SITES_PATH: '', PROXY_LOG_PATH: '/logs/test.db' };
     writeFileSync('/state/existing', 'keep', { mode: 0o644 });
     const existing = statSync('/state/existing');
     for (const [role, uid, path, mode, caps] of [
@@ -28,6 +28,11 @@ test('startup prepares storage repeatedly and runs each role without setup privi
           for (const kind of ['Eff', 'Prm', 'Bnd', 'Amb'])
             assert.equal(BigInt('0x' + status.match(new RegExp('Cap' + kind + ':\\\\s+(\\\\w+)'))[1]), BigInt('0x${caps}'));
           fs.writeFileSync('${path}/writable', 'ok');
+          if (${uid} === 10001 || ${uid} === 10002) {
+            const own = ${uid} === 10001 ? 'control' : 'edge';
+            fs.writeFileSync('/logs/' + own + '/writable', 'ok');
+            if (${uid} === 10002) assert.throws(() => fs.readFileSync('/logs/control/writable'), { code: 'EACCES' });
+          }
         `], { env, stdio: 'pipe' });
       const info = statSync(path);
       assert.equal(info.uid, uid);

@@ -1,7 +1,7 @@
 [Unit]
 Description=Connection-preserving proxy generation manager
-After=docker.service network-online.target ufw.service
-Requires=docker.service
+After=docker.service network-online.target ufw.service var-lib-proxylogs.mount
+Requires=docker.service var-lib-proxylogs.mount
 Wants=network-online.target
 
 [Service]
@@ -15,7 +15,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=read-only
 ProtectSystem=strict
-ReadWritePaths=/var/lib/proxy-handoff /run/proxy-handoff /var/log /var/lib/docker/volumes
+ReadWritePaths=/var/lib/proxy-handoff /run/proxy-handoff /var/log /var/lib/docker/volumes /var/lib/proxylogs
 RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK
 
 [Install]

@@ -25,14 +25,14 @@ class MaintenanceTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args[0], 0)
             output = io.StringIO()
             with patch.object(maintenance, 'Path', side_effect=path), patch.object(maintenance.subprocess, 'run', side_effect=run), patch('sys.stdout', output):
-                maintenance.update()
+                maintenance.update(Path(directory))
             self.assertLess(len(output.getvalue()), 17000)
             self.assertIn('Deployment passed', output.getvalue())
             log = next(Path(directory).glob('update-*.log'))
             self.assertEqual(log.stat().st_mode & 0o777, 0o600)
             self.assertGreater(log.stat().st_size, 100000)
             with patch.object(maintenance, 'Path', side_effect=path), patch.object(maintenance.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)), patch('sys.stdout', io.StringIO()):
-                with self.assertRaises(subprocess.CalledProcessError): maintenance.update()
+                with self.assertRaises(subprocess.CalledProcessError): maintenance.update(Path(directory))
 
     def test_fixed_broker_command_uses_and_closes_a_real_unix_http_connection(self):
         class Handler(http.server.BaseHTTPRequestHandler):

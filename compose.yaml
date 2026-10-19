@@ -14,6 +14,7 @@ services:
     environment:
       <<: *deployment
       PROXY_CERT_POLICY: /cert-policy/policy.db
+      PROXY_LOG_PATH: /logs/control/logs.db
       PROXY_BOOTSTRAP_TOKEN: ${PROXY_BOOTSTRAP_TOKEN:-}
       PROXY_KOMODO_URL: ${PROXY_KOMODO_URL:-}
       PROXY_KOMODO_KEY: ${PROXY_KOMODO_KEY:-}
@@ -27,6 +28,7 @@ services:
     ports: ['127.0.0.1:${PROXY_CONTROL_PORT:-3001}:3001']
     volumes:
       - control_state:/state
+      - logs:/logs
       - certificate_policy:/cert-policy
       - edge_ipc:/ipc
       - files_ipc:/files-ipc
@@ -51,7 +53,9 @@ services:
 
   edge:
     build: { context: ., dockerfile: containers/edge.Dockerfile }
-    environment: *deployment
+    environment:
+      <<: *deployment
+      PROXY_LOG_PATH: /logs/edge/logs.db
     restart: unless-stopped
     # Node supervises NGINX and handles shutdown directly; no root init process.
     init: false
@@ -65,6 +69,7 @@ services:
     volumes:
       - edge_ipc:/ipc
       - edge_state:/runtime
+      - logs:/logs
       - tls:/tls:ro
       - ${PROXY_SITES_PATH:-./sites}:/sites:ro
     tmpfs: ['/tmp:rw,noexec,nosuid,size=128m,uid=10002,gid=10000']
@@ -137,6 +142,9 @@ services:
     logging: *logging
 
 volumes:
+  logs:
+    external: true
+    name: ${PROXY_LOG_VOLUME:-proxy_logs}
   control_state:
   edge_ipc:
   files_ipc:

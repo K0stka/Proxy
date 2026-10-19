@@ -50,7 +50,7 @@ This updater targets the repository-backed `proxy` project using compose.paths.y
 and its protected .env. It does not overwrite Komodo's environment configuration.
 Use Update Proxy in Komodo for immediate updates. Its Actions stream the fixed
 host updater's bounded output excerpt and propagate failures. Complete root-only
-logs are retained at /var/log/proxy-updates/update-*.log (latest seven runs),
+logs are retained at /var/lib/proxylogs/host/updates/update-*.log (latest seven runs),
 avoiding Komodo's 16 MiB execution document limit. Ordinary registry polling does not
 rebuild these locally built images or run their tests. See
 [Komodo maintenance](KOMODO-MAINTENANCE.md) for installed host components and workflow.

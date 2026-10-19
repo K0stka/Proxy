@@ -1,4 +1,4 @@
-/var/log/proxy-deployments.jsonl {
+/var/lib/proxylogs/host/deployments.jsonl {
     su root root
     daily
     rotate 14
@@ -8,7 +8,7 @@
     compress
     create 0600 root root
 }
-/var/log/proxy-management-audit/events.jsonl {
+/var/lib/proxylogs/audit/events.jsonl {
     su root root
     daily
     rotate 14

@@ -40,6 +40,7 @@ export function createApp({
   store,
   certificatePolicyStore,
   stateDir,
+  logPath = join(stateDir, 'logs.db'),
   bootstrapToken,
   edgeSocket,
   certStatusDir,
@@ -59,7 +60,7 @@ export function createApp({
   if (!store.get('settings')) store.set('settings', settingsFromPolicy(policy));
   const auth = new Auth(store, { origin: policy.origin, bootstrapToken, development });
   const publicAuth = new Map();
-  const archive = new LogStore(join(stateDir, 'logs.db'));
+  const archive = new LogStore(logPath);
   const monitoring = new Monitor({ archive });
   let queue = Promise.resolve();
   const serial = (fn) => {

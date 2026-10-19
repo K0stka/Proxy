@@ -31,12 +31,20 @@ case "$role" in
             case "$data/" in "$sites/"*) fail 'Keep data outside public sites' ;; esac
         fi
         prepare /state 10001 0700
+        if [ -n "${PROXY_LOG_PATH:-}" ]; then
+            mkdir -p /logs/control
+            prepare /logs/control 10001 0700
+        fi
         prepare /cert-policy 10001 2750
         prepare /cert-requests 10003 2770
         uid=10001
         ;;
     edge)
         prepare /runtime 10002 0700
+        if [ -n "${PROXY_LOG_PATH:-}" ]; then
+            mkdir -p /logs/edge
+            prepare /logs/edge 10002 0700
+        fi
         prepare /ipc 10002 2770
         exec proxy-as-edge "$@"
         ;;
