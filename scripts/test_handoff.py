@@ -3,6 +3,8 @@ import io
 import json
 from pathlib import Path
 import unittest
+import tempfile
+import os
 from unittest.mock import patch, Mock
 
 spec = importlib.util.spec_from_file_location('handoff', Path(__file__).with_name('proxy-handoff.py'))
@@ -104,6 +106,21 @@ class HandoffTests(unittest.TestCase):
                 broker.watch_agents()
                 self.assertEqual(docker.call_count, 2)
                 self.assertIn('edge', broker.state['paused'])
+
+    def test_cleanup_does_not_follow_application_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identifier = 'a' * 32
+            (root / identifier).mkdir()
+            sentinel = root / 'keep.txt'
+            sentinel.write_text('keep')
+            (root / identifier / 'link').symlink_to(sentinel)
+            broker = handoff.Broker.__new__(handoff.Broker)
+            broker.state = {}
+            with patch.object(handoff, 'STATE', root), patch.object(handoff, 'run', return_value='[{"addr_info": []}]'):
+                broker.remove({'id': identifier, 'ip': '10.254.240.2', 'role': 'edge'})
+            self.assertEqual(sentinel.read_text(), 'keep')
+            self.assertFalse((root / identifier).exists())
 
 
 if __name__ == '__main__':

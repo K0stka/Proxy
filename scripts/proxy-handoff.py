@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import socket
 import socketserver
 import sqlite3
@@ -233,6 +234,8 @@ class Broker:
         memory = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
         if int(memory['MemAvailable'].split()[0]) < 512 * 1024:
             raise RuntimeError('Insufficient free memory for a safe overlapping deployment')
+        if shutil.disk_usage(STATE).free < 2 * 1024 ** 3:
+            raise RuntimeError('Insufficient free disk space for a safe overlapping deployment')
         used = {entry['ip'] for entry in [self.state['edge'], self.state['control'], *self.state['draining']]}
         used.update(entry['ip'] for entry in self.state.get('pending', []))
         used.update(reserved)
@@ -322,11 +325,21 @@ class Broker:
                 if error.status != 404:
                     raise
         if not entry.get('legacy'):
-            # Never recursively delete an application-writable directory as root.
-            # State directories are retained for manual recovery and later bounded cleanup.
             current = json.loads(run(['ip', '-j', 'address', 'show', 'dev', 'lo']))
             if any(info['local'] == entry['ip'] for interface in current for info in interface['addr_info']):
                 run(['ip', 'address', 'del', entry['ip'] + '/32', 'dev', 'lo'])
+            if entry['role'] == 'edge':
+                if not re.fullmatch(r'[0-9a-f]{32}', entry['id']) or not shutil.rmtree.avoids_symlink_attacks:
+                    raise RuntimeError('Safe generation cleanup is unavailable')
+                # Root's parent is immutable to applications; fd-based rmtree
+                # refuses symlink traversal inside the app-owned child tree.
+                parent = os.open(STATE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    shutil.rmtree(entry['id'], dir_fd=parent)
+                except FileNotFoundError:
+                    pass
+                finally:
+                    os.close(parent)
         if any(item['id'] == entry['id'] for item in self.state.get('pending', [])):
             self.state['pending'] = [item for item in self.state['pending'] if item['id'] != entry['id']]
             self.persist()
