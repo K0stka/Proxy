@@ -1,5 +1,6 @@
 FROM nginx:stable-alpine AS nginx
 FROM node:26-alpine3.24
+ARG PROXY_SECURITY_REFRESH
 RUN apk upgrade --no-cache && apk add --no-cache pcre2 openssl ca-certificates setpriv \
     && addgroup -g 10000 proxy && adduser -D -H -u 10002 -G proxy edge \
     && mkdir -p /ipc /runtime /tls /sites && chown 10002:10000 /ipc /runtime \

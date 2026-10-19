@@ -11,6 +11,7 @@ RUN npm run build && npm prune --omit=dev --ignore-scripts
 
 FROM node:26-alpine3.24
 WORKDIR /app
+ARG PROXY_SECURITY_REFRESH
 RUN apk upgrade --no-cache && apk add --no-cache setpriv \
     && addgroup -g 10000 proxy && adduser -D -H -u 10001 -G proxy control \
     && mkdir /state /ipc /cert-status /cert-requests /cert-policy \

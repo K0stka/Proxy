@@ -8,6 +8,24 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import tempfile
+
+
+def update():
+    # Keep verbose Docker progress out of Komodo's size-limited MongoDB document.
+    root = Path('/var/log/proxy-updates')
+    root.mkdir(mode=0o700, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(prefix='update-', suffix='.log', dir=root)
+    print('Detailed update log: ' + name, flush=True)
+    with os.fdopen(descriptor, 'wb') as log:
+        result = subprocess.run(['/usr/local/lib/proxy-security-update.py'], stdout=log, stderr=subprocess.STDOUT)
+    with open(name, 'rb') as log:
+        log.seek(0, os.SEEK_END)
+        log.seek(max(0, log.tell() - 16000))
+        print(log.read().decode(errors='replace'), flush=True)
+    for old in sorted(root.glob('update-*.log'), key=lambda p: p.stat().st_mtime, reverse=True)[7:]:
+        old.unlink()
+    result.check_returncode()
 
 
 def broker(path):
@@ -43,7 +61,7 @@ def main():
             output.write(environment.read_bytes())
         temporary.chmod(0o600)
         temporary.replace(target)
-        subprocess.run(['/usr/local/lib/proxy-security-update.py'], check=True)
+        update()
         broker('/inventory')
     elif args.operation in ['inventory', 'retire-draining']:
         print(json.dumps(broker('/' + args.operation)), flush=True)

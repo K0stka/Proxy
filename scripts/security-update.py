@@ -231,9 +231,11 @@ def main():
     shutil.copyfile(repo / '.env', candidate / '.env')
     try:
         # No build/pull operation may change a running container before these tests pass.
-        run(['docker', 'build', '--pull', '-f', 'containers/check.Dockerfile', '-t', 'proxy-security-check', '.'], cwd=candidate)
+        # Refresh OS package layers daily; reuse unchanged layers between updates.
+        refresh = ['--build-arg', 'PROXY_SECURITY_REFRESH=' + time.strftime('%Y-%m-%d', time.gmtime())]
+        run(['docker', 'build', '--pull', *refresh, '-f', 'containers/check.Dockerfile', '-t', 'proxy-security-check', '.'], cwd=candidate)
         for service in SERVICES:
-            run(compose(candidate) + ['build', '--pull', '--no-cache', service], cwd=candidate)
+            run(compose(candidate) + ['build', '--pull', *refresh, service], cwd=candidate)
         run(['docker', 'run', '--rm', '--memory', '768m', '--cpus', '1',
              '--mount', 'type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
              '--env', 'PROXY_SKIP_BUILD=true', '--env', 'PROXY_TEST_SOURCE=' + str(candidate),

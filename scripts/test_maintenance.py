@@ -6,6 +6,8 @@ import socketserver
 import tempfile
 import threading
 import unittest
+import io
+import subprocess
 from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location('maintenance', Path(__file__).with_name('proxy-maintenance.py'))
@@ -14,6 +16,24 @@ spec.loader.exec_module(maintenance)
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_verbose_updates_are_private_and_terminal_output_is_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def path(value):
+                return Path(directory) if value == '/var/log/proxy-updates' else Path(value)
+            def run(*args, **kwargs):
+                kwargs['stdout'].write(b'x' * 100000 + b'\nDeployment passed\n')
+                return subprocess.CompletedProcess(args[0], 0)
+            output = io.StringIO()
+            with patch.object(maintenance, 'Path', side_effect=path), patch.object(maintenance.subprocess, 'run', side_effect=run), patch('sys.stdout', output):
+                maintenance.update()
+            self.assertLess(len(output.getvalue()), 17000)
+            self.assertIn('Deployment passed', output.getvalue())
+            log = next(Path(directory).glob('update-*.log'))
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+            self.assertGreater(log.stat().st_size, 100000)
+            with patch.object(maintenance, 'Path', side_effect=path), patch.object(maintenance.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)), patch('sys.stdout', io.StringIO()):
+                with self.assertRaises(subprocess.CalledProcessError): maintenance.update()
+
     def test_fixed_broker_command_uses_and_closes_a_real_unix_http_connection(self):
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self, *_):

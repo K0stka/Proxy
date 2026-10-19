@@ -65,7 +65,11 @@ def write_inventory(root, state, inspect, atomic):
 
 
 def update_running():
-    with open('/var/lib/proxy-security-updates/update.lock', 'a') as lock:
+    try:
+        lock = open('/var/lib/proxy-security-updates/update.lock', 'r')
+    except FileNotFoundError:
+        return False
+    with lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:

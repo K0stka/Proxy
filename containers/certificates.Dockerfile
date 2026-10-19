@@ -1,5 +1,6 @@
 FROM certbot/dns-cloudflare:latest
 USER root
+ARG PROXY_SECURITY_REFRESH
 RUN apk upgrade --no-cache && apk add --no-cache openssl setpriv \
     && addgroup -g 10000 proxy && adduser -D -H -u 10003 -G proxy certificates \
     && mkdir -p /certbot /tls /cert-status /cert-requests \

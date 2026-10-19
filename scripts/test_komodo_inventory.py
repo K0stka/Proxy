@@ -2,6 +2,8 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import fcntl
 
 spec = importlib.util.spec_from_file_location('inventory', Path(__file__).with_name('komodo_inventory.py'))
 inventory = importlib.util.module_from_spec(spec)
@@ -9,6 +11,22 @@ spec.loader.exec_module(inventory)
 
 
 class InventoryTests(unittest.TestCase):
+    def test_update_lock_check_needs_only_read_access_and_detects_contention(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / 'lock'
+            lock.touch(mode=0o400)
+            original_open = open
+            def read_lock(name, mode):
+                self.assertEqual(mode, 'r')
+                return original_open(lock, mode)
+            with patch('builtins.open', side_effect=read_lock):
+                self.assertFalse(inventory.update_running())
+                with original_open(lock, 'r') as held:
+                    fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self.assertTrue(inventory.update_running())
+            with patch('builtins.open', side_effect=FileNotFoundError):
+                self.assertFalse(inventory.update_running())
+
     def test_inventory_keeps_secrets_out_of_compose_and_preserves_restrictions(self):
         container = {
             'Image': 'sha256:image',

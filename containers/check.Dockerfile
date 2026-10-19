@@ -1,4 +1,5 @@
 FROM node:26-alpine3.24
+ARG PROXY_SECURITY_REFRESH
 RUN apk upgrade --no-cache && apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git python3
 ENV DOCKER_BUILDKIT=1
 WORKDIR /app

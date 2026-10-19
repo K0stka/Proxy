@@ -63,6 +63,11 @@ application containers receive no Docker socket, network-admin capability or
 Komodo write credentials. Host script changes require administrator installation;
 ordinary application updates do not silently replace privileged host programs.
 
+Detailed update output: /var/log/proxy-updates/update-*.log (root-only, latest seven
+runs). Komodo receives the log path and at most the last 16 KB, so verbose Docker
+progress cannot overflow its execution document. Builds pull current base images,
+refresh OS package layers daily, and cache unchanged layers between same-day runs.
+
 Deployment audit: /var/log/proxy-deployments.jsonl. Management audit:
 /var/log/proxy-management-audit/events.jsonl. Broker diagnostics:
 journalctl -u proxy-handoff.service. Local snapshots retain seven SQLite backups

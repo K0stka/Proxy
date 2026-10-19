@@ -1,6 +1,7 @@
 FROM node:26-alpine3.24
 ARG PROXY_FILES_UID=1000
 ARG PROXY_GIT_SSH_PATH=
+ARG PROXY_SECURITY_REFRESH
 RUN apk upgrade --no-cache && apk add --no-cache git openssh-client ca-certificates setpriv \
     && addgroup -g 10000 proxy && mkdir /ipc /sites \
     && if ! getent passwd "$PROXY_FILES_UID" >/dev/null; then adduser -D -H -u "$PROXY_FILES_UID" -G proxy files; fi

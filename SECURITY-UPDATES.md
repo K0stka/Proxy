@@ -30,7 +30,9 @@ remain manual. GitHub Actions and Dependabot must be enabled for the repository.
 The Komodo Procedure runs daily at 04:15 Europe/Prague. The former systemd update
 timer is disabled. It fetches main, creates a private candidate source tree, pulls current
 Node 26 / Alpine 3.24, official stable NGINX, and Certbot images, upgrades Alpine packages, and rebuilds all
-four services. Node's major version and Alpine's release remain selected explicitly;
+four services. A UTC-date build argument invalidates OS package layers daily;
+unchanged layers are cached for additional updates on the same day. Base images
+are still checked with --pull on every update. Node's major version and Alpine's release remain selected explicitly;
 Certbot follows its upstream latest image. New images must pass application, build,
 startup privilege, NGINX, certificate, and Compose integration tests before deployment.
 Tests use isolated networks, synthetic credentials, and disposable proxy-smoke volumes.
@@ -47,7 +49,9 @@ These local snapshots are not a substitute for off-server encrypted backups.
 This updater targets the repository-backed `proxy` project using compose.paths.yaml
 and its protected .env. It does not overwrite Komodo's environment configuration.
 Use Update Proxy in Komodo for immediate updates. Its Actions stream the fixed
-host updater's output and propagate failures. Ordinary registry polling does not
+host updater's bounded output excerpt and propagate failures. Complete root-only
+logs are retained at /var/log/proxy-updates/update-*.log (latest seven runs),
+avoiding Komodo's 16 MiB execution document limit. Ordinary registry polling does not
 rebuild these locally built images or run their tests. See
 [Komodo maintenance](KOMODO-MAINTENANCE.md) for installed host components and workflow.
 
