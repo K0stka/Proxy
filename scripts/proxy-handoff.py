@@ -205,6 +205,8 @@ class Broker:
         revisions = STATE / 'image-revisions.json'
         revision = json.loads(revisions.read_text()).get(image, '') if revisions.exists() else ''
         if not re.fullmatch(r'[0-9a-f]{40}', revision):
+            if self.config.get('komodoManaged'):
+                raise RuntimeError('Image has no verified source revision')
             # Pre-migration images have no trustworthy source revision metadata.
             return 'proxy-generation-' + uuid.uuid4().hex
         counters = self.state.setdefault('nameCounters', {})
@@ -219,9 +221,11 @@ class Broker:
     def force_retire(self):
         retired = []
         active = {self.state[role]['id'] for role in ['edge', 'control']}
+        active_containers = {self.state[role].get('container') for role in ['edge', 'control']}
+        if any(entry['id'] in active or (entry.get('container') and entry['container'] in active_containers)
+               for entry in self.state['draining']):
+            raise RuntimeError('Refusing to retire an active generation')
         for entry in list(self.state['draining']):
-            if entry['id'] in active:
-                raise RuntimeError('Refusing to retire an active generation')
             count = generation_count(entry)
             self.drop_destinations(entry)
             self.remove(entry)

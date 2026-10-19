@@ -6,14 +6,15 @@ the fixed root updater through a Komodo Action. Build/test output and failure
 status appear in Komodo. Only passing images are handed over; failed deployment
 health checks restore the previous images. The systemd update timer is disabled.
 
-The proxy Stack uses compose.komodo.yaml from the Repo. It includes the root-owned
+The proxy Stack links directly to the Proxy Repo resource on main and uses its
+compose.komodo.yaml. No commit pin or GitHub CI success is required. It includes the root-owned
 /var/lib/proxy-handoff/compose.json, listing actual active and draining containers,
 files, and certificates. Private environment files remain under that root-only
 directory. Compose inventory deployments use --no-recreate --no-build --pull never
 and select files/certificates only; they never replace live traffic generations.
 Use Update Proxy for application version updates. Ordinary Stack Deploy refreshes
-inventory only, at the last successful tested commit pinned by Refresh Proxy Stack.
-The Repo continues tracking main independently, showing available source changes.
+inventory only. The Repo and Stack both track main; actual runtime source revisions
+remain visible in container names and the updater's last-success record.
 
 New generation names are edge-<six-character-commit>-<counter> and
 control-<six-character-commit>-<counter>. Counters start at zero per role and commit,

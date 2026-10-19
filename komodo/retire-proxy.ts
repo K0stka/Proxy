@@ -1,7 +1,7 @@
 // Deliberately interrupts sessions attached to draining generations only.
 let exitCode = "missing";
 await komodo.execute_server_terminal({
-  server: "K0stkaVPS", command: "/usr/local/lib/proxy-maintenance.py retire-draining",
+  server: "K0stkaVPS", terminal: "proxy-retire", command: "/usr/local/lib/proxy-maintenance.py retire-draining",
   init: { command: "bash" },
 }, {
   onLine: (line) => console.log(line),
