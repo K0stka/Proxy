@@ -4,12 +4,18 @@ import { Auth, hash, randomToken } from '../server/auth.js';
 import { Store } from '../shared/store.js';
 import { auditEvent } from '../server/audit.js';
 import { render } from '../edge/render.js';
+import { safeTarget } from '../shared/model.js';
 import { policy, snapshot } from './fixtures.js';
 
 const response = () => {
   const headers = new Map();
   return { getHeader: (key) => headers.get(key), setHeader: (key, value) => headers.set(key, value) };
 };
+
+test('private handoff addresses cannot be configured as proxy backends', () => {
+  for (const host of ['10.254.240.2', '10.254.240.250', '::ffff:10.254.240.2'])
+    assert.equal(safeTarget(host, 443), false);
+});
 
 test('pending sign-ins survive a controller handoff, stay origin-bound and consume once', (t) => {
   const store = new Store(':memory:');

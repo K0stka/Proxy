@@ -192,6 +192,9 @@ class Broker:
         atomic(REGISTRY / 'active.json', {'id': control['id'], 'ip': control['ip']}, 0o644)
 
     def network(self):
+        # Once a generation is forcibly removed, expire its stale kernel flows
+        # so reconnecting UDP clients can reach the current generation.
+        Path('/proc/sys/net/ipv4/vs/expire_nodest_conn').write_text('1\n')
         # Input filtering happens BEFORE IPVS's LOCAL_IN dispatch. Direct traffic
         # to generation addresses must never bypass the public UFW rules.
         rules = '''table inet proxy_handoff_guard {
@@ -385,7 +388,9 @@ class Broker:
             audit('rollback', generation=edge['id'])
             raise
         audit('switched', generation=edge['id'], reason=reason,
-              drainSeconds=DRAIN_SECONDS, retiring=[e['id'] for e in retiring])
+              drainSeconds=DRAIN_SECONDS, retiring=[e['id'] for e in retiring],
+              retirementDeadline=datetime.datetime.fromtimestamp(
+                  max(e['deadline'] for e in retiring), datetime.timezone.utc).isoformat())
         return edge['status']
 
     def drop_destinations(self, entry):

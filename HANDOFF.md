@@ -23,6 +23,8 @@ Old generations retire when their IPVS flow count reaches zero. At one hour they
 are forcibly retired, interrupting any remaining flows. The deployment audit records
 the generation, role, deadline policy and remaining count (null for pre-migration
 connections that IPVS cannot count). At most 16 draining generations are allowed;
+IPVS expires flows whose backend has been removed, allowing reconnecting UDP
+clients to reach the current instance instead of remaining pinned to a dead one.
 further changes fail safely rather than evicting active sessions prematurely.
 The broker also refuses overlap when less than 512 MiB of memory is available.
 All generations share a 2 GiB memory ceiling and a 2,048-process ceiling, protecting

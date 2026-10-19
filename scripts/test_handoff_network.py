@@ -41,6 +41,7 @@ while True:time.sleep(1)
         run(['ip', 'link', 'set', 'pht-host', 'up'])
         run(['ip', 'route', 'add', '10.250.242.0/24', 'via', '10.250.241.2', 'dev', 'pht-host'])
         ns = ['ip', 'netns', 'exec', name]
+        run(ns + ['sysctl', '-q', '-w', 'net.ipv4.vs.expire_nodest_conn=1'])
         for args in [['ip', 'link', 'set', 'lo', 'up'], ['ip', 'addr', 'add', '10.250.241.2/30', 'dev', 'pht-test'], ['ip', 'link', 'set', 'pht-test', 'up'], ['ip', 'addr', 'add', '10.250.242.2/32', 'dev', 'lo'], ['ip', 'addr', 'add', '10.250.242.3/32', 'dev', 'lo']]:
             run(ns + args)
         rules = '''table inet test_guard {
@@ -97,6 +98,16 @@ while True:time.sleep(1)
         run(ns + ['ipvsadm', '-a', '-t', '127.0.0.1:31001', '-r', '10.250.242.3:31001', '-m'])
         run(ns + ['python3', '-c', "import socket; s=socket.create_connection(('127.0.0.1',31001),timeout=2); s.sendall(b'local'); assert s.recv(1024)==b'new:127.0.0.1:local'"])
         print('PASS: private loopback management handoff.', flush=True)
+        run(ns + ['ipvsadm', '-d', '-u', '10.250.241.2:31001', '-r', '10.250.241.2:31001'])
+        udp.settimeout(.5)
+        for attempt in range(3):
+            try:
+                check(udp, b'new:', True)
+                break
+            except socket.timeout:
+                if attempt == 2:
+                    raise
+        print('PASS: forced UDP retirement permits reconnection on the same client socket.', flush=True)
     finally:
         if proc:
             proc.terminate()
