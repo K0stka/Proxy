@@ -64,16 +64,20 @@ def write_inventory(root, state, inspect, atomic):
     atomic(root / 'compose.json', manifest)
 
 
-def notify(root):
-    """A signed webhook can refresh only this fixed Komodo Action, not administer Core."""
-    settings = root / 'komodo.json'
-    if not settings.exists():
-        return False
+def update_running():
     with open('/var/lib/proxy-security-updates/update.lock', 'a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            return False
+            return True
+    return False
+
+
+def notify(root):
+    """A signed webhook can refresh only this fixed Komodo Action, not administer Core."""
+    settings = root / 'komodo.json'
+    if not settings.exists() or update_running():
+        return False
     config = json.loads(settings.read_text())
     body = b'{"ref":"refs/heads/main"}'
     signature = hmac.new(config['secret'].encode(), body, hashlib.sha256).hexdigest()

@@ -51,6 +51,8 @@ def main():
     print('PROXY_DEPLOYED_REVISION=' + result['revision'], flush=True)
     state = json.loads(Path('/var/lib/proxy-handoff/state.json').read_text())
     print('PROXY_PAUSED=' + ('1' if state.get('paused') else '0'), flush=True)
+    print('PROXY_ACTIVE=' + json.dumps([state[role]['name'] for role in ['edge', 'control']]), flush=True)
+    print('PROXY_DRAINING=' + json.dumps([entry['name'] for entry in state['draining']]), flush=True)
 
 
 if __name__ == '__main__':

@@ -27,6 +27,12 @@ control-<six-character-commit>-<counter>. Counters start at zero per role and co
 increase persistently, and skip occupied names. Multiple draining versions remain
 supported, subject to the existing memory and generation limits. Old containers
 retire when idle, or forcibly after one hour.
+Idle retirement allows 30 seconds for Komodo metadata to settle, extending that
+window during an active update but never beyond the original one-hour deadline.
+Only draining generations are excluded from aggregate Stack health checks; active
+edge/controller and infrastructure remain checked. Generation health exclusions
+are maintained by Refresh Proxy Stack so expected retirement does not cause a
+false unhealthy alert. Other manually configured exclusions are retained.
 
 Force Retire Old Proxy Containers is manual only. It removes only broker-recorded
 draining generations, refuses active generations, and audits remaining connection

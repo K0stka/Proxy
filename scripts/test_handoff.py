@@ -13,6 +13,26 @@ spec.loader.exec_module(handoff)
 
 
 class HandoffTests(unittest.TestCase):
+    def test_idle_retirement_allows_metadata_to_update_but_keeps_hard_deadline(self):
+        broker = handoff.Broker.__new__(handoff.Broker)
+        broker.lock = __import__('threading').RLock()
+        broker.config = {'komodoManaged': True}
+        entry = {'id': 'old', 'role': 'edge', 'deadline': 3600}
+        broker.state = {'draining': [entry]}
+        broker.drop_destinations, broker.remove, broker.persist = Mock(), Mock(), Mock()
+        with patch.object(handoff, 'generation_count', return_value=0), patch('komodo_inventory.update_running', return_value=False), patch.object(handoff, 'audit'):
+            with patch.object(handoff.time, 'time', return_value=0): broker.reap()
+            with patch.object(handoff.time, 'time', return_value=29): broker.reap()
+            broker.remove.assert_not_called()
+            with patch.object(handoff.time, 'time', return_value=30): broker.reap()
+            broker.remove.assert_called_once_with(entry)
+        broker.remove.reset_mock()
+        entry = {'id': 'old-2', 'role': 'edge', 'deadline': 3600, 'idleRetireAfter': 5000}
+        broker.state = {'draining': [entry]}
+        with patch.object(handoff, 'generation_count', return_value=0), patch.object(handoff.time, 'time', return_value=3600), patch.object(handoff, 'audit'):
+            broker.reap()
+            broker.remove.assert_called_once_with(entry)
+
     def test_komodo_operator_stop_is_preserved_without_status_agents(self):
         broker = handoff.Broker.__new__(handoff.Broker)
         broker.config = {'komodoManaged': True}

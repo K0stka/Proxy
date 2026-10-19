@@ -612,6 +612,15 @@ class Broker:
                 forced = time.time() >= entry['deadline']
                 if count != 0 and not forced:
                     continue
+                if count == 0 and not forced and getattr(self, 'config', {}).get('komodoManaged'):
+                    from komodo_inventory import update_running
+                    # Let Komodo classify this as draining before deleting its
+                    # container. Keep the original hard one-hour deadline.
+                    entry.setdefault('idleRetireAfter', time.time() + 30)
+                    if update_running():
+                        entry['idleRetireAfter'] = time.time() + 30
+                    if time.time() < min(entry['deadline'], entry['idleRetireAfter']):
+                        continue
                 self.drop_destinations(entry)
                 self.remove(entry)
                 self.state['draining'].remove(entry)
