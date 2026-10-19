@@ -294,6 +294,8 @@ class Broker:
         configure_service('127.0.0.1', 'tcp', 3001, backends)
 
     def new(self, role, image, snapshot=None, reserved=()):
+        if self.config.get('komodoManaged'):
+            self.config = json.loads((STATE / 'templates.json').read_text())
         memory = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
         if int(memory['MemAvailable'].split()[0]) < 512 * 1024:
             raise RuntimeError('Insufficient free memory for a safe overlapping deployment')
@@ -503,6 +505,9 @@ class Broker:
                     elif status == 'running':
                         paused.discard(role)
                 if paused != before:
+                    for entry in self.state.get('draining', []):
+                        if entry['role'] in paused - before:
+                            docker('POST', '/containers/' + entry['container'] + '/stop?t=5')
                     self.state['paused'] = sorted(paused)
                     self.routes()
                     self.persist()

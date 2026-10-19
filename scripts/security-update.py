@@ -20,6 +20,7 @@ import urllib.request
 from urllib.parse import urlparse
 
 SERVICES = ('control', 'edge', 'files', 'certificates')
+TEMPLATE_PATH = Path('/var/lib/proxy-handoff/templates.json')
 
 
 def run(args, *, cwd=None, capture=False, **kwargs):
@@ -135,7 +136,7 @@ def health(previous, admin_host, isolation=True):
 
 def deploy(directory, previous, admin_host, rollback_file, check=health,
            rollback_check=lambda previous, host: health(previous, host, isolation=False),
-           wait=time.sleep, attempts=36, managed=None):
+           wait=time.sleep, attempts=36, managed=None, rollback_templates=None):
     if managed is None:
         managed = Path('/var/lib/proxy-handoff/state.json').exists()
     switched = False
@@ -158,6 +159,11 @@ def deploy(directory, previous, admin_host, rollback_file, check=health,
             wait(5)
         raise RuntimeError('Candidate health verification failed')
     except BaseException:
+        if rollback_templates is not None:
+            temporary = TEMPLATE_PATH.with_suffix('.restore')
+            shutil.copyfile(rollback_templates, temporary)
+            temporary.chmod(0o600)
+            temporary.replace(TEMPLATE_PATH)
         if switched:
             handoff({service: previous[SERVICES.index(service)]['Image'] for service in ['control', 'edge']})
         rollback_images(previous)
@@ -206,6 +212,9 @@ def main():
     revision = run(['git', 'rev-parse', 'origin/main'], cwd=repo, capture=True).strip()
     environment_hash = hashlib.sha256((repo / '.env').read_bytes()).digest()
     work = Path(tempfile.mkdtemp(prefix='run-', dir=args.state))
+    template_backup = work / 'rollback.templates.json' if TEMPLATE_PATH.exists() else None
+    if template_backup is not None:
+        shutil.copyfile(TEMPLATE_PATH, template_backup)
     preserve_images(previous, work)
     rollback_file = work / 'rollback.compose.json'
     rollback_file.write_text(json.dumps({'services': {service: {'image': container['Image']} for service, container in zip(SERVICES, previous)}}))
@@ -253,10 +262,15 @@ def main():
             temporary.write_text(json.dumps(mapping))
             temporary.chmod(0o600)
             temporary.replace(mapping_path)
-        deploy(repo, previous, settings.get('adminHostname'), rollback_file)
+        deploy(repo, previous, settings.get('adminHostname'), rollback_file, rollback_templates=template_backup)
     except BaseException:
         # Do not overwrite tags from a concurrent Komodo deployment. deploy() handles
         # its own rollback after it starts replacing running containers.
+        if template_backup is not None:
+            temporary = TEMPLATE_PATH.with_suffix('.restore')
+            shutil.copyfile(template_backup, temporary)
+            temporary.chmod(0o600)
+            temporary.replace(TEMPLATE_PATH)
         if [c['Id'] for c in containers()] == [c['Id'] for c in previous]:
             rollback_images(previous)
         raise

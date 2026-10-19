@@ -5,6 +5,8 @@ The Proxy Repo tracks K0stka/Proxy main on K0stkaVPS. Update Proxy runs daily at
 the fixed root updater through a Komodo Action. Build/test output and failure
 status appear in Komodo. Only passing images are handed over; failed deployment
 health checks restore the previous images. The systemd update timer is disabled.
+Rollback also restores the previous root-owned controller/edge environment before
+starting the old images. Seven local recovery snapshots include those templates.
 The Stack environment remains managed in Komodo. Before building, the Procedure
 syncs it to the linked checkout; the fixed root helper copies it privately into
 the independent build checkout at /etc/komodo/stacks/proxy. This keeps later UI

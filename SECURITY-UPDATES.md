@@ -62,7 +62,9 @@ systemctl daemon-reload
 # systemctl enable --now proxy-security-update.timer
 ```
 
-Run immediately with `systemctl start proxy-security-update.service`. Inspect
+On the Komodo-managed VPS, run Update Proxy in Procedures. The standalone
+systemd unit remains available to host administrators; its timer stays disabled.
+Inspect
 `journalctl -u proxy-security-update.service` and
 `/var/lib/proxy-security-updates/last-success.json`. Failures leave a failed systemd
 unit and preserve the existing deployment or trigger image rollback. Run this trusted

@@ -16,11 +16,13 @@ class HandoffTests(unittest.TestCase):
     def test_komodo_operator_stop_is_preserved_without_status_agents(self):
         broker = handoff.Broker.__new__(handoff.Broker)
         broker.config = {'komodoManaged': True}
-        broker.state = {'edge': {'container': 'edge'}, 'control': {'container': 'control'}}
+        broker.state = {'edge': {'container': 'edge'}, 'control': {'container': 'control'},
+                        'draining': [{'role': 'edge', 'container': 'old-edge'}]}
         broker.lock = __import__('threading').RLock()
         broker.routes, broker.persist = Mock(), Mock()
-        with patch.object(handoff, 'inspect', return_value={'State': {'Status': 'exited'}}), patch.object(handoff, 'audit'):
+        with patch.object(handoff, 'inspect', return_value={'State': {'Status': 'exited'}}), patch.object(handoff, 'audit'), patch.object(handoff, 'docker') as docker:
             broker.watch_agents()
+            docker.assert_called_once_with('POST', '/containers/old-edge/stop?t=5')
         self.assertEqual(broker.state['paused'], ['control', 'edge'])
         with patch.object(handoff, 'inspect', return_value={'State': {'Status': 'running'}}), patch.object(handoff, 'audit'):
             broker.watch_agents()

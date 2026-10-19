@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import tempfile
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('security_update', Path(__file__).with_name('security-update.py'))
@@ -9,6 +10,26 @@ spec.loader.exec_module(updater)
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_managed_rollback_restores_environment_before_restarting_old_images(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            template = root / 'templates.json'
+            template.write_text('{"environment":"candidate"}')
+            backup = root / 'backup.json'
+            backup.write_text('{"environment":"previous"}')
+            previous = [{'Image': 'old-control'}, {'Image': 'old-edge'}]
+            calls = []
+            def handoff(images):
+                calls.append(images)
+                if len(calls) == 2:
+                    self.assertEqual(template.read_text(), backup.read_text())
+            with patch.object(updater, 'run', return_value='sha256:candidate'), patch.object(updater, 'handoff', side_effect=handoff), patch.object(updater, 'TEMPLATE_PATH', template):
+                with self.assertRaisesRegex(RuntimeError, 'health verification failed'):
+                    updater.deploy(root, previous, None, root / 'rollback.json',
+                        check=lambda *_: False, rollback_check=lambda *_: True,
+                        wait=lambda _: None, attempts=1, managed=True, rollback_templates=backup)
+            self.assertEqual(len(calls), 2)
+
     def test_git_checks_out_readable_sources_without_relaxing_other_commands(self):
         with patch.object(updater.subprocess, 'check_call') as call:
             updater.run(['git', 'merge', '--ff-only', 'revision'])
