@@ -1,0 +1,5 @@
+# Runtime membership is root-owned, contains every active/draining generation,
+# and is refreshed after each handoff. Secret environment files stay on the VPS.
+name: proxy
+include:
+  - /var/lib/proxy-handoff/compose.json

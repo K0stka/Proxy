@@ -14,11 +14,11 @@ time, method, management origin, and status; bodies and credentials are excluded
 
 ## Automatic updates
 
-The VPS now uses [connection-preserving handoffs](HANDOFF.md). Compose's control
-and edge containers are status agents when `PROXY_HANDOFF_ENABLED=true`; the
-tested updater activates application generations through the root-only broker
-operation. Public firewall checks still precede traffic dispatch. Old flows drain
-for at most one hour, with forced retirement recorded in persistent audit logs.
+The VPS uses [connection-preserving handoffs](HANDOFF.md), orchestrated by the
+Komodo Update Proxy Procedure. Its Stack lists real application generations.
+The tested updater activates them through the root-only broker operation. Public
+firewall checks still precede traffic dispatch. Old flows drain for at most one
+hour, with forced retirement recorded in persistent audit logs.
 
 Dependabot opens daily npm minor/patch updates. GitHub Actions runs the application
 checks and isolated container suite. A separate privileged workflow merges only a
@@ -27,8 +27,8 @@ It never checks out or executes PR code with its write token. Dependency build t
 run as a non-root user with root-owned orchestration files. Major npm updates
 remain manual. GitHub Actions and Dependabot must be enabled for the repository.
 
-The VPS timer runs daily between 04:00 and 04:30 Europe/Prague, and catches up after
-downtime. It fetches main, creates a private candidate source tree, pulls current
+The Komodo Procedure runs daily at 04:15 Europe/Prague. The former systemd update
+timer is disabled. It fetches main, creates a private candidate source tree, pulls current
 Node 26 / Alpine 3.24, official stable NGINX, and Certbot images, upgrades Alpine packages, and rebuilds all
 four services. Node's major version and Alpine's release remain selected explicitly;
 Certbot follows its upstream latest image. New images must pass application, build,
@@ -46,10 +46,10 @@ These local snapshots are not a substitute for off-server encrypted backups.
 
 This updater targets the repository-backed `proxy` project using compose.paths.yaml
 and its protected .env. It does not overwrite Komodo's environment configuration.
-Avoid manual Komodo deployments while the update service is running. Komodo can
-also invoke `/usr/local/lib/proxy-security-update.py` from a scheduled Procedure;
-disable the systemd timer if moving scheduling into Komodo. Its ordinary registry
-image polling alone does not rebuild these locally built images or run their tests.
+Use Update Proxy in Komodo for immediate updates. Its Actions stream the fixed
+host updater's output and propagate failures. Ordinary registry polling does not
+rebuild these locally built images or run their tests. See
+[Komodo maintenance](KOMODO-MAINTENANCE.md) for installed host components and workflow.
 
 Install on the VPS as root after checking the repository:
 
@@ -58,7 +58,8 @@ install -m 0755 scripts/security-update.py /usr/local/lib/proxy-security-update.
 install -m 0644 scripts/proxy-security-update.service /etc/systemd/system/
 install -m 0644 scripts/proxy-security-update.timer /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now proxy-security-update.timer
+# Standalone scheduling only; do not enable alongside the Komodo Procedure.
+# systemctl enable --now proxy-security-update.timer
 ```
 
 Run immediately with `systemctl start proxy-security-update.service`. Inspect

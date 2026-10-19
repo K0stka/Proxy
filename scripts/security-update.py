@@ -139,13 +139,16 @@ def deploy(directory, previous, admin_host, rollback_file, check=health,
     if managed is None:
         managed = Path('/var/lib/proxy-handoff/state.json').exists()
     switched = False
+    inventory_managed = managed and Path('/var/lib/proxy-handoff/templates.json').exists() and json.loads(
+        Path('/var/lib/proxy-handoff/templates.json').read_text()).get('komodoManaged', False)
+    selected_services = ['files', 'certificates'] if inventory_managed else []
     try:
         if managed:
             images = {service: run(['docker', 'image', 'inspect', 'proxy-' + service,
                                    '--format', '{{.Id}}'], capture=True).strip() for service in ['control', 'edge']}
             handoff(images)
             switched = True
-        run(compose(directory) + ['up', '-d', '--no-build', '--pull', 'never'])
+        run(compose(directory) + ['up', '-d', '--no-build', '--pull', 'never', *selected_services])
         for _ in range(attempts):
             try:
                 if check(previous, admin_host):
@@ -158,7 +161,7 @@ def deploy(directory, previous, admin_host, rollback_file, check=health,
         if switched:
             handoff({service: previous[SERVICES.index(service)]['Image'] for service in ['control', 'edge']})
         rollback_images(previous)
-        run(compose(directory) + ['-f', str(rollback_file), 'up', '-d', '--no-build', '--pull', 'never'])
+        run(compose(directory) + ['-f', str(rollback_file), 'up', '-d', '--no-build', '--pull', 'never', *selected_services])
         for _ in range(attempts):
             try:
                 if rollback_check(previous, admin_host):
@@ -231,6 +234,16 @@ def main():
         if run(['git', 'status', '--porcelain'], cwd=repo, capture=True).strip():
             raise RuntimeError('Checkout changed during validation')
         run(['git', 'merge', '--ff-only', revision], cwd=repo)
+        if Path('/var/lib/proxy-handoff/state.json').exists():
+            mapping_path = Path('/var/lib/proxy-handoff/image-revisions.json')
+            mapping = json.loads(mapping_path.read_text()) if mapping_path.exists() else {}
+            for service in ['control', 'edge']:
+                image = run(['docker', 'image', 'inspect', 'proxy-' + service, '--format', '{{.Id}}'], capture=True).strip()
+                mapping[image] = revision
+            temporary = mapping_path.with_suffix('.new')
+            temporary.write_text(json.dumps(mapping))
+            temporary.chmod(0o600)
+            temporary.replace(mapping_path)
         deploy(repo, previous, settings.get('adminHostname'), rollback_file)
     except BaseException:
         # Do not overwrite tags from a concurrent Komodo deployment. deploy() handles
@@ -253,6 +266,7 @@ def main():
             shutil.rmtree(old)
     run(['docker', 'image', 'prune', '-f', '--filter', 'label=org.krychlic.proxy.managed=true'])
     print('Proxy security update passed tests and health verification', flush=True)
+    print('PROXY_DEPLOYED_REVISION=' + revision, flush=True)
 
 
 if __name__ == '__main__':

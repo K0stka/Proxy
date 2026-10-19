@@ -13,6 +13,31 @@ spec.loader.exec_module(handoff)
 
 
 class HandoffTests(unittest.TestCase):
+    def test_generation_names_use_commit_and_monotonic_role_counter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'image-revisions.json').write_text(json.dumps({'image': 'abcdef' + '0' * 34}))
+            broker = handoff.Broker.__new__(handoff.Broker)
+            broker.state = {}
+            with patch.object(handoff, 'STATE', root), patch.object(handoff, 'run', return_value='edge-abcdef-0'):
+                self.assertEqual(broker.generation_name('edge', 'image'), 'edge-abcdef-1')
+                self.assertEqual(broker.generation_name('edge', 'image'), 'edge-abcdef-2')
+                self.assertEqual(broker.generation_name('control', 'image'), 'control-abcdef-0')
+
+    def test_operator_retirement_only_removes_draining_generations(self):
+        broker = handoff.Broker.__new__(handoff.Broker)
+        old = {'id': 'old', 'role': 'edge'}
+        broker.state = {'edge': {'id': 'active-edge'}, 'control': {'id': 'active-control'}, 'draining': [old]}
+        broker.drop_destinations, broker.remove, broker.persist = Mock(), Mock(), Mock()
+        with patch.object(handoff, 'generation_count', return_value=7), patch.object(handoff, 'audit') as audit:
+            self.assertEqual(broker.force_retire(), {'retired': ['old']})
+            broker.remove.assert_called_once_with(old)
+            audit.assert_called_once_with('forced_retirement', generation='old', role='edge',
+                                          remainingConnections=7, reason='operator')
+        broker.state['draining'] = [broker.state['edge']]
+        with self.assertRaisesRegex(RuntimeError, 'active generation'):
+            broker.force_retire()
+
     def test_listener_set_is_bounded_and_ingress_is_fixed(self):
         route = {'published': True, 'kind': 'udp', 'ingressIP': '203.0.113.10',
                  'ports': '27015,27020,27025-27027'}
@@ -69,6 +94,12 @@ class HandoffTests(unittest.TestCase):
         handler.handle_request()
         handler.send_response.assert_called_once_with(403)
         handler.server.broker.deploy.assert_not_called()
+        handler.path = '/retire-draining'
+        handler.send_response.reset_mock()
+        handler.rfile = io.BytesIO(b'{}')
+        handler.handle_request()
+        handler.send_response.assert_called_once_with(403)
+        handler.server.broker.force_retire.assert_not_called()
 
     def test_failed_handoff_restores_routing_and_registry(self):
         broker = handoff.Broker.__new__(handoff.Broker)

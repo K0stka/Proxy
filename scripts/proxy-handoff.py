@@ -26,6 +26,7 @@ import subprocess
 import threading
 import time
 import uuid
+from urllib.parse import quote
 
 STATE = Path('/var/lib/proxy-handoff')
 REGISTRY = Path('/run/proxy-handoff')
@@ -195,6 +196,41 @@ class Broker:
         atomic(STATE / 'state.json', self.state)
         control = self.state['control']
         atomic(REGISTRY / 'active.json', {'id': control['id'], 'ip': control['ip']}, 0o644)
+        if getattr(self, 'config', {}).get('komodoManaged'):
+            from komodo_inventory import write_inventory
+            write_inventory(STATE, self.state, inspect, atomic)
+            self.inventory_dirty = True
+
+    def generation_name(self, role, image):
+        revisions = STATE / 'image-revisions.json'
+        revision = json.loads(revisions.read_text()).get(image, '') if revisions.exists() else ''
+        if not re.fullmatch(r'[0-9a-f]{40}', revision):
+            # Pre-migration images have no trustworthy source revision metadata.
+            return 'proxy-generation-' + uuid.uuid4().hex
+        counters = self.state.setdefault('nameCounters', {})
+        prefix = role + '-' + revision[:6] + '-'
+        number = counters.get(prefix, 0)
+        existing = set(run(['docker', 'ps', '-a', '--format', '{{.Names}}']).splitlines())
+        while prefix + str(number) in existing:
+            number += 1
+        counters[prefix] = number + 1
+        return prefix + str(number)
+
+    def force_retire(self):
+        retired = []
+        active = {self.state[role]['id'] for role in ['edge', 'control']}
+        for entry in list(self.state['draining']):
+            if entry['id'] in active:
+                raise RuntimeError('Refusing to retire an active generation')
+            count = generation_count(entry)
+            self.drop_destinations(entry)
+            self.remove(entry)
+            self.state['draining'].remove(entry)
+            self.persist()
+            audit('forced_retirement', generation=entry['id'], role=entry['role'],
+                  remainingConnections=count, reason='operator')
+            retired.append(entry['id'])
+        return {'retired': retired}
 
     def network(self):
         # Once a generation is forcibly removed, expire its stale kernel flows
@@ -274,10 +310,16 @@ class Broker:
             raise RuntimeError('Drain capacity reached; retry after old sessions retire')
         identifier = uuid.uuid4().hex
         entry = {'id': identifier, 'ip': ip, 'role': role, 'image': image, 'created': time.time()}
+        entry['name'] = self.generation_name(role, image)
         template = self.config[role]
         config = copy.deepcopy(template['config'])
         config['Image'] = image
         config['Labels'] = {'org.krychlic.proxy.generation': identifier, 'org.krychlic.proxy.role': role}
+        if self.config.get('komodoManaged'):
+            config['Labels'].update({'com.docker.compose.project': 'proxy',
+                                     'com.docker.compose.service': entry['name'],
+                                     'com.docker.compose.container-number': '1',
+                                     'com.docker.compose.oneoff': 'False'})
         env = {key: value for key, value in (item.split('=', 1) for item in config['Env'])
                if key.startswith('PROXY_') or key in ['PORT', 'NODE_ENV', 'TZ']}
         env.pop('PROXY_HANDOFF_AGENT', None)
@@ -315,7 +357,7 @@ class Broker:
         self.state.setdefault('pending', []).append(entry)
         self.persist()
         try:
-            result = docker('POST', '/containers/create?name=proxy-generation-' + identifier, config)
+            result = docker('POST', '/containers/create?name=' + quote(entry['name'], safe=''), config)
             entry['container'] = result['Id']
             docker('POST', '/containers/' + entry['container'] + '/start')
             deadline = time.monotonic() + 20
@@ -429,7 +471,7 @@ class Broker:
         for entry in self.state.get('pending', []):
             if entry['id'] in active:
                 continue
-            names = run(['docker', 'ps', '-aq', '--filter', 'name=^proxy-generation-' + entry['id'] + '$'])
+            names = run(['docker', 'ps', '-aq', '--filter', 'name=^' + entry.get('name', 'proxy-generation-' + entry['id']) + '$'])
             if names:
                 entry['container'] = names
             self.drop_destinations(entry)
@@ -446,6 +488,8 @@ class Broker:
                 self.activate(edge, reason='certificate')
 
     def watch_agents(self):
+        if getattr(self, 'config', {}).get('komodoManaged'):
+            return
         with self.lock:
             states = {}
             for role in ['edge', 'control', 'files', 'certificates']:
@@ -477,6 +521,8 @@ class Broker:
                         audit('operator_started', role=role)
 
     def ensure_agents(self):
+        if getattr(self, 'config', {}).get('komodoManaged'):
+            return
         with self.lock:
             for role in ['control', 'edge']:
                 if role in self.state.get('paused', []) or any(
@@ -511,6 +557,8 @@ class Broker:
                 audit('status_agent_started', role=role)
 
     def check_agent_updates(self):
+        if getattr(self, 'config', {}).get('komodoManaged'):
+            return
         with self.lock:
             if self.state.get('paused') or any(entry.get('legacy') for entry in self.state['draining']):
                 return
@@ -615,6 +663,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with broker.lock:
                 if self.path == '/deploy' and self.command == 'POST' and uid == 0:
                     result = broker.deploy(body)
+                elif self.path == '/retire-draining' and self.command == 'POST' and uid == 0:
+                    result = broker.force_retire()
+                elif self.path == '/inventory' and self.command == 'POST' and uid == 0:
+                    broker.persist()
+                    result = {'services': [entry.get('name', entry['id']) for entry in
+                              [broker.state['edge'], broker.state['control'], *broker.state['draining']]]}
                 elif self.path == '/apply' and self.command == 'POST' and uid in [0, 10001]:
                     result = broker.apply(body)
                 elif (self.command, self.path) in [('GET', '/status'), ('GET', '/network'),
@@ -723,6 +777,16 @@ def main():
                     if ticks % 6 == 0:
                         broker.refresh_certificates()
                         broker.check_agent_updates()
+                    if broker.config.get('komodoManaged') and getattr(broker, 'inventory_dirty', False):
+                        from komodo_inventory import notify
+                        # Clear before sending: a concurrent handoff must stay dirty.
+                        broker.inventory_dirty = False
+                        try:
+                            if not notify(STATE):
+                                broker.inventory_dirty = True
+                        except Exception:
+                            broker.inventory_dirty = True
+                            audit('komodo_refresh_failed')
                 except Exception:
                     audit('cleanup_failed')
         threading.Thread(target=cleanup, daemon=True).start()

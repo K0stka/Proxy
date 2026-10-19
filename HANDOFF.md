@@ -35,18 +35,13 @@ Deployment audit: `/var/log/proxy-deployments.jsonl` and
 `/var/log/proxy-management-audit/events.jsonl`. Both files are private and rotated
 for 14 archives. Application logs are available from the active container IDs in
 `/var/lib/proxy-handoff/state.json`; that file and templates are root-only.
-Compose's `proxy-control-1` and `proxy-edge-1` become unprivileged status agents
-when `PROXY_HANDOFF_ENABLED=true` is set in the deployment environment. This keeps
-ordinary Komodo builds/redeploys from replacing live traffic-handling generations.
-Application version changes are activated only by the tested host updater.
-If Komodo rebuilds/redeploys agents with different images, the broker detects it
-within 30 seconds and requests the fixed host update job. The images are rebuilt
-and checked before application traffic switches; the current versions keep
-serving meanwhile. The same failed image request is retried at most hourly.
-An explicit Komodo/Compose stop is propagated to the active application after
-5–10 seconds; start resumes it. Brief recreation of the agents does not stop the
-application. An operator stop also stops that role's draining instances and
-interrupts their connections deliberately.
+Komodo's Update Proxy Procedure owns version updates and the daily schedule.
+The proxy Stack lists the real active/draining containers using a root-generated
+Compose inventory; status agents are no longer used in this mode. Names identify
+role, six-character source revision, and a persistent increasing counter.
+Force Retire Old Proxy Containers is a separate manual Procedure that audits
+and removes only draining generations. See [Komodo maintenance](KOMODO-MAINTENANCE.md)
+for the workflow, security boundary, and components that run directly on the host.
 
 Host prerequisites: `ipvsadm`, nftables and the kernel `ip_vs_rr` module. The
 current deployment supports its single public IPv4 ingress address; other address
@@ -58,11 +53,9 @@ maintenance planning; an overlap cannot preserve processes across a host reboot.
 The first migration tracks active UDP traffic through the old listener for at least
 60 seconds before switching. Legacy TCP listeners are retained for the full hour
 because connections established before IPVS was enabled are not in its counters.
-The original Compose containers remain in place during that first drain and are
-automatically replaced with status agents after retirement. Avoid manual Komodo
-redeploys during that one-time hour: Compose could otherwise remove a legacy
-container that still owns old connections. Later redeploys replace only agents.
-Keep the deployment `.env` flag when changing Komodo's stored environment.
+The original Compose containers remain in place during that first drain.
+This one-time migration has completed on the VPS. The old status-agent mode
+remains available for installations that have not enabled Komodo inventory mode.
 
 Isolated kernel regression test (root): `python3 scripts/test_handoff_network.py`.
 It uses disposable network namespaces and synthetic traffic, never production

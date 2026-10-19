@@ -1,0 +1,60 @@
+# Komodo maintenance
+
+The Proxy Repo tracks K0stka/Proxy main on K0stkaVPS. Update Proxy runs daily at
+04:15 Europe/Prague, or manually from Procedures. It pulls the Repo and invokes
+the fixed root updater through a Komodo Action. Build/test output and failure
+status appear in Komodo. Only passing images are handed over; failed deployment
+health checks restore the previous images. The systemd update timer is disabled.
+
+The proxy Stack uses compose.komodo.yaml from the Repo. It includes the root-owned
+/var/lib/proxy-handoff/compose.json, listing actual active and draining containers,
+files, and certificates. Private environment files remain under that root-only
+directory. Compose inventory deployments use --no-recreate --no-build --pull never
+and select files/certificates only; they never replace live traffic generations.
+Use Update Proxy for application version updates. Ordinary Stack Deploy refreshes
+inventory only, at the last successful tested commit pinned by Refresh Proxy Stack.
+The Repo continues tracking main independently, showing available source changes.
+
+New generation names are edge-<six-character-commit>-<counter> and
+control-<six-character-commit>-<counter>. Counters start at zero per role and commit,
+increase persistently, and skip occupied names. Multiple draining versions remain
+supported, subject to the existing memory and generation limits. Old containers
+retire when idle, or forcibly after one hour.
+
+Force Retire Old Proxy Containers is manual only. It removes only broker-recorded
+draining generations, refuses active generations, and audits remaining connection
+counts. Running it can disconnect sessions on those old versions. It never runs a
+Docker prune or selects containers by a broad name pattern.
+
+Refresh Proxy Stack is a supporting Action. A root-only HMAC webhook requests it
+after runtime membership changes, so UI config changes and automatic retirement
+also update Komodo's service list. The VPS holds only this Action's webhook secret,
+not a Komodo administrative API key. API access is over the existing Tailscale link.
+
+## Components that run directly on the VPS
+
+- Docker daemon and Komodo Periphery (existing services).
+- proxy-handoff.service running /usr/local/lib/proxy-handoff.py as root: fixed
+  container templates, private loopback aliases, IPVS switching, the nftables
+  direct-access guard, certificate-triggered edge handovers, and retirement.
+- proxy-generations.slice: shared memory/process limits for overlapping versions.
+- /usr/local/lib/proxy-security-update.py: invoked by Komodo, not a scheduler;
+  backs up SQLite, builds/tests images, activates and verifies them, and rolls back.
+- /usr/local/lib/proxy-maintenance.py and komodo_inventory.py: fixed root commands
+  and actual-container Compose inventory/webhook publication.
+- Existing Ubuntu unattended security upgrades and logrotate. Host/Docker restarts
+  still require maintenance; generation handoffs cannot survive a host reboot.
+
+Root scripts, templates, state and webhook settings are host administrator-owned;
+application containers receive no Docker socket, network-admin capability or
+Komodo write credentials. Host script changes require administrator installation;
+ordinary application updates do not silently replace privileged host programs.
+
+Deployment audit: /var/log/proxy-deployments.jsonl. Management audit:
+/var/log/proxy-management-audit/events.jsonl. Broker diagnostics:
+journalctl -u proxy-handoff.service. Local snapshots retain seven SQLite backups
+and the previous image set; off-server backup remains a separate responsibility.
+
+A Komodo Builder selects the server where Komodo Build/Repo build jobs execute;
+it uses that server's Docker daemon, CPU and RAM and provides no extra isolation.
+These Actions use Periphery's server commands, so no additional Builder is needed.
