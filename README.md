@@ -229,7 +229,7 @@ The admin panel includes an installable app manifest and icons. Open its HTTPS a
 
 ### Default log filters
 
-Settings → Log filters controls two enabled defaults: hide requests from byttorrent and hide requests to the management panel. These filters apply before pagination to Logs events, charts, totals and full downloads; the Logs page has no additional controls for them. Stored records, security alerts, administration events and edge operations are retained. Disable the filters to view the recorded requests again. Byttorrent's editable IP list defaults to its stable Tailscale addresses; checks through its changing public IP will not match unless the current public address is added.
+Settings → Log filters controls two enabled defaults: hide Uptime Kuma requests and hide requests to the management panel. Kuma detection matches the `Uptime-Kuma/` user-agent prefix case-insensitively, regardless of client IP. Only the classification flag is retained, not the full header. These filters apply before pagination to Logs events, charts, totals and full downloads; the Logs page has no additional controls for them. Stored records, security alerts, administration events and edge operations are retained. Disable the filters to view the recorded requests again. Older records without a Kuma classification remain visible. Existing IP-based filter settings migrate automatically while preserving the management-panel preference.
 
 ## Local mock review
 

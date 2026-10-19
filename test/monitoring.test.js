@@ -9,6 +9,17 @@ import { policy, route, snapshot } from './fixtures.js';
 const record = (changes = {}) => JSON.stringify({ protocol: 'http', service: 'catch-all',
   address: '203.0.113.77', status: '404', bytes: '100', signal: 'none', ...changes });
 
+test('HTTP logs retain only the Kuma classification and validate its type', () => {
+  const m = new Monitor();
+  m.ingest(record({ uptimeKuma: true, userAgent: 'not-retained' }));
+  m.ingest(record({ uptimeKuma: false }));
+  m.ingest(record({ uptimeKuma: 'true' }));
+  const events = m.snapshot().events;
+  assert.equal(events.length, 2);
+  assert.deepEqual(events.map((e) => e.uptimeKuma).sort(), [false, true]);
+  assert(!JSON.stringify(events).includes('not-retained'));
+});
+
 test('catch-all scanning retains client IPs and full request URLs but ignores unrelated request fields', () => {
   let now = Date.now();
   const m = new Monitor({ now: () => now });
@@ -83,5 +94,8 @@ test('NGINX monitoring covers routes and records URLs and IPs without request bo
     assert(line.includes('escape=json'));
   }
   assert(formats.some((line) => line.includes('$host$request_uri')));
+  assert(config.includes('map $http_user_agent $monitor_uptime_kuma'));
+  assert(config.includes('~*^Uptime-Kuma/ true;'));
+  assert(formats.some((line) => line.includes('"uptimeKuma":$monitor_uptime_kuma')));
   assert(config.includes('listen unix:/tmp/proxy-health.sock; access_log off;'));
 });

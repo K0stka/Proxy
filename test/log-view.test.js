@@ -9,8 +9,8 @@ test('default exclusions filter requests before pagination, totals and export, r
   t.after(() => { control.close(); traffic.close(); });
   const time = new Date().toISOString();
   for (let i = 0; i < 240; i++) traffic.append({ time, type: 'traffic', service: 'catch-all', source: '203.0.113.9', event: `Visible ${i}`, status: 200 });
-  for (let i = 0; i < 240; i++) traffic.append({ time, type: 'traffic', service: i % 2 ? 'management' : 'catch-all', source: i % 2 ? '203.0.113.9' : '100.89.5.109', event: 'Hidden', status: 200 });
-  traffic.append({ time, type: 'alert', service: 'management', source: '100.89.5.109', event: 'Security alert' });
+  for (let i = 0; i < 240; i++) traffic.append({ time, type: 'traffic', service: i % 2 ? 'management' : 'catch-all', source: '203.0.113.9', uptimeKuma: i % 2 === 0, event: 'Hidden', status: 200 });
+  traffic.append({ time, type: 'alert', service: 'management', source: '203.0.113.9', uptimeKuma: true, event: 'Security alert' });
   control.append({ time, type: 'audit', service: 'management', source: '100.89.5.109', event: 'Admin event' });
   const edge = async (path) => {
     const url = new URL(path, 'http://edge'), query = logQuery(url.searchParams);
@@ -31,13 +31,13 @@ test('default exclusions filter requests before pagination, totals and export, r
   assert.equal(events.length, 242);
   assert(events.some((e) => e.type === 'audit'));
   assert(events.some((e) => e.type === 'alert'));
-  const all = await logView(control, edge, params, { hideByttorrent: false, byttorrentIPs: [], hideManagement: false });
+  const all = await logView(control, edge, params, { hideUptimeKuma: false, hideManagement: false });
   assert.equal(all.summary.totals.requests, 480);
-  const managementOnly = await logView(control, edge, params, { hideByttorrent: false, byttorrentIPs: [], hideManagement: true });
+  const managementOnly = await logView(control, edge, params, { hideUptimeKuma: false, hideManagement: true });
   assert.equal(managementOnly.summary.totals.requests, 360);
-  const customIP = await logView(control, edge, params, { hideByttorrent: true, byttorrentIPs: ['203.0.113.9'], hideManagement: false });
-  assert.equal(customIP.summary.totals.requests, 120);
-  for (const value of ['excludeSources=invalid', 'hideManagement=yes']) assert.throws(() => logQuery(new URLSearchParams(value)));
+  const kumaOnly = await logView(control, edge, params, { hideUptimeKuma: true, hideManagement: false });
+  assert.equal(kumaOnly.summary.totals.requests, 360);
+  for (const value of ['hideUptimeKuma=yes', 'hideManagement=yes']) assert.throws(() => logQuery(new URLSearchParams(value)));
 });
 
 test('period presets use rolling ranges and Today starts at local midnight across DST', () => {

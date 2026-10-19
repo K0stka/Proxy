@@ -92,11 +92,15 @@ export const policySchema = z
     ingressIPs: z.array(ip).min(1).max(8),
     adminHostname: z.union([hostname, z.literal('')]).default(''),
     domains: z.array(domainSchema).max(50),
-    logFilters: z.object({
-      hideByttorrent: z.boolean(),
-      byttorrentIPs: z.array(ip).max(32),
+    logFilters: z.preprocess((value) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+      // Existing installations may still have the replaced IP-based filter.
+      const { hideByttorrent, byttorrentIPs, ...current } = value;
+      return current;
+    }, z.object({
+      hideUptimeKuma: z.boolean().default(true),
       hideManagement: z.boolean(),
-    }).strict().default(defaultLogFilters),
+    }).strict()).default(defaultLogFilters),
     certificates: z
       .object({
         email: z.union([z.string().email(), z.literal('')]),

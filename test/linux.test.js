@@ -182,6 +182,15 @@ test(
     edge = start();
     await ready();
     await t.test('catch-all syslog monitoring retains request URLs and source IPs', async () => {
+      await request('whatever.invalid', '/kuma-check', false, { 'User-Agent': 'Uptime-Kuma/2.0.0' });
+      let kuma;
+      for (let i = 0; i < 50; i++) {
+        kuma = (await edgeRequest('/logs')).events.find((e) => e.url === 'http://whatever.invalid/kuma-check');
+        if (kuma) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.equal(kuma?.uptimeKuma, true);
+      assert(!(await edgeRequest('/logs?hideUptimeKuma=true')).events.some((e) => e.url === kuma.url));
       for (let i = 0; i < 5; i++) await request('whatever.invalid', '/.env?secret=never-retain', false);
       let result;
       for (let i = 0; i < 50; i++) {

@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 import { policy, route, snapshot } from './fixtures.js';
 import { validateSnapshot, validatePolicy, safeTarget } from '../shared/model.js';
 
+test('legacy IP log filters migrate to Kuma filtering while preserving management preferences', () => {
+  const previous = policy();
+  previous.logFilters = { hideByttorrent: false, byttorrentIPs: ['100.89.5.109'], hideManagement: false };
+  assert.deepEqual(validatePolicy(previous, { development: true }).logFilters, { hideUptimeKuma: true, hideManagement: false });
+  previous.logFilters = { hideUptimeKuma: false, hideManagement: true };
+  assert.deepEqual(validatePolicy(previous, { development: true }).logFilters, previous.logFilters);
+});
+
 test('HTTP route accepts apex, second zone and IDNA, but rejects nested wildcard names and injection', () => {
   for (const hostname of ['krychlic.com', 'a.example.net', 'app.krychlic.com', 'těst.krychlic.com'])
     assert.equal(validateSnapshot(policy(), snapshot([route({ hostname })])).routes.length, 1);

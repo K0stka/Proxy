@@ -3,7 +3,7 @@ import { Problem } from '../shared/model.js';
 import { defaultLogFilters } from '../shared/log-filters.js';
 
 export function filteredLogQuery(params, filters = defaultLogFilters) {
-  return { ...logQuery(params), excludeSources: filters.hideByttorrent ? filters.byttorrentIPs : [],
+  return { ...logQuery(params), hideUptimeKuma: filters.hideUptimeKuma,
     hideManagement: filters.hideManagement };
 }
 

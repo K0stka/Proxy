@@ -106,7 +106,7 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
             ? {
                 adminHostname: preferences.adminHostname,
               }
-            : section === 'logs' ? { logFilters: { ...(preferences.logFilters ?? defaultLogFilters), byttorrentIPs: (preferences.logFilters ?? defaultLogFilters).byttorrentIPs.filter(Boolean) } } : {
+            : section === 'logs' ? { logFilters: preferences.logFilters ?? defaultLogFilters } : {
                 certificates: preferences.certificates,
               },
       });
@@ -163,12 +163,10 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
           <Stack gap="lg">
             <h2 id="logs-heading">Log filters</h2>
             <Text size="sm" c="dimmed">Applies to Logs events, charts and downloads. Stored logs, security alerts and administration events are retained.</Text>
-            <Switch label="Hide requests from byttorrent"
-              checked={(preferences.logFilters ?? defaultLogFilters).hideByttorrent}
-              onChange={(e) => { const checked = e.currentTarget.checked; setPreferences((p) => ({ ...p, logFilters: { ...(p.logFilters ?? defaultLogFilters), hideByttorrent: checked } })); }} />
-            <TextInput label="Byttorrent IP addresses" description="Separate IPv4 or IPv6 addresses with commas. Include its public address for public uptime checks."
-              value={(preferences.logFilters ?? defaultLogFilters).byttorrentIPs.join(', ')}
-              onChange={(e) => { const ips = e.currentTarget.value.split(',').map((ip) => ip.trim()); setPreferences((p) => ({ ...p, logFilters: { ...(p.logFilters ?? defaultLogFilters), byttorrentIPs: ips } })); }} />
+            <Switch label="Hide requests from Uptime Kuma"
+              description="Matches the Uptime-Kuma/ user agent, regardless of client IP."
+              checked={(preferences.logFilters ?? defaultLogFilters).hideUptimeKuma}
+              onChange={(e) => { const checked = e.currentTarget.checked; setPreferences((p) => ({ ...p, logFilters: { ...(p.logFilters ?? defaultLogFilters), hideUptimeKuma: checked } })); }} />
             <Switch label="Hide requests to the management panel"
               checked={(preferences.logFilters ?? defaultLogFilters).hideManagement}
               onChange={(e) => { const checked = e.currentTarget.checked; setPreferences((p) => ({ ...p, logFilters: { ...(p.logFilters ?? defaultLogFilters), hideManagement: checked } })); }} />

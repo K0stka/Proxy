@@ -253,13 +253,13 @@ test('period log views and full NDJSON downloads are private and export more tha
 test('saved log defaults apply to views and downloads without deleting recorded requests', async (t) => {
   const f = await fixture(t);
   for (const [service, source, event] of [['management', '203.0.113.44', 'Panel poll'],
-    ['catch-all', '100.89.5.109', 'Byttorrent check'], ['catch-all', '203.0.113.44', 'Public request']])
-    f.edgeArchive.append({ time: new Date().toISOString(), type: 'traffic', service, source, event, status: 200 });
+    ['catch-all', '203.0.113.44', 'Kuma check'], ['catch-all', '203.0.113.44', 'Public request']])
+    f.edgeArchive.append({ time: new Date().toISOString(), type: 'traffic', service, source, event, uptimeKuma: event === 'Kuma check', status: 200 });
   const requests = async () => (await (await f.request('/api/logs/view')).json()).summary.totals.requests;
   assert.equal(await requests(), 1);
-  const logFilters = { hideByttorrent: false, byttorrentIPs: ['100.89.5.109'], hideManagement: false };
+  const logFilters = { hideUptimeKuma: false, hideManagement: false };
   assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { logFilters }, authenticated: false })).status, 401);
-  assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { logFilters: { ...logFilters, byttorrentIPs: ['bad'] } } })).status, 400);
+  assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { logFilters: { ...logFilters, hideUptimeKuma: 'bad' } } })).status, 400);
   assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { logFilters } })).status, 200);
   assert.deepEqual(f.store.get('settings').logFilters, logFilters);
   assert.equal(await requests(), 3);

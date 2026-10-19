@@ -52,12 +52,14 @@ export class Monitor {
         !/^\d{3}$/.test(String(raw.status)) ||
         !/^\d+$/.test(String(raw.bytes)) || !['none', 'probe'].includes(raw.signal) ||
         (raw.url !== undefined && (typeof raw.url !== 'string' || raw.url.length > 16384)) ||
-        (raw.method !== undefined && typeof raw.method !== 'string')) return;
+        (raw.method !== undefined && typeof raw.method !== 'string') ||
+        (raw.uptimeKuma !== undefined && typeof raw.uptimeKuma !== 'boolean')) return;
     this.prune();
     const source = raw.address;
     const status = Number(raw.status), bytes = Math.min(Number(raw.bytes), Number.MAX_SAFE_INTEGER);
     const event = { type: 'traffic', service: raw.service, protocol: raw.protocol,
       source, status, bytes, ...(raw.url === undefined ? {} : { url: raw.url, method: raw.method?.slice(0, 32) }),
+      ...(raw.protocol === 'http' ? { uptimeKuma: raw.uptimeKuma === true } : {}),
       event: raw.signal === 'probe' ? 'Exploit-path probe' : 'Request / session completed',
       severity: raw.signal === 'probe' || status >= 400 ? 'warning' : 'info' };
     this.add(event);
