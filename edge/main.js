@@ -113,13 +113,13 @@ async function cleanup() {
     if (
       /^rev-[0-9a-f-]{36}$/.test(name) &&
       !keep.has(name) &&
-      Date.now() - (await stat(join(runtime, name))).mtimeMs > 35000
+      Date.now() - (await stat(join(runtime, name))).mtimeMs > 3605000
     )
       await rm(join(runtime, name), { recursive: true, force: true });
 }
 async function apply(raw, { initial = false, refreshContent = true, persist = true } = {}) {
   if (shuttingDown) throw new Problem(503, 'Edge is shutting down');
-  const { settings = settingsFromPolicy(policy), ...rawSnapshot } = raw;
+  const { settings = settingsFromPolicy(policy), expectedHash, expectedPolicyHash, ...rawSnapshot } = raw;
   const nextPolicy = effectivePolicy(deployment, settings);
   const next = validateSnapshot(nextPolicy, rawSnapshot),
     certs = await certificates(nextPolicy),
@@ -144,6 +144,7 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
     wildcardDomains: certs.wildcard,
     staticSites: content.sites,
     errorSites: content.errors,
+    bindIP: process.env.PROXY_EDGE_BIND_IP,
   });
   await mkdir(directory, { mode: 0o750 });
   await writeFile(join(directory, 'nginx.conf'), output.config, { mode: 0o640 });
@@ -200,8 +201,8 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
     applied = result;
     certFingerprint = certs.fingerprint;
     failed = null;
-    // Old workers may still serve error-page files during the bounded drain period.
-    setTimeout(() => cleanup().catch(() => {}), 35000).unref();
+    // Retain files for workers draining long-lived connections after a reload.
+    setTimeout(() => cleanup().catch(() => {}), 3605000).unref();
     return result;
   } catch {
     if (previous) {

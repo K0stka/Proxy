@@ -2,6 +2,7 @@
 services:
   control:
     environment:
+      PROXY_HANDOFF_AGENT: ${PROXY_HANDOFF_ENABLED:-false}
       PROXY_DATA_PATH: ${PROXY_DATA_PATH:?Set PROXY_DATA_PATH}
       PROXY_SITES_PATH: ${PROXY_SITES_PATH:?Set PROXY_SITES_PATH}
     volumes:
@@ -23,6 +24,8 @@ services:
         target: /cert-requests
         bind: { create_host_path: true }
   edge:
+    environment:
+      PROXY_HANDOFF_AGENT: ${PROXY_HANDOFF_ENABLED:-false}
     volumes:
       - type: bind
         source: ${PROXY_DATA_PATH:?Set PROXY_DATA_PATH}/edge

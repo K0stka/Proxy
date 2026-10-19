@@ -36,7 +36,6 @@ export class Auth {
     this.legacyRPID = legacyRPID ?? this.rpID;
     this.bootstrapToken = bootstrapToken;
     this.development = development;
-    this.pending = new Map();
     this.rates = new Map();
   }
   cookie(res, name, value, age) {
@@ -119,18 +118,27 @@ export class Auth {
   }
   challenge(req, res, value) {
     const now = Date.now();
-    for (const [key, p] of this.pending) if (p.expires < now) this.pending.delete(key);
-    if (this.pending.size > 100) throw new Problem(429, 'Too many pending sign-ins');
     const id = randomToken();
-    this.pending.set(hash(id), { ...value, epoch: this.store.get('authEpoch', 0), expires: now + 300000 });
+    this.store.transaction(() => {
+      const pending = this.store.get('authChallenges', []).filter((p) => p.expires >= now);
+      if (pending.filter((p) => p.origin === this.origin).length >= 100)
+        throw new Problem(429, 'Too many pending sign-ins');
+      pending.push({ ...value, key: hash(id), origin: this.origin,
+        epoch: this.store.get('authEpoch', 0), expires: now + 300000 });
+      this.store.set('authChallenges', pending);
+    });
     this.cookie(res, 'proxy_challenge', id, 300);
   }
   consume(req, res, type) {
     const key = hash(
         cookies(req)[this.development ? 'proxy_challenge' : '__Host-proxy_challenge'] ?? '',
-      ),
-      pending = this.pending.get(key);
-    this.pending.delete(key);
+      );
+    const pending = this.store.transaction(() => {
+      const challenges = this.store.get('authChallenges', []);
+      const value = challenges.find((p) => p.key === key && p.origin === this.origin);
+      this.store.set('authChallenges', challenges.filter((p) => p !== value));
+      return value;
+    });
     this.cookie(res, 'proxy_challenge', '', 0);
     if (!pending || pending.type !== type || pending.expires < Date.now())
       throw new Problem(400, 'Sign-in expired. Start again.');
@@ -145,7 +153,6 @@ export class Auth {
     this.store.set('sessions', []);
     this.store.set('deviceTokens', []);
     this.store.set('authEpoch', this.store.get('authEpoch', 0) + 1);
-    this.pending.clear();
   }
   async handle(path, req, res, body) {
     if (path === '/api/auth/status' && req.method === 'GET') {

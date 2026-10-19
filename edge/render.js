@@ -58,7 +58,7 @@ function staticLocations(manifest, route, overrides) {
 export function render(
   policy,
   raw,
-  { revision, directory, readyDomains = [], wildcardDomains = readyDomains, staticSites = {}, errorSites = {} },
+  { revision, directory, readyDomains = [], wildcardDomains = readyDomains, staticSites = {}, errorSites = {}, bindIP },
 ) {
   const snapshot = validateSnapshot(policy, raw),
     routes = snapshot.routes.filter((r) => r.published),
@@ -66,7 +66,7 @@ export function render(
   const http = [],
     stream = [];
   const listen = (ip, port, extra = '') =>
-    `listen ${address(ip)}:${port}${extra ? ` ${extra}` : ''};`;
+    `listen ${address(bindIP ?? ip)}:${port}${extra ? ` ${extra}` : ''};`;
   http.push(
     `server { listen unix:/tmp/proxy-health.sock; access_log off; location = /revision { return 200 '${revision}'; } location / { return 404; } }`,
   );
@@ -243,7 +243,7 @@ ${r.upstreamTLS ? `proxy_ssl_server_name on; proxy_ssl_name ${r.upstreamServerNa
   const config = `pid /tmp/nginx.pid;
 error_log stderr crit;
 worker_processes 2;
-worker_shutdown_timeout 30s;
+worker_shutdown_timeout 3600s;
 events { worker_connections 8192; }
 http {
 include /etc/nginx/mime.types;

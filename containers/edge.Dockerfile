@@ -11,6 +11,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY edge ./edge
 COPY shared ./shared
+COPY containers/handoff-agent.js ./containers/handoff-agent.js
 COPY containers/edge-entrypoint.sh /usr/local/bin/proxy-as-edge
 COPY --chmod=755 containers/start.sh /usr/local/bin/proxy-start
 RUN chmod 755 /usr/local/bin/proxy-as-edge && chmod -R a+rX /app

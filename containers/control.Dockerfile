@@ -5,6 +5,7 @@ RUN npm ci --ignore-scripts
 COPY index.html vite.config.js ./
 COPY ui ./ui
 COPY shared ./shared
+COPY containers/handoff-agent.js ./containers/handoff-agent.js
 COPY public ./public
 RUN npm run build && npm prune --omit=dev --ignore-scripts
 
@@ -21,6 +22,7 @@ COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY server ./server
 COPY shared ./shared
+COPY containers/handoff-agent.js ./containers/handoff-agent.js
 COPY --chmod=755 containers/start.sh /usr/local/bin/proxy-start
 RUN chmod -R a+rX /app
 USER 0:10000

@@ -6,6 +6,7 @@ import { join, resolve, extname, sep } from 'node:path';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { Auth } from './auth.js';
 import { auditEvent } from './audit.js';
+import { forwardHandoff } from './handoff.js';
 import { Discovery } from './komodo.js';
 import {
   Problem,
@@ -107,7 +108,8 @@ export function createApp({
     try {
       result = await edge('/apply', {
         method: 'POST',
-        body: { ...next, settings: settingsFromPolicy(nextPolicy) },
+        body: { ...next, settings: settingsFromPolicy(nextPolicy),
+          expectedHash: snapshotHash(old), expectedPolicyHash: policyHash(oldPolicy) },
         timeout: 35000,
       });
     } catch (error) {
@@ -194,6 +196,9 @@ export function createApp({
     );
     if (!development) res.setHeader('strict-transport-security', 'max-age=31536000');
     try {
+      if (await forwardHandoff(req, res)) return;
+      if (process.env.PROXY_CONTROL_GENERATION)
+        policy = effectivePolicy(deployment, store.get('settings'), { development });
       if (req.url === '/healthz' && req.method === 'GET') {
         json(res, { ok: true });
         return;

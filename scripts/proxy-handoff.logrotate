@@ -1,0 +1,18 @@
+/var/log/proxy-deployments.jsonl {
+    daily
+    rotate 14
+    maxsize 5M
+    missingok
+    notifempty
+    compress
+    create 0600 root root
+}
+/var/log/proxy-management-audit/events.jsonl {
+    daily
+    rotate 14
+    maxsize 10M
+    missingok
+    notifempty
+    compress
+    create 0600 10001 10000
+}

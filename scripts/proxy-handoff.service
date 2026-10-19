@@ -1,0 +1,22 @@
+[Unit]
+Description=Connection-preserving proxy generation manager
+After=docker.service network-online.target ufw.service
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/modprobe ip_vs_rr
+ExecStart=/usr/local/lib/proxy-handoff.py
+Restart=on-failure
+RestartSec=2
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/var/lib/proxy-handoff /run/proxy-handoff /var/log /var/lib/docker/volumes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

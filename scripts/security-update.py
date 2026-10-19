@@ -38,12 +38,35 @@ def compose(directory):
 
 
 def containers():
-    return [json.loads(run(['docker', 'inspect', 'proxy-' + service + '-1'], capture=True))[0] for service in SERVICES]
+    state_file = Path('/var/lib/proxy-handoff/state.json')
+    generations = json.loads(state_file.read_text()) if state_file.exists() else {}
+    return [json.loads(run(['docker', 'inspect', generations[service]['container']
+                           if service in generations else 'proxy-' + service + '-1'], capture=True))[0]
+            for service in SERVICES]
+
+
+def handoff(images):
+    import socket
+    class Connection(http.client.HTTPConnection):
+        def connect(self):
+            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.sock.settimeout(self.timeout)
+            config = json.loads(Path('/var/lib/proxy-handoff/templates.json').read_text())
+            self.sock.connect(str(Path(config['ipc']) / 'edge.sock'))
+    connection = Connection('localhost', timeout=40)
+    try:
+        connection.request('POST', '/deploy', json.dumps(images), {'Content-Type': 'application/json'})
+        response = connection.getresponse()
+        response.read()
+        if response.status != 200:
+            raise RuntimeError('Connection-preserving deployment failed')
+    finally:
+        connection.close()
 
 
 def rollback_images(previous):
-    for container in previous:
-        run(['docker', 'tag', container['Image'], container['Config']['Image']])
+    for service, container in zip(SERVICES, previous):
+        run(['docker', 'tag', container['Image'], 'proxy-' + service])
 
 
 def rollback_configuration(config):
@@ -113,7 +136,14 @@ def health(previous, admin_host, isolation=True):
 def deploy(directory, previous, admin_host, rollback_file, check=health,
            rollback_check=lambda previous, host: health(previous, host, isolation=False),
            wait=time.sleep, attempts=36):
+    managed = Path('/var/lib/proxy-handoff/state.json').exists()
+    switched = False
     try:
+        if managed:
+            images = {service: run(['docker', 'image', 'inspect', 'proxy-' + service,
+                                   '--format', '{{.Id}}'], capture=True).strip() for service in ['control', 'edge']}
+            handoff(images)
+            switched = True
         run(compose(directory) + ['up', '-d', '--no-build', '--pull', 'never'])
         for _ in range(attempts):
             try:
@@ -124,6 +154,8 @@ def deploy(directory, previous, admin_host, rollback_file, check=health,
             wait(5)
         raise RuntimeError('Candidate health verification failed')
     except BaseException:
+        if switched:
+            handoff({service: previous[SERVICES.index(service)]['Image'] for service in ['control', 'edge']})
         rollback_images(previous)
         run(compose(directory) + ['-f', str(rollback_file), 'up', '-d', '--no-build', '--pull', 'never'])
         for _ in range(attempts):

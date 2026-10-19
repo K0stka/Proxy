@@ -281,6 +281,7 @@ const unsafeAddresses = new BlockList();
 for (const [address, bits, type] of [
   ['0.0.0.0', 8, 'ipv4'],
   ['169.254.0.0', 16, 'ipv4'],
+  ['10.254.240.0', 24, 'ipv4'],
   ['224.0.0.0', 4, 'ipv4'],
   ['240.0.0.0', 4, 'ipv4'],
   ['fe80::', 10, 'ipv6'],

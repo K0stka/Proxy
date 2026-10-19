@@ -11,7 +11,7 @@ RUN chmod -R a+rX /app \
 # Dependency code runs without permission to modify the later Docker orchestrator.
 USER node
 RUN npm run check
-RUN python3 -m unittest discover -s scripts -p test_security_update.py -v
+RUN python3 -m unittest discover -s scripts -p 'test_*.py' -v
 USER root
 CMD ["node", "scripts/test-containers.js"]
 LABEL org.krychlic.proxy.managed=true

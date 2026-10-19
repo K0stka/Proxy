@@ -1,4 +1,5 @@
 import { mkdir } from 'node:fs/promises';
+import { appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readDeployment } from '../shared/env.js';
 import { Store } from './store.js';
@@ -29,6 +30,10 @@ const app = createApp({
   edgeSocket: process.env.PROXY_EDGE_SOCKET ?? '/ipc/edge.sock',
   certStatusDir: process.env.PROXY_CERT_STATUS ?? '/cert-status',
   certRequestDir: process.env.PROXY_CERT_REQUESTS ?? '/cert-requests',
+  ...(process.env.PROXY_AUDIT_PATH ? { auditLog: (record) => {
+    appendFileSync(process.env.PROXY_AUDIT_PATH, JSON.stringify(record) + '\n', { mode: 0o600 });
+    console.info(JSON.stringify(record));
+  } } : {}),
 });
 const stopDiscovery = app.discovery.start();
 app.server.listen(

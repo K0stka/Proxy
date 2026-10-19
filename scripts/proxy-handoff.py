@@ -1,0 +1,536 @@
+#!/usr/bin/env python3
+"""Root host broker: fixed container templates, IPVS handoff, bounded draining.
+
+Application peers can submit snapshots, never Docker options, paths or image IDs.
+Only a root Unix peer may request a version deployment. No TCP control listener.
+"""
+import argparse
+import copy
+from contextlib import closing
+import datetime
+import http.client
+import http.server
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import socket
+import socketserver
+import sqlite3
+import struct
+import ssl
+import subprocess
+import threading
+import time
+import uuid
+
+STATE = Path('/var/lib/proxy-handoff')
+REGISTRY = Path('/run/proxy-handoff')
+AUDIT = Path('/var/log/proxy-deployments.jsonl')
+NETWORK = ipaddress.ip_network('10.254.240.0/24')
+MAX_GENERATIONS = 16
+DRAIN_SECONDS = 3600
+
+
+def run(args, **kwargs):
+    return subprocess.check_output(args, text=True, **kwargs).strip()
+
+
+class UnixHTTP(http.client.HTTPConnection):
+    def __init__(self, path, timeout=35):
+        super().__init__('localhost', timeout=timeout)
+        self.path = str(path)
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.path)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+
+def request(path, method, url, body=None):
+    with UnixHTTP(path) as connection:
+        connection.request(method, url, None if body is None else json.dumps(body),
+                           {'Content-Type': 'application/json'})
+        response = connection.getresponse()
+        raw = response.read(2_000_001)
+        if len(raw) > 2_000_000:
+            raise RuntimeError('Oversized control response')
+        value = json.loads(raw) if raw else None
+        if response.status >= 400:
+            raise RuntimeError('Control operation failed: HTTP ' + str(response.status))
+        return value
+
+
+def verify_admin(ip, hostname):
+    class Connection(http.client.HTTPSConnection):
+        def connect(self):
+            self.sock = ssl.create_default_context().wrap_socket(
+                socket.create_connection((ip, 443), timeout=3), server_hostname=hostname)
+    for path, expected in [('/api/auth/status', 200), ('/api/state', 401),
+                           ('/_proxy/errors/404/index.html', 404)]:
+        connection = Connection(hostname, timeout=3)
+        try:
+            connection.request('GET', path, headers={'Host': hostname})
+            response = connection.getresponse()
+            response.read()
+            if response.status != expected:
+                raise RuntimeError('Candidate management isolation check failed')
+        finally:
+            connection.close()
+
+
+def docker(method, path, body=None):
+    return request('/var/run/docker.sock', method, '/v1.52' + path, body)
+
+
+def inspect(name):
+    return docker('GET', '/containers/' + name + '/json')
+
+
+def atomic(path, value, mode=0o600):
+    temp = path.with_suffix('.new')
+    with open(temp, 'w') as output:
+        os.chmod(temp, mode)
+        json.dump(value, output)
+        output.flush()
+        os.fsync(output.fileno())
+    os.replace(temp, path)
+
+
+def audit(event, **fields):
+    # Fixed operational fields only; never log HTTP bodies, environments or templates.
+    record = {'type': 'audit', 'time': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'event': 'deployment.' + event, **fields}
+    line = json.dumps(record)
+    fd = os.open(AUDIT, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'a') as output:
+        output.write(line + '\n')
+    print(line, flush=True)
+
+
+def ports(snapshot, vip):
+    result = {('tcp', 80), ('tcp', 443)}
+    for route in snapshot.get('routes', []):
+        if not route.get('published') or route.get('kind') not in ('tcp', 'udp'):
+            continue
+        if route.get('ingressIP') != vip:
+            raise ValueError('Unexpected ingress address')
+        ranges = route.get('ports') or str(route['portStart']) + '-' + str(route['portEnd'])
+        for item in ranges.split(','):
+            match = re.fullmatch(r'\s*(\d+)(?:\s*-\s*(\d+))?\s*', item)
+            if not match:
+                raise ValueError('Invalid port list')
+            first, last = int(match[1]), int(match[2] or match[1])
+            if not 1 <= first <= last <= 65535 or last - first >= 1024:
+                raise ValueError('Invalid port range')
+            result.update((route['kind'], port) for port in range(first, last + 1))
+            if any(port in [22, 3001, 8120, 9120, 2375, 2376, 41641] for _, port in result):
+                raise ValueError('Host management listener is protected')
+            if len(result) > 1026:
+                raise ValueError('Listener budget exceeded')
+    return [list(item) for item in sorted(result)]
+
+
+def service_args(vip, proto, port):
+    return ['-t' if proto == 'tcp' else '-u', f'{vip}:{port}']
+
+
+def configure_service(vip, proto, port, backends):
+    key = service_args(vip, proto, port)
+    current = run(['ipvsadm', '-Sn'])
+    header = '-A ' + ' '.join(key) + ' '
+    if not any(line.startswith(header) for line in current.splitlines()):
+        run(['ipvsadm', '-A', *key, '-s', 'rr'])
+    # Add/enable the healthy replacement before quiescing old destinations.
+    for ip, weight in sorted(backends.items(), key=lambda item: -item[1]):
+        target = f'{ip}:{port}'
+        exists = any(line.startswith('-a ' + ' '.join(key) + ' ') and
+                     (' -r ' + target + ' ') in line for line in current.splitlines())
+        run(['ipvsadm', '-e' if exists else '-a', *key, '-r', target, '-m', '-w', str(weight)])
+
+
+def generation_count(entry):
+    if entry.get('legacy'):
+        return None  # Pre-IPVS TCP connections cannot be counted by IPVS.
+    count = 0
+    target = entry['ip'] + ':'
+    for line in run(['ipvsadm', '-Ln']).splitlines():
+        fields = line.split()
+        if len(fields) >= 6 and fields[0] == '->' and fields[1].startswith(target):
+            count += int(fields[-1]) + int(fields[-2])
+    return count
+
+
+class Broker:
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.config = json.loads((STATE / 'templates.json').read_text())
+        self.state = json.loads((STATE / 'state.json').read_text())
+        self.vip = self.config['vip']
+        if ipaddress.ip_address(self.vip).version != 4:
+            raise RuntimeError('This deployment requires one IPv4 ingress address')
+
+    def persist(self):
+        atomic(STATE / 'state.json', self.state)
+        control = self.state['control']
+        atomic(REGISTRY / 'active.json', {'id': control['id'], 'ip': control['ip']}, 0o644)
+
+    def network(self):
+        # Input filtering happens BEFORE IPVS's LOCAL_IN dispatch. Direct traffic
+        # to generation addresses must never bypass the public UFW rules.
+        rules = '''table inet proxy_handoff_guard {
+ chain input {
+  type filter hook input priority -10; policy accept;
+  iifname != "lo" ip daddr 10.254.240.0/24 drop
+ }
+}
+'''
+        listed = subprocess.run(['nft', 'list', 'table', 'inet', 'proxy_handoff_guard'],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+        if not listed:
+            rules = 'delete table inet proxy_handoff_guard\n' + rules
+        run(['nft', '-f', '-'], input=rules)
+        for entry in [self.state['edge'], self.state['control'], *self.state['draining']]:
+            if not entry.get('legacy'):
+                self.address(entry['ip'])
+        self.routes()
+        self.persist()
+
+    def address(self, ip):
+        if ipaddress.ip_address(ip) not in NETWORK or ip == str(NETWORK.network_address):
+            raise RuntimeError('Invalid private generation address')
+        run(['ip', 'address', 'replace', ip + '/32', 'dev', 'lo'])
+
+    def routes(self):
+        edge = self.state['edge']
+        all_entries = [edge, *[e for e in self.state['draining'] if e['role'] == 'edge']]
+        listeners = {tuple(p) for entry in all_entries for p in entry['ports']}
+        for proto, port in sorted(listeners):
+            backends = {entry['ip']: int(entry['id'] == edge['id'])
+                        for entry in all_entries if [proto, port] in entry['ports']}
+            configure_service(self.vip, proto, port, backends)
+        control = self.state['control']
+        backends = {entry['ip']: int(entry['id'] == control['id']) for entry in
+                    [control, *[e for e in self.state['draining'] if e['role'] == 'control']]}
+        configure_service('127.0.0.1', 'tcp', 3001, backends)
+
+    def new(self, role, image, snapshot=None, reserved=()):
+        memory = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
+        if int(memory['MemAvailable'].split()[0]) < 512 * 1024:
+            raise RuntimeError('Insufficient free memory for a safe overlapping deployment')
+        used = {entry['ip'] for entry in [self.state['edge'], self.state['control'], *self.state['draining']]}
+        used.update(entry['ip'] for entry in self.state.get('pending', []))
+        used.update(reserved)
+        ip = next((f'10.254.240.{i}' for i in range(2, 251) if f'10.254.240.{i}' not in used), None)
+        if not ip or len(self.state['draining']) >= MAX_GENERATIONS:
+            raise RuntimeError('Drain capacity reached; retry after old sessions retire')
+        identifier = uuid.uuid4().hex
+        entry = {'id': identifier, 'ip': ip, 'role': role, 'image': image, 'created': time.time()}
+        template = self.config[role]
+        config = copy.deepcopy(template['config'])
+        config['Image'] = image
+        config['Labels'] = {'org.krychlic.proxy.generation': identifier, 'org.krychlic.proxy.role': role}
+        env = dict(value.split('=', 1) for value in config['Env'])
+        env.pop('PROXY_HANDOFF_AGENT', None)
+        host = copy.deepcopy(template['host'])
+        host['NetworkMode'] = 'host'
+        host.pop('PortBindings', None)
+        host['Binds'] = [f"{m['Source']}:{m['Destination']}:{'rw' if m['RW'] else 'ro'}"
+                         for m in template['mounts'] if role != 'edge' or m['Destination'] not in ['/runtime', '/ipc']]
+        if role == 'edge':
+            directory = STATE / identifier
+            directory.mkdir(mode=0o700)
+            with sqlite3.connect(directory / 'edge.db') as db:
+                db.execute('CREATE TABLE data (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+                body = copy.deepcopy(snapshot)
+                settings = body.pop('settings')
+                body.pop('expectedHash', None)
+                body.pop('expectedPolicyHash', None)
+                db.execute('INSERT INTO data VALUES (?, ?)', ('last-good', json.dumps({'snapshot': body, 'settings': settings})))
+            os.chown(directory / 'edge.db', 10002, 10000)
+            os.chown(directory, 10002, 10000)
+            host['Binds'].append(f'{directory}:/runtime:rw')
+            env.update(PROXY_EDGE_BIND_IP=ip, PROXY_EDGE_SOCKET='/runtime/edge.sock')
+            entry['socket'] = str(directory / 'edge.sock')
+            entry['ports'] = ports(snapshot, self.vip)
+        else:
+            env.update(PROXY_LISTEN_HOST=ip, PROXY_CONTROL_GENERATION=identifier)
+            env['PROXY_AUDIT_PATH'] = '/audit/events.jsonl'
+            host['Binds'].append(f'{REGISTRY}:/handoff:ro')
+            host['Binds'].append('/var/log/proxy-management-audit:/audit:rw')
+        config['Env'] = [key + '=' + value for key, value in env.items()]
+        config['HostConfig'] = host
+        self.address(ip)
+        self.state.setdefault('pending', []).append(entry)
+        self.persist()
+        try:
+            result = docker('POST', '/containers/create?name=proxy-generation-' + identifier, config)
+            entry['container'] = result['Id']
+            docker('POST', '/containers/' + entry['container'] + '/start')
+            for _ in range(100):
+                try:
+                    if role == 'edge':
+                        status = request(entry['socket'], 'GET', '/status')
+                        if not status.get('available') or status.get('error'):
+                            raise RuntimeError('Candidate configuration is unavailable')
+                        entry['status'] = status
+                        hostname = snapshot['settings'].get('adminHostname')
+                        if hostname:
+                            verify_admin(ip, hostname)
+                    else:
+                        with closing(http.client.HTTPConnection(ip, 3001, timeout=1)) as connection:
+                            connection.request('GET', '/healthz')
+                            if connection.getresponse().status != 200:
+                                raise RuntimeError('Candidate management is unavailable')
+                    return entry
+                except (OSError, RuntimeError, ValueError, http.client.HTTPException):
+                    time.sleep(.1)
+            raise RuntimeError('Candidate failed readiness verification')
+        except BaseException:
+            self.remove(entry)
+            self.state['pending'] = [e for e in self.state['pending'] if e['id'] != identifier]
+            self.persist()
+            raise
+
+    def remove(self, entry):
+        if entry.get('container'):
+            docker('DELETE', '/containers/' + entry['container'] + '?force=true')
+        if not entry.get('legacy'):
+            # Never recursively delete an application-writable directory as root.
+            # State directories are retained for manual recovery and later bounded cleanup.
+            run(['ip', 'address', 'del', entry['ip'] + '/32', 'dev', 'lo'])
+
+    def activate(self, edge, control=None, reason='configuration'):
+        before = copy.deepcopy(self.state)
+        old = self.state['edge']
+        retiring = [old]
+        if control:
+            retiring.append(self.state['control'])
+            self.state['control'] = control
+        self.state['edge'] = edge
+        self.state['pending'] = [e for e in self.state.get('pending', [])
+                                 if e['id'] not in [edge['id'], (control or {}).get('id')]]
+        for entry in retiring:
+            entry['deadline'] = time.time() + DRAIN_SECONDS
+        self.state['draining'].extend(retiring)
+        try:
+            self.routes()
+            self.persist()
+            # Verify the ACTIVE path, not just that the candidate process started.
+            with closing(http.client.HTTPConnection('127.0.0.1', 3001, timeout=3)) as connection:
+                connection.request('GET', '/healthz')
+                if connection.getresponse().status != 200:
+                    raise RuntimeError('Management handoff verification failed')
+        except BaseException:
+            self.state = before
+            self.routes()
+            self.persist()
+            # Explicitly quiesce failed destinations; retained flows can be reset on rollback.
+            for entry in [edge, *([control] if control else [])]:
+                self.drop_destinations(entry)
+                self.remove(entry)
+            self.state['pending'] = []
+            self.persist()
+            audit('rollback', generation=edge['id'])
+            raise
+        audit('switched', generation=edge['id'], reason=reason,
+              drainSeconds=DRAIN_SECONDS, retiring=[e['id'] for e in retiring])
+        return edge['status']
+
+    def drop_destinations(self, entry):
+        vip = self.vip if entry['role'] == 'edge' else '127.0.0.1'
+        for proto, port in entry.get('ports', [['tcp', 3001]]):
+            run(['ipvsadm', '-d', *service_args(vip, proto, port), '-r', f"{entry['ip']}:{port}"])
+
+    def reap(self):
+        with self.lock:
+            for entry in list(self.state['draining']):
+                count = generation_count(entry)
+                forced = time.time() >= entry['deadline']
+                if count != 0 and not forced:
+                    continue
+                self.drop_destinations(entry)
+                self.remove(entry)
+                self.state['draining'].remove(entry)
+                self.persist()
+                audit('forced_retirement' if forced and count != 0 else 'retired',
+                      generation=entry['id'], role=entry['role'], remainingConnections=count)
+
+    def apply(self, body):
+        status = request(self.state['edge']['socket'], 'GET', '/status')
+        if not self.state['edge'].get('legacy') and (
+                body.get('expectedHash') != status['hash'] or body.get('expectedPolicyHash') != status['policyHash']):
+            raise RuntimeError('Configuration changed concurrently; refresh before retrying')
+        candidate = self.new('edge', self.state['edge']['image'], body)
+        previous = self.state['snapshot']
+        self.state['snapshot'] = {key: value for key, value in body.items()
+                                  if key not in ['expectedHash', 'expectedPolicyHash']}
+        try:
+            return self.activate(candidate)
+        except BaseException:
+            self.state['snapshot'] = previous
+            self.persist()
+            raise
+
+    def deploy(self, images):
+        if set(images) != {'edge', 'control'} or any(not re.fullmatch(r'sha256:[0-9a-f]{64}', value) for value in images.values()):
+            raise ValueError('Expected immutable edge/control image IDs')
+        control = self.new('control', images['control'])
+        try:
+            edge = self.new('edge', images['edge'], self.state['snapshot'], reserved=[control['ip']])
+        except BaseException:
+            self.remove(control)
+            raise
+        return self.activate(edge, control, 'version')
+
+
+class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+    request_queue_size = 16
+    permits = threading.BoundedSemaphore(8)
+
+    def process_request(self, request, address):
+        if not self.permits.acquire(blocking=False):
+            request.close()
+            return
+        super().process_request(request, address)
+
+    def process_request_thread(self, request, address):
+        try:
+            super().process_request_thread(request, address)
+        finally:
+            self.permits.release()
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def do_GET(self):
+        self.handle_request()
+
+    def do_POST(self):
+        self.handle_request()
+
+    def handle_request(self):
+        self.connection.settimeout(40)
+        uid = struct.unpack('3i', self.connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[1]
+        status, result = 200, None
+        try:
+            if uid not in [0, 10001, 10002] or (uid == 10002 and (self.command, self.path) != ('GET', '/status')):
+                raise PermissionError('Unauthorized control peer')
+            size = int(self.headers.get('Content-Length', '0'))
+            if not 0 <= size <= 1_000_000 or self.headers.get('Transfer-Encoding'):
+                raise ValueError('Invalid control body length')
+            body = json.loads(self.rfile.read(size)) if size else None
+            broker = self.server.broker
+            with broker.lock:
+                if self.path == '/deploy' and self.command == 'POST' and uid == 0:
+                    result = broker.deploy(body)
+                elif self.path == '/apply' and self.command == 'POST' and uid in [0, 10001]:
+                    result = broker.apply(body)
+                elif (self.command, self.path) in [('GET', '/status'), ('GET', '/network'),
+                       ('POST', '/probe'), ('POST', '/pages/validate'), ('POST', '/sites/inspect')]:
+                    result = request(broker.state['edge']['socket'], self.command, self.path, body)
+                else:
+                    raise PermissionError('Unsupported control operation')
+        except PermissionError:
+            status, result = 403, {'error': 'Unsupported control operation'}
+        except (ValueError, TypeError, KeyError):
+            status, result = 400, {'error': 'Invalid deployment request'}
+        except Exception as error:
+            status, result = 503, {'error': 'Handoff failed; previous deployment retained. Check deployment audit.'}
+            audit('failed', operation='version' if self.path == '/deploy' else 'configuration', error=type(error).__name__)
+        raw = json.dumps(result).encode()
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+
+def initialize():
+    STATE.mkdir(mode=0o700, exist_ok=True)
+    if (STATE / 'state.json').exists():
+        raise RuntimeError('Handoff is already initialized')
+    os.chmod(STATE, 0o700)
+    originals = {role: inspect('proxy-' + role + '-1') for role in ['edge', 'control']}
+    env = dict(value.split('=', 1) for value in originals['edge']['Config']['Env'])
+    vip = env['PROXY_INGRESS_IPS']
+    if ',' in vip or ipaddress.ip_address(vip).version != 4:
+        raise RuntimeError('Expected the current single IPv4 ingress deployment')
+    templates = {'vip': vip}
+    for role, container in originals.items():
+        templates[role] = {
+            'config': {key: container['Config'][key] for key in
+                       ['Image', 'Entrypoint', 'Cmd', 'User', 'WorkingDir', 'Env']},
+            'host': {key: container['HostConfig'][key] for key in
+                     ['ReadonlyRootfs', 'CapAdd', 'CapDrop', 'SecurityOpt', 'Memory', 'NanoCpus',
+                      'PidsLimit', 'Tmpfs', 'Ulimits', 'Init', 'RestartPolicy', 'LogConfig']},
+            'mounts': container['Mounts'],
+        }
+    edge_mount = next(m['Source'] for m in originals['edge']['Mounts'] if m['Destination'] == '/runtime')
+    ipc = next(m['Source'] for m in originals['edge']['Mounts'] if m['Destination'] == '/ipc')
+    with sqlite3.connect(Path(edge_mount).as_uri() + '/edge.db?mode=ro', uri=True) as db:
+        saved = json.loads(db.execute("SELECT value FROM data WHERE key='last-good'").fetchone()[0])
+    snapshot = {**saved['snapshot'], 'settings': saved['settings']}
+    state = {'snapshot': snapshot, 'draining': []}
+    for role, container in originals.items():
+        state[role] = {'id': 'legacy-' + role, 'role': role, 'container': container['Id'],
+                       'image': container['Image'], 'ip': vip if role == 'edge' else '127.0.0.1',
+                       'legacy': True}
+    state['edge'].update(socket=str(Path(ipc) / 'legacy-edge.sock'), ports=ports(snapshot, vip))
+    templates['ipc'] = ipc
+    atomic(STATE / 'templates.json', templates)
+    atomic(STATE / 'state.json', state)
+    os.rename(Path(ipc) / 'edge.sock', Path(ipc) / 'legacy-edge.sock')
+    audit('initialized', drainSeconds=DRAIN_SECONDS)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--initialize', action='store_true')
+    args = parser.parse_args()
+    os.umask(0o077)
+    audit_dir = Path('/var/log/proxy-management-audit')
+    audit_dir.mkdir(mode=0o750, exist_ok=True)
+    os.chown(audit_dir, 0, 10000)
+    os.chmod(audit_dir, 0o750)
+    audit_file = audit_dir / 'events.jsonl'
+    fd = os.open(audit_file, os.O_APPEND | os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+    os.fchown(fd, 10001, 10000)
+    os.fchmod(fd, 0o600)
+    os.close(fd)
+    if args.initialize:
+        initialize()
+    REGISTRY.mkdir(mode=0o755, exist_ok=True)
+    os.chmod(REGISTRY, 0o755)
+    broker = Broker()
+    broker.network()
+    socket_path = Path(broker.config['ipc']) / 'edge.sock'
+    socket_path.unlink(missing_ok=True)
+    with Server(str(socket_path), Handler) as server:
+        server.broker = broker
+        os.chown(socket_path, 0, 10000)
+        os.chmod(socket_path, 0o660)
+        def cleanup():
+            while True:
+                time.sleep(5)
+                try:
+                    broker.reap()
+                except Exception:
+                    audit('cleanup_failed')
+        threading.Thread(target=cleanup, daemon=True).start()
+        server.serve_forever()
+
+
+if __name__ == '__main__':
+    main()

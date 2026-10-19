@@ -11,6 +11,22 @@ const response = () => {
   return { getHeader: (key) => headers.get(key), setHeader: (key, value) => headers.set(key, value) };
 };
 
+test('pending sign-ins survive a controller handoff, stay origin-bound and consume once', (t) => {
+  const store = new Store(':memory:');
+  t.after(() => store.close());
+  const origin = 'https://proxy.example.net';
+  const old = new Auth(store, { origin });
+  let cookie;
+  const res = response();
+  old.challenge({}, { ...res, setHeader: (_key, value) => { cookie = value[0].split(';')[0]; } },
+    { type: 'login', challenge: 'handoff-test' });
+  const other = new Auth(store, { origin: 'https://private.example.net' });
+  assert.throws(() => other.consume({ headers: { cookie } }, response(), 'login'), /Sign-in expired/);
+  const next = new Auth(store, { origin });
+  assert.equal(next.consume({ headers: { cookie } }, response(), 'login').challenge, 'handoff-test');
+  assert.throws(() => old.consume({ headers: { cookie } }, response(), 'login'), /Sign-in expired/);
+});
+
 test('recovery revokes links and pending challenges across management origins', async (t) => {
   const store = new Store(':memory:');
   t.after(() => store.close());
