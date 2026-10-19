@@ -1,36 +1,42 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, Group, Stack, PasswordInput, Switch, Text } from '@mantine/core';
+import React, { useEffect, useRef, useState } from 'react';
+import { Group, Stack, PasswordInput, Switch, Text } from '@mantine/core';
 import { Button } from './controls.jsx';
 import { api } from './api.js';
 import Help from './help.jsx';
 import { formatDateTime } from './date-time.js';
+import { useToast } from './toasts.jsx';
 
 export default function DiscordAlerts() {
+  const report = useToast(), lastLoadError = useRef('');
   const [status, setStatus] = useState(null), [enabled, setEnabled] = useState(false),
-    [url, setURL] = useState(''), [busy, setBusy] = useState(false),
-    [error, setError] = useState(''), [message, setMessage] = useState('');
+    [url, setURL] = useState(''), [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
     async function load(initial = false) {
       try {
         const next = await api('/notifications/discord');
         if (active) { setStatus(next); if (initial) setEnabled(next.enabled); }
-      } catch (e) { if (active) setError(e.message); }
+        lastLoadError.current = '';
+      } catch (e) {
+        if (active && lastLoadError.current !== e.message) report(e.message, true);
+        lastLoadError.current = e.message;
+      }
     }
     load(true);
     const timer = setInterval(load, 10000);
     return () => { active = false; clearInterval(timer); };
-  }, []);
+  }, [report]);
+  useEffect(() => { if (status?.error) report(status.error, true); }, [status?.error, report]);
   async function action(operation) {
-    setBusy(true); setError(''); setMessage('');
+    setBusy(true);
     try {
       const next = await api(`/notifications/discord${operation === 'test' ? '/test' : ''}`, {
-        method: operation === 'save' ? 'PUT' : operation === 'remove' ? 'DELETE' : 'POST',
+        method: operation === 'save' ? 'PUT' : 'POST',
         ...(operation === 'save' ? { body: { enabled, ...(url.trim() ? { webhookURL: url.trim() } : {}) } } : {}),
       });
       setStatus(next); setEnabled(next.enabled); setURL('');
-      setMessage(next.message ?? (operation === 'remove' ? 'Webhook removed.' : 'Discord alert settings saved.'));
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+      report(next.message ?? 'Discord alert settings saved.');
+    } catch (e) { report(e.message, true); } finally { setBusy(false); }
   }
   return <form onSubmit={(e) => { e.preventDefault(); action('save'); }}>
     <Stack gap="lg">
@@ -40,12 +46,8 @@ export default function DiscordAlerts() {
         description={status?.configured ? 'Saved · leave blank to keep' : 'Discord channel → Integrations → Webhooks → Copy URL'}
         placeholder="https://discord.com/api/webhooks/…" value={url} autoComplete="off" maxLength={512}
         onChange={(e) => setURL(e.currentTarget.value)} />
-      {error && <Alert color="red" role="alert">{error}</Alert>}
-      {status?.error && <Alert color="yellow">{status.error}</Alert>}
-      {message && <Alert color="teal" role="status">{message}</Alert>}
       <Text size="sm" c="dimmed">{status?.lastSuccess ? `Last delivered: ${formatDateTime(status.lastSuccess)}` : 'No notifications delivered yet.'}</Text>
       <Group justify="flex-end">
-        {status?.configured && <Button className="text-button" disabled={busy} onClick={() => action('remove')}>Remove webhook</Button>}
         <Button className="secondary" disabled={busy || !status?.configured} onClick={() => action('test')}>Send test notification</Button>
         <Button className="primary" type="submit" disabled={busy || !status}>Save changes</Button>
       </Group>
