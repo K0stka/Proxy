@@ -200,6 +200,21 @@ class Broker:
         # Once a generation is forcibly removed, expire its stale kernel flows
         # so reconnecting UDP clients can reach the current generation.
         Path('/proc/sys/net/ipv4/vs/expire_nodest_conn').write_text('1\n')
+        boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+        restarted = self.state.get('bootId') not in [None, boot]
+        self.state['bootId'] = boot
+        for entry in self.state['draining']:
+            if entry.get('legacy'):
+                # Reboots have already destroyed legacy sessions. Prevent stale
+                # public listeners from returning before kernel routing is ready.
+                if restarted:
+                    entry['deadline'] = 0
+                try:
+                    docker('POST', '/containers/' + entry['container'] + '/update',
+                           {'RestartPolicy': {'Name': 'no', 'MaximumRetryCount': 0}})
+                except ControlError as error:
+                    if error.status != 404:
+                        raise
         # Input filtering happens BEFORE IPVS's LOCAL_IN dispatch. Direct traffic
         # to generation addresses must never bypass the public UFW rules.
         rules = '''table inet proxy_handoff_guard {
