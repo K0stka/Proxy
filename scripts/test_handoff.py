@@ -122,6 +122,20 @@ class HandoffTests(unittest.TestCase):
             self.assertEqual(sentinel.read_text(), 'keep')
             self.assertFalse((root / identifier).exists())
 
+    def test_changed_komodo_images_request_only_the_fixed_tested_update_job(self):
+        broker = handoff.Broker.__new__(handoff.Broker)
+        broker.lock = __import__('threading').RLock()
+        broker.state = {'draining': [], 'control': {'image': 'old'}, 'edge': {'image': 'old'}}
+        broker.persist = Mock()
+        agent = {'Image': 'new', 'Config': {'Env': ['PROXY_HANDOFF_AGENT=true']}}
+        with patch.object(handoff, 'inspect', return_value=agent), patch.object(handoff.subprocess, 'run') as run, patch.object(handoff, 'audit'), patch.object(handoff.time, 'time', return_value=10000):
+            run.return_value.returncode = 1
+            broker.check_agent_updates()
+            self.assertEqual(run.call_args.args[0], ['systemctl', 'start', '--no-block', 'proxy-security-update.service'])
+            self.assertEqual(run.call_count, 2)
+            broker.check_agent_updates()
+            self.assertEqual(run.call_count, 2)
+
 
 if __name__ == '__main__':
     unittest.main()

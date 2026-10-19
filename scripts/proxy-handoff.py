@@ -483,6 +483,30 @@ class Broker:
                 docker('POST', '/containers/' + result['Id'] + '/start')
                 audit('status_agent_started', role=role)
 
+    def check_agent_updates(self):
+        with self.lock:
+            if self.state.get('paused') or any(entry.get('legacy') for entry in self.state['draining']):
+                return
+            images = {}
+            for role in ['control', 'edge']:
+                agent = inspect('proxy-' + role + '-1')
+                if 'PROXY_HANDOFF_AGENT=true' not in agent['Config']['Env']:
+                    return
+                images[role] = agent['Image']
+            if all(images[role] == self.state[role]['image'] for role in images):
+                return
+            if self.state.get('lastRequestedImages') == images and time.time() - self.state.get('lastUpdateRequest', 0) < 3600:
+                return
+            if subprocess.run(['systemctl', 'is-active', '--quiet', 'proxy-security-update.service']).returncode == 0:
+                return
+            # A Komodo rebuild requests the fixed, tested updater. Agent contents
+            # never select privileged commands, paths, revisions or arbitrary images.
+            subprocess.run(['systemctl', 'start', '--no-block', 'proxy-security-update.service'], check=True)
+            self.state['lastRequestedImages'] = images
+            self.state['lastUpdateRequest'] = time.time()
+            self.persist()
+            audit('update_requested', source='komodo')
+
     def reap(self):
         with self.lock:
             for entry in list(self.state['draining']):
@@ -576,6 +600,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                        ('POST', '/probe'), ('POST', '/pages/validate'), ('POST', '/sites/inspect')]:
                     result = request(broker.state['edge']['socket'], self.command, self.path, body)
                     if self.path == '/status':
+                        if not result.get('available') or result.get('error'):
+                            raise RuntimeError('Active edge is unavailable')
                         with closing(http.client.HTTPConnection(broker.state['control']['ip'], 3001, timeout=2)) as connection:
                             connection.request('GET', '/healthz')
                             if connection.getresponse().status != 200:
@@ -675,6 +701,7 @@ def main():
                     ticks += 1
                     if ticks % 6 == 0:
                         broker.refresh_certificates()
+                        broker.check_agent_updates()
                 except Exception:
                     audit('cleanup_failed')
         threading.Thread(target=cleanup, daemon=True).start()
