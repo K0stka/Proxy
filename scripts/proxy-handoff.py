@@ -110,6 +110,11 @@ def atomic(path, value, mode=0o600):
         output.flush()
         os.fsync(output.fileno())
     os.replace(temp, path)
+    parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(parent)
+    finally:
+        os.close(parent)
 
 
 def audit(event, **fields):
@@ -354,7 +359,7 @@ class Broker:
             self.state['pending'] = [item for item in self.state['pending'] if item['id'] != entry['id']]
             self.persist()
 
-    def activate(self, edge, control=None, reason='configuration'):
+    def activate(self, edge, control=None, reason='configuration', snapshot=None):
         before = copy.deepcopy(self.state)
         old = self.state['edge']
         retiring = [old]
@@ -362,6 +367,8 @@ class Broker:
             retiring.append(self.state['control'])
             self.state['control'] = control
         self.state['edge'] = edge
+        if snapshot is not None:
+            self.state['snapshot'] = snapshot
         self.state['pending'] = [e for e in self.state.get('pending', [])
                                  if e['id'] not in [edge['id'], (control or {}).get('id')]]
         for entry in retiring:
@@ -532,15 +539,9 @@ class Broker:
                 body.get('expectedHash') != status['hash'] or body.get('expectedPolicyHash') != status['policyHash']):
             raise RuntimeError('Configuration changed concurrently; refresh before retrying')
         candidate = self.new('edge', self.state['edge']['image'], body)
-        previous = self.state['snapshot']
-        self.state['snapshot'] = {key: value for key, value in body.items()
-                                  if key not in ['expectedHash', 'expectedPolicyHash']}
-        try:
-            return self.activate(candidate)
-        except BaseException:
-            self.state['snapshot'] = previous
-            self.persist()
-            raise
+        snapshot = {key: value for key, value in body.items()
+                    if key not in ['expectedHash', 'expectedPolicyHash']}
+        return self.activate(candidate, snapshot=snapshot)
 
     def deploy(self, images):
         if self.state.get('paused'):

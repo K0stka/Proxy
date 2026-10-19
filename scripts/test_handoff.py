@@ -74,13 +74,14 @@ class HandoffTests(unittest.TestCase):
         broker = handoff.Broker.__new__(handoff.Broker)
         old = {'id': 'old', 'role': 'edge'}
         candidate = {'id': 'new', 'role': 'edge'}
-        broker.state = {'edge': old.copy(), 'control': {}, 'draining': []}
+        broker.state = {'edge': old.copy(), 'control': {}, 'draining': [], 'snapshot': {'version': 'old'}}
         broker.routes = Mock(side_effect=[RuntimeError('failed switch'), None])
         broker.persist, broker.drop_destinations, broker.remove = Mock(), Mock(), Mock()
         with patch.object(handoff, 'audit') as audit:
             with self.assertRaises(RuntimeError):
-                broker.activate(candidate)
+                broker.activate(candidate, snapshot={'version': 'new'})
             self.assertEqual(broker.state['edge'], old)
+            self.assertEqual(broker.state['snapshot'], {'version': 'old'})
             broker.drop_destinations.assert_called_once_with(candidate)
             audit.assert_called_once_with('rollback', generation='new')
 
