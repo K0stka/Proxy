@@ -135,8 +135,9 @@ def health(previous, admin_host, isolation=True):
 
 def deploy(directory, previous, admin_host, rollback_file, check=health,
            rollback_check=lambda previous, host: health(previous, host, isolation=False),
-           wait=time.sleep, attempts=36):
-    managed = Path('/var/lib/proxy-handoff/state.json').exists()
+           wait=time.sleep, attempts=36, managed=None):
+    if managed is None:
+        managed = Path('/var/lib/proxy-handoff/state.json').exists()
     switched = False
     try:
         if managed:

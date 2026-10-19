@@ -34,7 +34,7 @@ class DeploymentTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'health verification failed'):
                 updater.deploy(Path('/deployment'), previous, None, Path('/private/rollback.json'),
                                check=lambda *_: False, rollback_check=lambda *_: True,
-                               wait=lambda _: None, attempts=1)
+                               wait=lambda _: None, attempts=1, managed=False)
             calls = [call.args[0] for call in run.call_args_list]
             self.assertIn(['docker', 'tag', 'sha256:known-good', 'proxy-control'], calls)
             self.assertIn('/private/rollback.json', calls[-1])
@@ -43,8 +43,18 @@ class DeploymentTests(unittest.TestCase):
     def test_healthy_candidate_does_not_run_rollback(self):
         with patch.object(updater, 'run') as run:
             updater.deploy(Path('/deployment'), [], None, Path('/private/rollback.json'),
-                           check=lambda *_: True, wait=lambda _: None, attempts=1)
+                           check=lambda *_: True, wait=lambda _: None, attempts=1, managed=False)
             self.assertEqual(run.call_count, 1)
+
+    def test_managed_health_failure_rolls_application_back_through_broker(self):
+        previous = [{'Image': 'old-control'}, {'Image': 'old-edge'}]
+        with patch.object(updater, 'run', return_value='sha256:candidate'), patch.object(updater, 'handoff') as handoff:
+            with self.assertRaisesRegex(RuntimeError, 'health verification failed'):
+                updater.deploy(Path('/deployment'), previous, None, Path('/private/rollback.json'),
+                               check=lambda *_: False, rollback_check=lambda *_: True,
+                               wait=lambda _: None, attempts=1, managed=True)
+            self.assertEqual(handoff.call_count, 2)
+            self.assertEqual(handoff.call_args.args[0], {'control': 'old-control', 'edge': 'old-edge'})
 
 
 if __name__ == '__main__':
