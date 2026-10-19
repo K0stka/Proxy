@@ -52,6 +52,10 @@ maintenance planning; an overlap cannot preserve processes across a host reboot.
 The first migration tracks active UDP traffic through the old listener for at least
 60 seconds before switching. Legacy TCP listeners are retained for the full hour
 because connections established before IPVS was enabled are not in its counters.
+The original Compose containers remain in place during that first drain and are
+automatically replaced with status agents after retirement. Avoid manual Komodo
+redeploys during that one-time hour: Compose could otherwise remove a legacy
+container that still owns old connections. Later redeploys replace only agents.
 Keep the deployment `.env` flag when changing Komodo's stored environment.
 
 Isolated kernel regression test (root): `python3 scripts/test_handoff_network.py`.

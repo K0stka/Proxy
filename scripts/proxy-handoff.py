@@ -237,7 +237,7 @@ class Broker:
         used.update(entry['ip'] for entry in self.state.get('pending', []))
         used.update(reserved)
         ip = next((f'10.254.240.{i}' for i in range(2, 251) if f'10.254.240.{i}' not in used), None)
-        if not ip or len(self.state['draining']) >= MAX_GENERATIONS:
+        if not ip or len(self.state['draining']) + len(self.state.get('pending', [])) >= MAX_GENERATIONS:
             raise RuntimeError('Drain capacity reached; retry after old sessions retire')
         identifier = uuid.uuid4().hex
         entry = {'id': identifier, 'ip': ip, 'role': role, 'image': image, 'created': time.time()}
@@ -327,6 +327,9 @@ class Broker:
             current = json.loads(run(['ip', '-j', 'address', 'show', 'dev', 'lo']))
             if any(info['local'] == entry['ip'] for interface in current for info in interface['addr_info']):
                 run(['ip', 'address', 'del', entry['ip'] + '/32', 'dev', 'lo'])
+        if any(item['id'] == entry['id'] for item in self.state.get('pending', [])):
+            self.state['pending'] = [item for item in self.state['pending'] if item['id'] != entry['id']]
+            self.persist()
 
     def activate(self, edge, control=None, reason='configuration'):
         before = copy.deepcopy(self.state)
@@ -425,6 +428,40 @@ class Broker:
                         self.routes()
                         self.persist()
                         audit('operator_started', role=role)
+
+    def ensure_agents(self):
+        with self.lock:
+            for role in ['control', 'edge']:
+                if role in self.state.get('paused', []) or any(
+                        entry.get('legacy') and entry['role'] == role for entry in self.state['draining']):
+                    continue
+                try:
+                    inspect('proxy-' + role + '-1')
+                    continue
+                except ControlError as error:
+                    if error.status != 404:
+                        raise
+                template = self.config[role]
+                config = copy.deepcopy(template['config'])
+                config['Image'] = self.state[role]['image']
+                config['Env'] = [value for value in config['Env'] if not value.startswith('PROXY_HANDOFF_AGENT=')]
+                config['Env'].append('PROXY_HANDOFF_AGENT=true')
+                config['Labels'] = template['agentLabels']
+                host = copy.deepcopy(template['host'])
+                host['NetworkMode'] = 'host' if role == 'edge' else template['network']
+                host['Binds'] = [f"{m['Source']}:{m['Destination']}:{'rw' if m['RW'] else 'ro'}" for m in template['mounts']]
+                if role == 'control':
+                    host['PortBindings'] = {'3001/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '0'}]}
+                    config['ExposedPorts'] = {'3001/tcp': {}}
+                    probe = ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+                else:
+                    probe = ['CMD', 'proxy-as-edge', 'node', '-e', "require('http').get({socketPath:'/ipc/edge.sock',path:'/status'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+                config['Healthcheck'] = {'Test': probe, 'Interval': 30_000_000_000,
+                                         'Timeout': 5_000_000_000, 'Retries': 3}
+                config['HostConfig'] = host
+                result = docker('POST', '/containers/create?name=proxy-' + role + '-1', config)
+                docker('POST', '/containers/' + result['Id'] + '/start')
+                audit('status_agent_started', role=role)
 
     def reap(self):
         with self.lock:
@@ -559,6 +596,8 @@ def initialize():
                      ['ReadonlyRootfs', 'CapAdd', 'CapDrop', 'SecurityOpt', 'Memory', 'NanoCpus',
                       'PidsLimit', 'Tmpfs', 'Ulimits', 'Init', 'RestartPolicy', 'LogConfig']},
             'mounts': container['Mounts'],
+            'network': container['HostConfig']['NetworkMode'],
+            'agentLabels': container['Config']['Labels'],
         }
     edge_mount = next(m['Source'] for m in originals['edge']['Mounts'] if m['Destination'] == '/runtime')
     ipc = next(m['Source'] for m in originals['edge']['Mounts'] if m['Destination'] == '/ipc')
@@ -612,6 +651,7 @@ def main():
                 try:
                     broker.reap()
                     broker.watch_agents()
+                    broker.ensure_agents()
                     ticks += 1
                     if ticks % 6 == 0:
                         broker.refresh_certificates()
