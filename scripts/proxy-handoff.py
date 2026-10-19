@@ -238,6 +238,13 @@ class Broker:
             raise RuntimeError('Insufficient free disk space for a safe overlapping deployment')
         used = {entry['ip'] for entry in [self.state['edge'], self.state['control'], *self.state['draining']]}
         used.update(entry['ip'] for entry in self.state.get('pending', []))
+        # A removed IPVS destination can still have kernel flow records. Never
+        # give that address to another generation while those records survive.
+        for line in run(['ipvsadm', '-Lnc']).splitlines():
+            fields = line.split()
+            match = re.fullmatch(r'(10\.254\.240\.\d+):\d+', fields[-1]) if fields else None
+            if match:
+                used.add(match[1])
         used.update(reserved)
         ip = next((f'10.254.240.{i}' for i in range(2, 251) if f'10.254.240.{i}' not in used), None)
         if not ip or len(self.state['draining']) + len(self.state.get('pending', [])) >= MAX_GENERATIONS:
