@@ -3,6 +3,7 @@ import { isIP, BlockList } from 'node:net';
 import { domainToASCII } from 'node:url';
 import { createHash } from 'node:crypto';
 import { parsePorts, portRanges, formatPorts, samePorts } from './ports.js';
+import { defaultLogFilters } from './log-filters.js';
 
 export class Problem extends Error {
   constructor(status, message) {
@@ -91,6 +92,11 @@ export const policySchema = z
     ingressIPs: z.array(ip).min(1).max(8),
     adminHostname: z.union([hostname, z.literal('')]).default(''),
     domains: z.array(domainSchema).max(50),
+    logFilters: z.object({
+      hideByttorrent: z.boolean(),
+      byttorrentIPs: z.array(ip).max(32),
+      hideManagement: z.boolean(),
+    }).strict().default(defaultLogFilters),
     certificates: z
       .object({
         email: z.union([z.string().email(), z.literal('')]),
@@ -105,6 +111,7 @@ export const settingsSchema = policySchema.omit({
   ingressIPs: true,
 });
 export const defaultSettings = {
+  logFilters: defaultLogFilters,
   adminHostname: '',
   domains: [],
   certificates: { email: '', staging: false, propagationSeconds: 60 },

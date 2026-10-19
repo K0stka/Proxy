@@ -13,6 +13,38 @@ spec.loader.exec_module(handoff)
 
 
 class HandoffTests(unittest.TestCase):
+    def test_controller_can_read_observability_but_other_peers_and_methods_cannot(self):
+        handler = handoff.Handler.__new__(handoff.Handler)
+        handler.connection = Mock()
+        handler.headers = {}
+        handler.rfile, handler.wfile = io.BytesIO(), io.BytesIO()
+        handler.server = Mock()
+        handler.server.broker.lock = __import__('threading').RLock()
+        handler.server.broker.state = {'edge': {'socket': '/active/edge.sock'}}
+        handler.send_response, handler.send_header, handler.end_headers = Mock(), Mock(), Mock()
+        for uid, method, path, expected in [
+            (10001, 'GET', '/logs?from=2026-10-19&services=abc', 200),
+            (10001, 'GET', '/log-summary?period=day', 200),
+            (10001, 'GET', '/monitoring', 200),
+            (10001, 'GET', '/alerts?after=123', 200),
+            (10002, 'GET', '/logs', 403),
+            (12345, 'GET', '/logs', 403),
+            (10001, 'POST', '/logs', 403),
+            (10001, 'GET', '/logs/other', 403),
+            (10001, 'GET', '/deploy?logs=1', 403),
+        ]:
+            with self.subTest(uid=uid, method=method, path=path):
+                handler.connection.getsockopt.return_value = __import__('struct').pack('3i', 123, uid, 10000)
+                handler.command, handler.path = method, path
+                handler.send_response.reset_mock()
+                with patch.object(handoff, 'request', return_value={'events': []}) as request:
+                    handler.handle_request()
+                    handler.send_response.assert_called_once_with(expected)
+                    if expected == 200:
+                        request.assert_called_once_with('/active/edge.sock', method, path, None)
+                    else:
+                        request.assert_not_called()
+
     def test_idle_retirement_allows_metadata_to_update_but_keeps_hard_deadline(self):
         broker = handoff.Broker.__new__(handoff.Broker)
         broker.lock = __import__('threading').RLock()

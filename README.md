@@ -227,6 +227,10 @@ Live Komodo compatibility, actual Cloudflare/ACME issuance and renewal, your hos
 The admin panel includes an installable app manifest and icons. Open its HTTPS address and use the browser's Install app / Add to Home Screen command. It stays online-only; no service worker caches management data or credentials. Each hostname is a separate app and passkey origin.
 
 
+### Default log filters
+
+Settings → Log filters controls two enabled defaults: hide requests from byttorrent and hide requests to the management panel. These filters apply before pagination to Logs events, charts, totals and full downloads; the Logs page has no additional controls for them. Stored records, security alerts, administration events and edge operations are retained. Disable the filters to view the recorded requests again. Byttorrent's editable IP list defaults to its stable Tailscale addresses; checks through its changing public IP will not match unless the current public address is added.
+
 ## Local mock review
 
 Run `npm run preview:mock` and open [the local mock preview](http://127.0.0.1:4180/logs). It binds only to loopback and uses synthetic services and historical traffic. It never loads deployment credentials or contacts the real edge or Core. Discord delivery is real: enter and save a real webhook URL in Settings, enable notifications, then use Send test notification. There is no seeded fake webhook. Preview webhook settings persist separately in `.local/preview/control.db`. A blue banner identifies the mock throughout the app. Its data lives separately in `.local/preview/`; production images do not include this preview script. Stop it with Ctrl+C. Set `PROXY_PREVIEW_PORT` to choose another local port.

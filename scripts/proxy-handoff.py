@@ -708,7 +708,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 elif self.path == '/apply' and self.command == 'POST' and uid in [0, 10001]:
                     result = broker.apply(body)
                 elif (self.command, self.path) in [('GET', '/status'), ('GET', '/network'),
-                       ('POST', '/probe'), ('POST', '/pages/validate'), ('POST', '/sites/inspect')]:
+                       ('POST', '/probe'), ('POST', '/pages/validate'), ('POST', '/sites/inspect')] or (
+                       self.command == 'GET' and self.path.partition('?')[0] in
+                       ['/logs', '/log-summary', '/monitoring', '/alerts']):
                     result = request(broker.state['edge']['socket'], self.command, self.path, body)
                     if self.path == '/status':
                         if not result.get('available') or result.get('error'):

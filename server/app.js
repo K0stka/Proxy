@@ -9,7 +9,7 @@ import { auditEvent } from './audit.js';
 import { Monitor } from '../shared/monitor.js';
 import { LogStore, logQuery } from '../shared/log-store.js';
 import { DiscordAlerts } from './discord.js';
-import { logView, logPage, logCursor, logParameters } from './logs.js';
+import { logView, logPage, logCursor, logParameters, filteredLogQuery } from './logs.js';
 import { forwardHandoff, activeController } from './handoff.js';
 import { Discovery } from './komodo.js';
 import {
@@ -249,10 +249,10 @@ export function createApp({
       if (path.startsWith('/api/')) {
         requestAuth.require(req, mutation);
         if (path === '/api/logs/view' && req.method === 'GET') {
-          json(res, await logView(archive, edge, url.searchParams)); return;
+          json(res, await logView(archive, edge, url.searchParams, policy.logFilters)); return;
         }
         if (path === '/api/logs/download' && req.method === 'GET') {
-          const query = logQuery(url.searchParams);
+          const query = filteredLogQuery(url.searchParams, policy.logFilters);
           let cursor = {}, page = await logPage(archive, edge, query, cursor, { strict: true });
           res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store',
             'content-disposition': `attachment; filename="proxy-logs-${(query.from ?? new Date().toISOString()).slice(0, 10)}.ndjson"` });

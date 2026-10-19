@@ -250,6 +250,28 @@ test('period log views and full NDJSON downloads are private and export more tha
   f.setFail(true);
   assert.equal((await f.request(`/api/logs/download?${bounds}`)).status, 503);
 });
+test('saved log defaults apply to views and downloads without deleting recorded requests', async (t) => {
+  const f = await fixture(t);
+  for (const [service, source, event] of [['management', '203.0.113.44', 'Panel poll'],
+    ['catch-all', '100.89.5.109', 'Byttorrent check'], ['catch-all', '203.0.113.44', 'Public request']])
+    f.edgeArchive.append({ time: new Date().toISOString(), type: 'traffic', service, source, event, status: 200 });
+  const requests = async () => (await (await f.request('/api/logs/view')).json()).summary.totals.requests;
+  assert.equal(await requests(), 1);
+  const logFilters = { hideByttorrent: false, byttorrentIPs: ['100.89.5.109'], hideManagement: false };
+  assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { logFilters }, authenticated: false })).status, 401);
+  assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { logFilters: { ...logFilters, byttorrentIPs: ['bad'] } } })).status, 400);
+  assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { logFilters } })).status, 200);
+  assert.deepEqual(f.store.get('settings').logFilters, logFilters);
+  assert.equal(await requests(), 3);
+  const exportText = await (await f.request('/api/logs/download')).text();
+  assert.equal(exportText.trim().split('\n').map(JSON.parse).filter((e) => e.type === 'traffic').length, 3);
+  logFilters.hideManagement = true;
+  await f.request('/api/preferences', { method: 'PUT', body: { logFilters } });
+  const filtered = await (await f.request('/api/logs/download')).text();
+  assert.equal(filtered.trim().split('\n').map(JSON.parse).filter((e) => e.type === 'traffic').length, 2);
+  assert.equal(f.edgeArchive.history().events.length, 3);
+});
+
 test('passkey names persist without changing credentials or sessions and require authorization', async (t) => {
   const f = await fixture(t);
   const credential = { id: randomToken(), publicKey: 'existing-key', counter: 7, rpID: 'localhost', created: '2026-10-17T12:00:00Z' };

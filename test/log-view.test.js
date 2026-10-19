@@ -1,8 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LogStore, logQuery } from '../shared/log-store.js';
-import { logView, logPage, logCursor } from '../server/logs.js';
+import { logView, logPage, logCursor, filteredLogQuery } from '../server/logs.js';
 import { logPeriod } from '../ui/log-period.js';
+
+test('default exclusions filter requests before pagination, totals and export, retaining audit and alerts', async (t) => {
+  const control = new LogStore(':memory:'), traffic = new LogStore(':memory:');
+  t.after(() => { control.close(); traffic.close(); });
+  const time = new Date().toISOString();
+  for (let i = 0; i < 240; i++) traffic.append({ time, type: 'traffic', service: 'catch-all', source: '203.0.113.9', event: `Visible ${i}`, status: 200 });
+  for (let i = 0; i < 240; i++) traffic.append({ time, type: 'traffic', service: i % 2 ? 'management' : 'catch-all', source: i % 2 ? '203.0.113.9' : '100.89.5.109', event: 'Hidden', status: 200 });
+  traffic.append({ time, type: 'alert', service: 'management', source: '100.89.5.109', event: 'Security alert' });
+  control.append({ time, type: 'audit', service: 'management', source: '100.89.5.109', event: 'Admin event' });
+  const edge = async (path) => {
+    const url = new URL(path, 'http://edge'), query = logQuery(url.searchParams);
+    return url.pathname === '/logs' ? traffic.history(query) : traffic.summary(query);
+  };
+  const params = new URLSearchParams(logPeriod('hour'));
+  const view = await logView(control, edge, params);
+  assert.equal(view.summary.totals.requests, 240);
+  assert.equal(view.summary.totals.count, 242);
+  assert(view.events.every((e) => e.event !== 'Hidden'));
+  const events = [];
+  let cursor = {};
+  do {
+    const page = await logPage(control, edge, filteredLogQuery(params), cursor, { strict: true });
+    events.push(...page.events);
+    cursor = page.next ? logCursor(page.next) : null;
+  } while (cursor);
+  assert.equal(events.length, 242);
+  assert(events.some((e) => e.type === 'audit'));
+  assert(events.some((e) => e.type === 'alert'));
+  const all = await logView(control, edge, params, { hideByttorrent: false, byttorrentIPs: [], hideManagement: false });
+  assert.equal(all.summary.totals.requests, 480);
+  const managementOnly = await logView(control, edge, params, { hideByttorrent: false, byttorrentIPs: [], hideManagement: true });
+  assert.equal(managementOnly.summary.totals.requests, 360);
+  const customIP = await logView(control, edge, params, { hideByttorrent: true, byttorrentIPs: ['203.0.113.9'], hideManagement: false });
+  assert.equal(customIP.summary.totals.requests, 120);
+  for (const value of ['excludeSources=invalid', 'hideManagement=yes']) assert.throws(() => logQuery(new URLSearchParams(value)));
+});
 
 test('period presets use rolling ranges and Today starts at local midnight across DST', () => {
   const previous = process.env.TZ;

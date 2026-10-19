@@ -9,6 +9,7 @@ import { useNavigation } from './navigation.js';
 import { compareNames } from './order.js';
 import DiscordAlerts from './discord.jsx';
 import { formatDateTime as when } from './date-time.js';
+import { defaultLogFilters } from '../shared/log-filters.js';
 export default function Settings({ state, refresh, report, onLogout, onEditPage }) {
   const { settingsSection } = useNavigation();
   const [preferences, setPreferences] = useState(state.settings);
@@ -105,7 +106,7 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
             ? {
                 adminHostname: preferences.adminHostname,
               }
-            : {
+            : section === 'logs' ? { logFilters: { ...(preferences.logFilters ?? defaultLogFilters), byttorrentIPs: (preferences.logFilters ?? defaultLogFilters).byttorrentIPs.filter(Boolean) } } : {
                 certificates: preferences.certificates,
               },
       });
@@ -154,6 +155,24 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
                 Save changes
               </Button>
             </Group>
+          </Stack>
+        </form>
+      </section>
+      <section id="logs" className="settings-section" aria-labelledby="logs-heading">
+        <form onSubmit={(e) => savePreferences(e, 'logs')}>
+          <Stack gap="lg">
+            <h2 id="logs-heading">Log filters</h2>
+            <Text size="sm" c="dimmed">Applies to Logs events, charts and downloads. Stored logs, security alerts and administration events are retained.</Text>
+            <Switch label="Hide requests from byttorrent"
+              checked={(preferences.logFilters ?? defaultLogFilters).hideByttorrent}
+              onChange={(e) => { const checked = e.currentTarget.checked; setPreferences((p) => ({ ...p, logFilters: { ...(p.logFilters ?? defaultLogFilters), hideByttorrent: checked } })); }} />
+            <TextInput label="Byttorrent IP addresses" description="Separate IPv4 or IPv6 addresses with commas. Include its public address for public uptime checks."
+              value={(preferences.logFilters ?? defaultLogFilters).byttorrentIPs.join(', ')}
+              onChange={(e) => { const ips = e.currentTarget.value.split(',').map((ip) => ip.trim()); setPreferences((p) => ({ ...p, logFilters: { ...(p.logFilters ?? defaultLogFilters), byttorrentIPs: ips } })); }} />
+            <Switch label="Hide requests to the management panel"
+              checked={(preferences.logFilters ?? defaultLogFilters).hideManagement}
+              onChange={(e) => { const checked = e.currentTarget.checked; setPreferences((p) => ({ ...p, logFilters: { ...(p.logFilters ?? defaultLogFilters), hideManagement: checked } })); }} />
+            <Group justify="flex-end"><Button className="primary" type="submit" loading={busy}>Save changes</Button></Group>
           </Stack>
         </form>
       </section>

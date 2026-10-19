@@ -1,5 +1,11 @@
 import { logQuery } from '../shared/log-store.js';
 import { Problem } from '../shared/model.js';
+import { defaultLogFilters } from '../shared/log-filters.js';
+
+export function filteredLogQuery(params, filters = defaultLogFilters) {
+  return { ...logQuery(params), excludeSources: filters.hideByttorrent ? filters.byttorrentIPs : [],
+    hideManagement: filters.hideManagement };
+}
 
 export function logCursor(value) {
   if (!value) return {};
@@ -32,8 +38,8 @@ export async function logPage(archive, edge, query, cursor = {}, { strict = fals
   return { events, edgeAvailable,
     next: ordered.length > 100 || control.next != null || traffic.next != null ? Buffer.from(JSON.stringify(next)).toString('base64url') : null };
 }
-export async function logView(archive, edge, params) {
-  const query = logQuery(params), cursor = logCursor(params.get('cursor'));
+export async function logView(archive, edge, params, filters) {
+  const query = filteredLogQuery(params, filters), cursor = logCursor(params.get('cursor'));
   const page = await logPage(archive, edge, query, cursor);
   let traffic = null;
   try { traffic = await edge(`/log-summary?${logParameters(query)}`, { timeout: 5000 }); } catch {}

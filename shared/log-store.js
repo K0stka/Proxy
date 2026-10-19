@@ -16,15 +16,18 @@ export function logBounds(params) {
 export function logQuery(params) {
   const before = params.get('before'), service = params.get('service') ?? 'all', kind = params.get('kind') ?? 'all';
   const source = params.get('source') ?? '';
+  const excludeSources = params.get('excludeSources')?.split(',').filter(Boolean) ?? [];
+  const hideManagement = params.get('hideManagement') ?? 'false';
   const beforeTime = params.get('beforeTime');
   const services = params.has('services') ? (params.get('services') ? params.get('services').split(',') : []) : null;
   if ((before !== null && (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before)))) ||
       !/^(all|catch-all|management|[0-9a-f-]{36})$/.test(service) ||
       !['all', 'traffic', 'alert', 'audit', 'operation'].includes(kind) || (source && !isIP(source)) ||
+      excludeSources.length > 32 || excludeSources.some((ip) => !isIP(ip)) || !['true', 'false'].includes(hideManagement) ||
       (services && (services.length > 512 || services.some((id) => !/^(catch-all|management|[0-9a-f-]{36})$/.test(id)))) ||
       (beforeTime !== null && (before === null || !Number.isFinite(Date.parse(beforeTime)))))
     throw new Problem(400, 'Invalid log filter');
-  return { before: before === null ? null : Number(before), beforeTime: beforeTime === null ? null : new Date(beforeTime).toISOString(), service, services, kind, source, ...logBounds(params) };
+  return { before: before === null ? null : Number(before), beforeTime: beforeTime === null ? null : new Date(beforeTime).toISOString(), service, services, kind, source, excludeSources, hideManagement: hideManagement === 'true', ...logBounds(params) };
 }
 
 export class LogStore {
@@ -79,15 +82,16 @@ export class LogStore {
       this.error = 'Log persistence failed; recent events may be missing. Check disk space and permissions.';
     }
   }
-  history({ before = null, beforeTime = null, service = 'all', services = null, kind = 'all', source = '', from = null, to = null } = {}) {
+  history({ before = null, beforeTime = null, service = 'all', services = null, kind = 'all', source = '', from = null, to = null, excludeSources = [], hideManagement = false } = {}) {
     this.flush();
     const selection = services === null ? service === 'all' ? null : JSON.stringify([service]) : JSON.stringify(services);
     const rows = this.db.prepare(`SELECT id,data FROM logs WHERE
       ((? IS NULL AND (? IS NULL OR id<?)) OR (? IS NOT NULL AND (time<? OR (time=? AND id<?))))
       AND (? IS NULL OR service IN (SELECT value FROM json_each(?))) AND (?='all' OR kind=?)
       AND (?='' OR json_extract(data,'$.source')=?)
+      AND (kind!='traffic' OR ((?=0 OR service!='management') AND COALESCE(json_extract(data,'$.source'),'') NOT IN (SELECT value FROM json_each(?))))
       AND (? IS NULL OR time>=?) AND (? IS NULL OR time<?) ORDER BY time DESC,id DESC LIMIT 101`)
-      .all(beforeTime, before, before, beforeTime, beforeTime, beforeTime, before, selection, selection, kind, kind, source, source, from, from, to, to);
+      .all(beforeTime, before, before, beforeTime, beforeTime, beforeTime, before, selection, selection, kind, kind, source, source, Number(hideManagement), JSON.stringify(excludeSources), from, from, to, to);
     const page = rows.slice(0, 100);
     return { events: page.map((r) => ({ ...JSON.parse(r.data), id: r.id })),
       next: rows.length > 100 ? page.at(-1).id : null, storage: this.status() };
@@ -102,9 +106,9 @@ export class LogStore {
     return this.db.prepare('SELECT COALESCE(MAX(id),0) AS id FROM logs').get().id;
   }
   summary({ from = new Date((Math.floor(this.now() / 60000) - 59) * 60000).toISOString(),
-    to = new Date(this.now() + 1).toISOString(), service = 'all', services = null, kind = 'all', source = '' } = {}) {
+    to = new Date(this.now() + 1).toISOString(), service = 'all', services = null, kind = 'all', source = '', excludeSources = [], hideManagement = false } = {}) {
     const selection = services === null ? service === 'all' ? null : JSON.stringify([service]) : JSON.stringify(services);
-    const key = JSON.stringify([from, to, selection, kind, source]);
+    const key = JSON.stringify([from, to, selection, kind, source, excludeSources, hideManagement]);
     if (this.summaryCache?.key === key && this.now() - this.summaryCache.at < 10000) return this.summaryCache.value;
     this.flush();
     const start = Date.parse(from), end = Date.parse(to), step = Math.max(60000, Math.ceil((end - start) / 60 / 60000) * 60000);
@@ -115,8 +119,10 @@ export class LogStore {
       SUM(kind='traffic' AND CAST(json_extract(data,'$.status') AS INTEGER) BETWEEN 400 AND 499) AS clientErrors,
       SUM(kind='traffic' AND CAST(json_extract(data,'$.status') AS INTEGER)>=500) AS serverErrors
       FROM logs WHERE time>=? AND time<? AND (? IS NULL OR service IN (SELECT value FROM json_each(?))) AND (?='all' OR kind=?)
-      AND (?='' OR json_extract(data,'$.source')=?) GROUP BY bucket ORDER BY bucket`)
-      .all(start, step, from, to, selection, selection, kind, kind, source, source);
+      AND (?='' OR json_extract(data,'$.source')=?)
+      AND (kind!='traffic' OR ((?=0 OR service!='management') AND COALESCE(json_extract(data,'$.source'),'') NOT IN (SELECT value FROM json_each(?))))
+      GROUP BY bucket ORDER BY bucket`)
+      .all(start, step, from, to, selection, selection, kind, kind, source, source, Number(hideManagement), JSON.stringify(excludeSources));
     const grouped = new Map(rows.map((r) => [r.bucket, r]));
     const buckets = Array.from({ length: Math.ceil((end - start) / step) }, (_, i) => ({ minute: (start + i * step) / 60000, requests: 0,
       count: 0, alerts: 0, success: 0, clientErrors: 0, serverErrors: 0, ...grouped.get(i) }));
