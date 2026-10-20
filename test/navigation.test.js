@@ -40,6 +40,15 @@ function browser(entries = [{ hash: '', state: null }], index = 0) {
   };
 }
 
+test('security preview supports direct links and browser history', () => {
+  const tab = browser([{ hash: '/security', state: null }]), nav = createNavigation(tab);
+  assert.equal(nav.getSnapshot().page, 'Security');
+  nav.setPage('Logs');
+  tab.history.go(-1);
+  assert.equal(nav.getSnapshot().page, 'Security');
+  assert.equal(createNavigation(tab.reload()).getSnapshot().page, 'Security');
+});
+
 test('browser history and refresh preserve pages, wizard steps and unsaved fields', () => {
   const tab = browser(), nav = createNavigation(tab);
   nav.setPage('Services');

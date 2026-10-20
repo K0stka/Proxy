@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-const pages = ['Routes', 'Services', 'Folders', 'Domains', 'Logs', 'Settings'];
+const pages = ['Routes', 'Services', 'Folders', 'Domains', 'Logs', 'Security', 'Settings'];
 const kinds = ['route', 'folder', 'pages', 'domains'];
 
 export function createNavigation(browser) {

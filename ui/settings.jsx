@@ -290,11 +290,11 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
             </div>
           ))}
       </section>
-      <section id="audit-log" className="settings-section" aria-labelledby="audit-log-heading">
+      {!document.querySelector('meta[name="proxy-preview"]') && <section id="audit-log" className="settings-section" aria-labelledby="audit-log-heading">
         <h2 id="audit-log-heading">Audit log</h2>
         <Text size="sm" c="dimmed" mb="md">Administration actions, edge operations and update lifecycle events.</Text>
         <Monitoring state={state} onLogout={onLogout} audit />
-      </section>
+      </section>}
       {renaming && (
         <Modal
           title="Name device"

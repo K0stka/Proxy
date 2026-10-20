@@ -44,13 +44,14 @@ function ColumnFilter({ column, filter, options = [], onChange }) {
   </Popover>;
 }
 
-export default function Monitoring({ state, onLogout, audit = false }) {
+export default function Monitoring({ state, onLogout, audit = false, view = null }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false),
     [period, setPeriod] = useState('today'), [services, setServices] = useState(null),
     [customInterval, setCustomInterval] = useState(null), [chartSummary, setChartSummary] = useState(null),
-    [kind, setKind] = useState(audit ? 'administration' : 'traffic'), [columns, setColumns] = useState({}), [options, setOptions] = useState({}), [fields, setFields] = useState([]),
+    [selectedKind, setKind] = useState(audit ? 'administration' : 'traffic'), [columns, setColumns] = useState({}), [options, setOptions] = useState({}), [fields, setFields] = useState([]),
     [page, setPage] = useState(null), [previous, setPrevious] = useState([]);
   const extraNames = useRef(new Map());
+  const kind = view ?? selectedKind;
   const selection = services === null ? null : services.join(',');
   const scope = JSON.stringify([period, selection, kind, columns, customInterval]);
   useEffect(() => { setPage(null); setPrevious([]); setData(null); }, [scope]);
@@ -100,7 +101,7 @@ export default function Monitoring({ state, onLogout, audit = false }) {
     .filter(([field]) => !audit || ['time', 'event'].includes(field) || fields.includes(field) || columns[field]);
   return <section className="monitoring logs-dashboard">
     <div className="logs-toolbar">
-    {!audit && <div className="filter-tabs" aria-label="Log view">{[['traffic', 'Logs'], ['alert', 'Alerts']].map(([value, label]) =>
+    {!audit && !view && <div className="filter-tabs" aria-label="Log view">{[['traffic', 'Logs'], ['alert', 'Alerts']].map(([value, label]) =>
       <Button key={value} aria-pressed={kind === value} onClick={() => { setKind(value); setColumns({}); }}>{label}</Button>)}</div>}
     <div className="logs-top-filters">
       <Select className="logs-period-select" aria-label="Log period" value={customInterval ? 'custom' : period} allowDeselect={false}

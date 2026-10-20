@@ -17,6 +17,7 @@ import {
   ArrowRight,
   CornerUpRight,
   Activity,
+  ShieldCheck,
 } from 'lucide-react';
 import { api } from './api.js';
 import { useToast } from './toasts.jsx';
@@ -36,6 +37,7 @@ import Modal from './dialog.jsx';
 import Folders, { FolderWizard } from './folders.jsx';
 import DomainWizard from './domains-wizard.jsx';
 import Monitoring from './monitoring.jsx';
+import SecurityPreview from './security-preview.jsx';
 import { useNavigation } from './navigation.js';
 import { formatDateTime as when } from './date-time.js';
 const icons = {
@@ -224,13 +226,14 @@ export default function Workspace({ onLogout }) {
             ['Folders', FolderOpen],
             ['Domains', Globe],
             ['Logs', Activity],
+            ...(document.querySelector('meta[name="proxy-preview"]') ? [['Security', ShieldCheck]] : []),
             ['Settings', SettingsIcon],
           ].map(([name, Icon]) => (
             <NavLink
               component="button"
               type="button"
               key={name}
-              className={name === 'Settings' ? 'desktop-settings' : undefined}
+              className={name === 'Settings' ? 'desktop-settings' : name === 'Security' ? 'security-nav' : undefined}
               label={name}
               leftSection={<Icon size={18} />}
               active={page === name}
@@ -349,8 +352,8 @@ export default function Workspace({ onLogout }) {
                 </Button>
               )}
             </div>
-            {document.querySelector('meta[name="proxy-preview"]') && <Alert color="blue" role="status">Demo traffic · Discord uses your saved webhook</Alert>}
-            {page === 'Logs' && <Monitoring state={state} onLogout={onLogout} />}
+            {page === 'Logs' && <Monitoring state={state} onLogout={onLogout} view={document.querySelector('meta[name="proxy-preview"]') ? 'traffic' : null} />}
+            {page === 'Security' && document.querySelector('meta[name="proxy-preview"]') && <SecurityPreview state={state} onLogout={onLogout} />}
             {state.edge.error && (
               <Alert className="notice error" role="alert" color="red" variant="light">
                 {state.edge.error}
