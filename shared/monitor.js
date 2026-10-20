@@ -73,7 +73,8 @@ export class Monitor {
     this.add(event);
     if (security && raw.securityEngine === 'Availability' && (!this.securityFailureAt || this.now() - this.securityFailureAt > 60000)) {
       this.securityFailureAt = this.now();
-      this.add({ type: 'alert', service: raw.service, severity: 'warning', event: raw.securityReason });
+      this.add({ type: 'alert', service: raw.service, severity: 'warning', event: raw.securityReason,
+        securityAction: raw.securityAction, securityEngine: raw.securityEngine, securityReason: raw.securityReason });
     }
     for (const key of [raw.service, `${raw.service}:${source}`]) {
       if (this.windows.has(key) && this.now() - this.windows.get(key).started >= 60000)

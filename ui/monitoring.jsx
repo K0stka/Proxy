@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Alert, Checkbox, Group, Paper, Popover, Select, Table, TextInput, Tooltip, Stack } from '@mantine/core';
 import { Activity, ShieldAlert, ListFilter, CircleCheck, Download, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft } from 'lucide-react';
 import { Button } from './controls.jsx';
@@ -56,7 +57,7 @@ function ColumnFilter({ column, filter, options = [], onChange }) {
   </Popover>;
 }
 
-export default function Monitoring({ state, onLogout, audit = false, view = null }) {
+export default function Monitoring({ state, onLogout, audit = false, view = null, toolbarTarget = null, serviceFilter = false }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false),
     [period, setPeriod] = useState('today'), [services, setServices] = useState(null),
     [customInterval, setCustomInterval] = useState(null), [chartSummary, setChartSummary] = useState(null),
@@ -112,15 +113,14 @@ export default function Monitoring({ state, onLogout, audit = false, view = null
     ...(audit ? [['generation', 'Generation'], ['role', 'Role'], ['details', 'Details'], ['severity', 'Severity']] : kind === 'traffic' ? [['suspicious', 'Classification']] : [['severity', 'Severity']]),
     ['source', 'Client IP'], ['method', 'Method'], ['url', 'Request URL'], ['status', 'Status']]
     .filter(([field]) => !audit || ['time', 'event'].includes(field) || fields.includes(field) || columns[field]);
-  return <section className="monitoring logs-dashboard">
-    <div className="logs-toolbar">
+  const toolbar = <div className="logs-toolbar">
     {!audit && !view && <div className="filter-tabs" aria-label="Log view">{[['traffic', 'Logs'], ['alert', 'Alerts']].map(([value, label]) =>
       <Button key={value} aria-pressed={kind === value} onClick={() => { setKind(value); setColumns({}); }}>{label}</Button>)}</div>}
     <div className="logs-top-filters">
       <Select className="logs-period-select" aria-label="Log period" value={customInterval ? 'custom' : period} allowDeselect={false}
         data={[...logPeriods.map(([value, label]) => ({ value, label })), ...(customInterval ? [{ value: 'custom', label: 'Custom', disabled: true }] : [])]}
         onChange={(value) => { if (value === 'custom') return; setCustomInterval(null); setPeriod(value ?? 'today'); setPage(null); setPrevious([]); }} />
-      {!audit && <Popover position="bottom-end" shadow="md" width={300}>
+      {(!audit || serviceFilter) && <Popover position="bottom-end" shadow="md" width={300}>
         <Popover.Target><Button className="secondary logs-service-select"><ListFilter size={15} />{services === null ? 'All services' : `${selectedCount} service${selectedCount === 1 ? '' : 's'}`}<ChevronDown size={14} /></Button></Popover.Target>
         <Popover.Dropdown>
           <Group justify="space-between" mb="sm"><Button className="text-button small" onClick={() => setServices(null)}>Select all</Button><Button className="text-button small" onClick={() => setServices([])}>Deselect all</Button></Group>
@@ -132,7 +132,9 @@ export default function Monitoring({ state, onLogout, audit = false, view = null
         </Popover.Dropdown>
       </Popover>}
     </div>
-    </div>
+  </div>;
+  return <section className="monitoring logs-dashboard">
+    {toolbarTarget ? createPortal(toolbar, toolbarTarget) : toolbar}
     {error && <Alert color="red" role="alert">{error}</Alert>}
     {data && !data.edgeAvailable && <Alert color="yellow">Edge logs unavailable. Showing available records; complete download is unavailable.</Alert>}
     {!audit && kind === 'traffic' && <div className="logs-metrics">{metrics.map(({ label, value, detail, icon: Icon }) => <Paper key={label} withBorder className="logs-metric">

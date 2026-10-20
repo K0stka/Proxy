@@ -73,7 +73,7 @@ export default function Security({ state, onLogout }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const initialized = useRef(false);
   const report = useToast();
-  const [tab, setTab] = useState('overview'), [period, setPeriod] = useState('today'), [query, setQuery] = useState(''),
+  const [tab, setTab] = useState('overview'), [period, setPeriod] = useState('today'), [filterTarget, setFilterTarget] = useState(null), [query, setQuery] = useState(''),
     [saved, setSaved] = useState(() => readPreview().saved ?? initialPolicy), [policy, setPolicy] = useState(() => readPreview().saved ?? initialPolicy),
     [decisions, setDecisions] = useState(() => readPreview().decisions ?? seedDecisions), [exceptions, setExceptions] = useState(() => readPreview().exceptions ?? [{ id: 1, ip: '192.0.2.18', note: 'Office connection', scope: 'All HTTP services' }]),
     [dialog, setDialog] = useState(null), [address, setAddress] = useState(''), [note, setNote] = useState(''), [formError, setFormError] = useState(''),
@@ -165,6 +165,7 @@ export default function Security({ state, onLogout }) {
     </Paper>
     <Group justify="space-between" className="security-toolbar"><div className="filter-tabs" aria-label="Security views">{[['overview', 'Overview'], ['alerts', 'Alerts'], ['protection', 'Protection'], ['exceptions', 'Allowed addresses'], ['audit', 'Audit logs']].map(([value, label]) => <Button key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{label}</Button>)}</div>
       {tab === 'overview' && <Select aria-label="Security period" value={period} onChange={setPeriod} allowDeselect={false} data={logPeriods.map(([value, label]) => ({ value, label }))} />}
+      {tab === 'alerts' || tab === 'audit' ? <div className="security-toolbar-filters" ref={setFilterTarget} /> : null}
     </Group>
     {tab === 'overview' && <>
       <div className="logs-metrics">
@@ -193,8 +194,8 @@ export default function Security({ state, onLogout }) {
       </Paper>
       <Paper withBorder className="logs-surface security-updates"><div><h3>{!preview && data.error ? 'Rules need attention' : !preview && !data.updated ? 'Rules installed' : 'Rules are up to date'}</h3><p>Last successful update {preview ? formatDateTime(updated) : data.updated ? formatDateTime(data.updated) : 'Not yet checked'} · {saved.updates ? 'Automatic updates daily' : 'Automatic updates paused'}</p></div><Button className="secondary" disabled={busy || (!preview && data.updating)} onClick={() => perform(async () => { if (preview) setUpdated(Date.now()); else { await api('/security/update', { method: 'POST' }); await load(); } report('Rule update requested'); })}><RefreshCw size={15} />Check for updates</Button></Paper>
     </>}
-    {tab === 'alerts' && <Monitoring key="alerts" state={state} onLogout={onLogout} view="alert" />}
-    {tab === 'audit' && <Monitoring key="audit" state={state} onLogout={onLogout} audit />}
+    {tab === 'alerts' && filterTarget && <Monitoring key="alerts" state={state} onLogout={onLogout} view="alert" toolbarTarget={filterTarget} serviceFilter />}
+    {tab === 'audit' && filterTarget && <Monitoring key="audit" state={state} onLogout={onLogout} audit toolbarTarget={filterTarget} serviceFilter />}
     {tab === 'protection' && <form onSubmit={(e) => { e.preventDefault(); perform(async () => { await persist(policy); report('Protection settings saved'); }); }}>
       <div className="security-settings-grid"><Paper withBorder className="logs-surface"><Stack gap="xl"><div><h2>Protection policy</h2><p>Choose how suspicious HTTP traffic is handled.</p></div>
         <Select label="Default protection" description="Applies to HTTP services unless overridden below." value={policy.mode} onChange={(value) => change('mode', value)} allowDeselect={false} data={modes} />

@@ -67,7 +67,7 @@ async function fixture(t, { empty = false } = {}) {
     certRequestDir: join(directory, 'requests'),
     development: true,
     auditLog: (record) => auditRecords.push(record),
-    notificationRequest: async () => new Response(null, { status: 204 }),
+    notificationRequest: async (url) => url.endsWith('/users/@me/channels') ? Response.json({ id: '123456789012345678' }) : new Response(null, { status: 204 }),
     filesRequest: async (_socket, path, options) => {
       filesCalls.push({ path, ...options });
       return path === '/repositories' ? [] : { changed: true };
@@ -227,13 +227,13 @@ test('monitoring is private, exposes sanitized audit outcomes and preserves audi
   assert(unavailable.audit.events.length > 0);
 });
 
-test('archived logs and webhook settings require authentication and CSRF and never reveal saved webhook URLs', async (t) => {
+test('archived logs and DM settings require authentication and CSRF and never reveal bot tokens', async (t) => {
   const f = await fixture(t);
   for (const path of ['/api/logs?component=control', '/api/notifications/discord'])
     assert.equal((await f.request(path, { authenticated: false })).status, 401);
-  const url = `https://discord.com/api/webhooks/123456789012345678/${'private_token_'.repeat(5)}`;
-  assert.equal((await f.request('/api/notifications/discord', { method: 'PUT', body: { enabled: true, webhookURL: url }, extra: { 'x-csrf-token': 'wrong' } })).status, 403);
-  const saved = await f.request('/api/notifications/discord', { method: 'PUT', body: { enabled: true, webhookURL: url } });
+  const botToken = 'private_token_'.repeat(5);
+  assert.equal((await f.request('/api/notifications/discord', { method: 'PUT', body: { enabled: true, botToken, recipientId: '710044411035254864' }, extra: { 'x-csrf-token': 'wrong' } })).status, 403);
+  const saved = await f.request('/api/notifications/discord', { method: 'PUT', body: { enabled: true, botToken, recipientId: '710044411035254864' } });
   assert.equal(saved.status, 200);
   assert(!JSON.stringify(await saved.json()).includes('private_token'));
   assert(!JSON.stringify(await (await f.request('/api/state')).json()).includes('private_token'));

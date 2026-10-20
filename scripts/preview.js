@@ -1,4 +1,4 @@
-// Synthetic routing only; Discord sends through a real user-configured webhook.
+// Synthetic routing only; Discord DMs use real user-configured bot credentials.
 import { mkdir, cp, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createApp } from '../server/app.js';
@@ -54,8 +54,6 @@ for (const sample of [
   { action: 'Request blocked', event: 'OWASP CRS · RCE score 10 · total anomaly score 10', source: '203.0.113.49', ruleUrl: 'https://docs.crowdsec.net/docs/appsec/crs/intro/' },
 ]) if (!archive.history({ kind: 'alert', source: sample.source }).events.length)
   archive.append({ type: 'alert', time: new Date().toISOString(), service: 'catch-all', severity: 'warning', protocol: 'http', status: 403, method: 'GET', url: 'https://unknown.example.net/.env', ...sample });
-if (store.get('discord')?.webhookURL?.includes('demo_token_')) store.set('discord', { enabled: false, webhookURL: '' });
-if (!store.get('discord-cursors')) store.set('discord-cursors', { control: 0, edge: archive.latestId() });
 const monitor = new Monitor({ archive });
 const applied = () => ({ available: true, hash: snapshotHash(store.snapshot()), policyHash: policyHash(policy),
   readyDomains: ['example.net'], wildcardDomains: ['example.net'], routes: store.snapshot().routes.filter((r) => r.published).map((r) => r.id) });
@@ -99,6 +97,6 @@ const feed = () => {
 };
 feed();
 const timer = setInterval(feed, 5000);
-app.server.listen(port, '127.0.0.1', () => console.log(`LOCAL PREVIEW: ${origin}/logs — synthetic traffic; configure a real Discord webhook in Settings.`));
+app.server.listen(port, '127.0.0.1', () => console.log(`LOCAL PREVIEW: ${origin}/logs — synthetic traffic; configure a real Discord bot and DM recipient in Settings.`));
 app.server.on('close', () => { clearInterval(timer); archive.close(); store.close(); });
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { app.server.closeAllConnections(); app.server.close(); });

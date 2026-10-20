@@ -1981,6 +1981,9 @@ textarea):focus-visible {
 .security-toolbar .filter-tabs { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; min-width: 0; }
 .security-toolbar .filter-tabs > button { flex: 0 0 auto; }
 .security-toolbar > .mantine-Select-root { width: 170px; }
+.security-toolbar-filters { display: flex; align-items: center; min-width: 0; }
+.security-toolbar-filters .logs-top-filters { margin-left: 0; flex-wrap: nowrap; }
+.security-toolbar-filters .logs-service-select { white-space: nowrap; }
 .security-chart { cursor: default; touch-action: auto; }
 .security-breakdown { display: grid; gap: 24px; padding-block: 12px; }
 .security-breakdown > div > div:first-child { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 13px; }
@@ -2019,6 +2022,8 @@ textarea):focus-visible {
   .security-toolbar .filter-tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
   .security-toolbar .filter-tabs > button { flex: 1 0 auto; }
   .security-toolbar > .mantine-Select-root { width: 100%; }
+  .security-toolbar-filters { width: 100%; }
+  .security-toolbar-filters .logs-top-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .security-policy-row { flex-wrap: wrap; gap: 12px; }
   .security-policy-row > .mantine-Select-root { width: 100%; }
   .security-page .logs-panel-heading { flex-wrap: wrap; }
