@@ -49,6 +49,8 @@ export async function logView(archive, edge, params, filters) {
     totals: { count: 0, alerts: 0, requests: 0, success: 0, clientErrors: 0, serverErrors: 0 } };
   const totals = { ...summary.totals };
   for (const key of Object.keys(totals)) totals[key] += control.totals[key] ?? 0;
-  return { ...page, edgeAvailable: page.edgeAvailable && traffic !== null, summary: { ...summary, totals },
+  const options = Object.fromEntries(['event', 'suspicious', 'method', 'severity', 'role'].map((field) =>
+    [field, [...new Set([...(control.options?.[field] ?? []), ...(traffic?.options?.[field] ?? [])])].sort()]));
+  return { ...page, edgeAvailable: page.edgeAvailable && traffic !== null, summary: { ...summary, totals, options },
     period: { from: control.from, to: control.to } };
 }

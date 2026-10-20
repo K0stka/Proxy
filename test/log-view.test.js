@@ -72,6 +72,11 @@ test('traffic, alerts and administration stay separate through filtering, pagina
   const audit = await logView(control, edge, params);
   assert.equal(audit.summary.totals.count, 3);
   assert(audit.events.every((e) => ['audit', 'operation'].includes(e.type)));
+  assert.deepEqual(audit.summary.options.event, ['Admin event', 'NGINX configuration activated', 'Spawned new generation']);
+  params.set('columns', JSON.stringify({ event: { op: 'in', value: ['Admin event', 'NGINX configuration activated'] } }));
+  const selected = await logView(control, edge, params);
+  assert.equal(selected.summary.totals.count, 2);
+  assert.deepEqual(selected.summary.options.event, audit.summary.options.event);
 });
 
 test('default exclusions filter requests before pagination, totals and export, retaining audit and alerts', async (t) => {

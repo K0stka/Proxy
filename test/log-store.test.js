@@ -9,6 +9,31 @@ import { Monitor } from '../shared/monitor.js';
 const event = (now, i = 0, type = 'traffic') => ({ time: new Date(now).toISOString(), type,
   service: 'catch-all', event: `Event ${i}`, severity: 'info' });
 
+test('checkbox filters support multiple values and deselect all without losing available choices', (t) => {
+  const archive = new LogStore(':memory:'); t.after(() => archive.close());
+  const now = Date.now() - 1000;
+  for (let i = 0; i < 230; i++) archive.append({ ...event(now, i), event: i < 120 ? 'First' : 'Second',
+    method: i % 2 ? 'GET' : 'POST', suspicious: i % 2 === 0 });
+  archive.append({ ...event(now, 1, 'audit'), event: 'Admin event', role: 'control' });
+  archive.append({ ...event(now, 2), service: 'management', event: 'Hidden' });
+  const query = (values) => logQuery(new URLSearchParams({ kind: 'traffic', hideManagement: 'true',
+    columns: JSON.stringify({ event: { op: 'in', value: values } }) }));
+  for (const [values, count] of [[['First', 'Second'], 230], [['First'], 120], [[], 0], [["' OR 1=1 --"], 0]]) {
+    const summary = archive.summary(query(values));
+    assert.equal(summary.totals.count, count);
+    assert.equal(archive.history(query(values)).events.length, Math.min(count, 100));
+    assert.deepEqual(summary.options.event, ['First', 'Second']);
+    assert.deepEqual(summary.options.method, ['GET', 'POST']);
+    assert.deepEqual(summary.options.suspicious, ['Normal', 'Suspicious']);
+  }
+  assert.equal(archive.history({ ...query(['First']), before: archive.history(query(['First'])).next }).events.length, 20);
+  for (const value of ['GET', [3], [null], ['x'.repeat(501)]])
+    assert.throws(() => query(value), /Invalid column filter/);
+  const audit = archive.summary({ kind: 'administration' });
+  assert.deepEqual(audit.options.role, ['control']);
+  assert.deepEqual(audit.options.event, ['Admin event']);
+});
+
 test('every table column filters stored events and totals with bound values', (t) => {
   const archive = new LogStore(':memory:'); t.after(() => archive.close());
   const time = new Date().toISOString();

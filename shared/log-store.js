@@ -19,8 +19,9 @@ export function columnFilters(value = '{}') {
     const filters = JSON.parse(value);
     if (!filters || typeof filters !== 'object' || Array.isArray(filters) ||
         Object.entries(filters).some(([key, f]) => !Object.hasOwn(filterColumns, key) || !f ||
-          !['contains', 'equals', 'excludes', 'empty', 'present'].includes(f.op) ||
-          typeof f.value !== 'string' || f.value.length > 500)) throw Error();
+          !['contains', 'equals', 'excludes', 'empty', 'present', 'in'].includes(f.op) ||
+          (f.op === 'in' ? !Array.isArray(f.value) || f.value.length > 512 || f.value.some((v) => typeof v !== 'string' || v.length > 500)
+            : typeof f.value !== 'string' || f.value.length > 500))) throw Error();
     return filters;
   } catch { throw new Problem(400, 'Invalid column filter'); }
 }
@@ -28,7 +29,10 @@ function columnWhere(filters) {
   const clauses = [], values = [];
   for (const [key, { op, value }] of Object.entries(columnFilters(JSON.stringify(filters)))) {
     const expression = `COALESCE(CAST(${filterColumns[key]} AS TEXT),'')`;
-    if (op === 'empty' || op === 'present') clauses.push(`${expression}${op === 'empty' ? '=' : '!='}''`);
+    if (op === 'in') {
+      clauses.push(`${expression} IN (SELECT value FROM json_each(?))`);
+      values.push(JSON.stringify(value));
+    } else if (op === 'empty' || op === 'present') clauses.push(`${expression}${op === 'empty' ? '=' : '!='}''`);
     else {
       clauses.push(op === 'contains' ? `instr(lower(${expression}),lower(?))>0` : `${expression}${op === 'equals' ? '=' : '!='}? COLLATE NOCASE`);
       values.push(value);
@@ -146,17 +150,18 @@ export class LogStore {
     if (this.summaryCache?.key === key && this.now() - this.summaryCache.at < 10000) return this.summaryCache.value;
     this.flush();
     const start = Date.parse(from), end = Date.parse(to), step = Math.max(60000, Math.ceil((end - start) / 60 / 60000) * 60000);
+    const where = `FROM logs WHERE time>=? AND time<? AND (? IS NULL OR service IN (SELECT value FROM json_each(?))) AND (?='all' OR kind=? OR (?='administration' AND kind IN ('audit','operation')))
+      AND (?='' OR json_extract(data,'$.source')=?)
+      AND (kind!='traffic' OR ((?=0 OR service!='management') AND (?=0 OR COALESCE(json_extract(data,'$.uptimeKuma'),0)=0) AND (?=0 OR COALESCE(json_extract(data,'$.cs2Renderer'),0)=0)))`;
+    const parameters = [from, to, selection, selection, kind, kind, kind, source, source, Number(hideManagement), Number(hideUptimeKuma), Number(hideCS2Renderer)];
     const rows = this.db.prepare(`SELECT CAST((CAST(strftime('%s',time) AS INTEGER)*1000-?)/? AS INTEGER) AS bucket,
       COUNT(*) AS count, COUNT(DISTINCT json_extract(data,'$.source')) AS sources,
       SUM(kind='traffic') AS requests, SUM(kind='alert') AS alerts,
       SUM(kind='traffic' AND CAST(json_extract(data,'$.status') AS INTEGER)<400) AS success,
       SUM(kind='traffic' AND CAST(json_extract(data,'$.status') AS INTEGER) BETWEEN 400 AND 499) AS clientErrors,
       SUM(kind='traffic' AND CAST(json_extract(data,'$.status') AS INTEGER)>=500) AS serverErrors
-      FROM logs WHERE time>=? AND time<? AND (? IS NULL OR service IN (SELECT value FROM json_each(?))) AND (?='all' OR kind=? OR (?='administration' AND kind IN ('audit','operation')))
-      AND (?='' OR json_extract(data,'$.source')=?)
-      AND (kind!='traffic' OR ((?=0 OR service!='management') AND (?=0 OR COALESCE(json_extract(data,'$.uptimeKuma'),0)=0) AND (?=0 OR COALESCE(json_extract(data,'$.cs2Renderer'),0)=0)))
-      ${filter.sql} GROUP BY bucket ORDER BY bucket`)
-      .all(start, step, from, to, selection, selection, kind, kind, kind, source, source, Number(hideManagement), Number(hideUptimeKuma), Number(hideCS2Renderer), ...filter.values);
+      ${where}${filter.sql} GROUP BY bucket ORDER BY bucket`)
+      .all(start, step, ...parameters, ...filter.values);
     const grouped = new Map(rows.map((r) => [r.bucket, r]));
     const buckets = Array.from({ length: Math.ceil((end - start) / step) }, (_, i) => ({ minute: (start + i * step) / 60000, requests: 0,
       count: 0, alerts: 0, success: 0, clientErrors: 0, serverErrors: 0, ...grouped.get(i) }));
@@ -164,7 +169,11 @@ export class LogStore {
       for (const key of ['count', 'requests', 'alerts', 'success', 'clientErrors', 'serverErrors']) sum[key] += bucket[key] ?? 0;
       return sum;
     }, { count: 0, requests: 0, alerts: 0, success: 0, clientErrors: 0, serverErrors: 0 });
-    const value = { buckets, totals, from, to, step };
+    const choiceFields = ['event', 'suspicious', 'method', 'severity', 'role'];
+    const choices = this.db.prepare(`SELECT ${choiceFields.map((field) =>
+      `json_group_array(DISTINCT COALESCE(CAST(${filterColumns[field]} AS TEXT),'')) AS ${field}`).join(',')} ${where}`).get(...parameters);
+    const options = Object.fromEntries(choiceFields.map((field) => [field, JSON.parse(choices[field]).sort()]));
+    const value = { buckets, totals, from, to, step, options };
     this.summaryCache = { at: this.now(), key, value };
     return value;
   }

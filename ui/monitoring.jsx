@@ -7,38 +7,51 @@ import LogCharts from './log-charts.jsx';
 import { logPeriod, logPeriods } from './log-period.js';
 import { formatDateTime } from './date-time.js';
 
-function ColumnFilter({ column, filter, names, onChange }) {
+const choiceColumns = ['event', 'suspicious', 'method', 'severity', 'role'];
+
+function ColumnFilter({ column, filter, options = [], onChange }) {
   const [opened, setOpened] = useState(false), [op, setOp] = useState('contains'), [value, setValue] = useState('');
   const [field, label] = column;
-  return <Popover opened={opened} onChange={setOpened} position="bottom-start" shadow="md" width={270}>
+  if (['time', 'service'].includes(field)) return label;
+  const choices = choiceColumns.includes(field);
+  const values = [...new Set([...options, ...(filter?.op === 'in' ? filter.value : [])])].sort();
+  return <Popover opened={opened} onChange={setOpened} position="bottom-start" shadow="md" width={300}>
     <Popover.Target><button type="button" className={`logs-column-filter ${filter ? 'active' : ''}`}
       aria-label={`Filter ${label}`} aria-pressed={!!filter} onClick={() => {
-        setOp(filter?.op ?? (field === 'service' ? 'equals' : 'contains')); setValue(filter?.value ?? ''); setOpened(!opened);
+        setOp(filter?.op ?? 'contains'); setValue(filter?.value ?? ''); setOpened(!opened);
       }}>{label}<ListFilter size={13} /></button></Popover.Target>
-    <Popover.Dropdown><form onSubmit={(e) => { e.preventDefault(); onChange({ op, value }); setOpened(false); }}>
+    <Popover.Dropdown>{choices ? <>
+      <Group justify="space-between" mb="sm">
+        <Button className="text-button small" onClick={() => onChange(null)}>Select all</Button>
+        <Button className="text-button small" onClick={() => onChange({ op: 'in', value: [] })}>Deselect all</Button>
+      </Group>
+      <div className="logs-service-checkboxes">{values.map((option) => <Checkbox key={option} label={option || 'Empty'}
+        checked={!filter || filter.value.includes(option)} onChange={(e) => {
+          const selected = filter?.value ?? values;
+          const next = e.currentTarget.checked ? [...new Set([...selected, option])] : selected.filter((v) => v !== option);
+          onChange(next.length === values.length ? null : { op: 'in', value: next });
+        }} />)}{values.length === 0 && <span className="logs-caption">No values in this period.</span>}</div>
+    </> : <form onSubmit={(e) => { e.preventDefault(); onChange({ op, value }); setOpened(false); }}>
       <Stack gap="sm">
         <Select label={`${label} filter`} value={op} allowDeselect={false} onChange={setOp} comboboxProps={{ withinPortal: false }} data={[
           { value: 'contains', label: 'Contains' }, { value: 'equals', label: 'Equals' },
           { value: 'excludes', label: 'Does not equal' }, { value: 'empty', label: 'Is empty' }, { value: 'present', label: 'Is not empty' },
         ]} />
-        {!['empty', 'present'].includes(op) && (field === 'service'
-          ? <Select label="Service" searchable value={value || null} onChange={(v) => setValue(v ?? '')} comboboxProps={{ withinPortal: false }} data={[...names].map(([value, label]) => ({ value, label }))} />
-          : field === 'suspicious' ? <Select label="Classification" value={value || null} onChange={(v) => setValue(v ?? '')} comboboxProps={{ withinPortal: false }} data={['Suspicious', 'Normal']} />
-          : <TextInput label={field === 'time' ? 'Time (ISO / UTC)' : 'Value'} value={value} onChange={(e) => setValue(e.currentTarget.value)} autoFocus />)}
+        {!['empty', 'present'].includes(op) && <TextInput label="Value" value={value} onChange={(e) => setValue(e.currentTarget.value)} autoFocus />}
         <Group justify="space-between"><Button className="text-button" onClick={() => { onChange(null); setOpened(false); }}>Clear</Button><Button className="primary" type="submit">Apply</Button></Group>
       </Stack>
-    </form></Popover.Dropdown>
+    </form>}</Popover.Dropdown>
   </Popover>;
 }
 
 export default function Monitoring({ state, onLogout, audit = false }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false),
     [period, setPeriod] = useState('hour'), [services, setServices] = useState(null),
-    [kind, setKind] = useState(audit ? 'administration' : 'traffic'), [columns, setColumns] = useState({}), [source, setSource] = useState(''), [sourceInput, setSourceInput] = useState(''),
+    [kind, setKind] = useState(audit ? 'administration' : 'traffic'), [columns, setColumns] = useState({}), [options, setOptions] = useState({}),
     [page, setPage] = useState(null), [previous, setPrevious] = useState([]);
   const extraNames = useRef(new Map());
   const selection = services === null ? null : services.join(',');
-  const scope = JSON.stringify([period, selection, kind, source, columns]);
+  const scope = JSON.stringify([period, selection, kind, columns]);
   useEffect(() => { setPage(null); setPrevious([]); setData(null); }, [scope]);
   useEffect(() => {
     let active = true, inFlight = false;
@@ -46,14 +59,14 @@ export default function Monitoring({ state, onLogout, audit = false }) {
       if (inFlight) return;
       inFlight = true; setBusy(true);
       const bounds = page?.bounds ?? logPeriod(period);
-      const query = new URLSearchParams({ ...bounds, kind, source, columns: JSON.stringify(columns),
+      const query = new URLSearchParams({ ...bounds, kind, columns: JSON.stringify(columns),
         ...(selection === null ? {} : { services: selection }), ...(page?.cursor ? { cursor: page.cursor } : {}) });
       try {
         const next = await api(`/logs/view?${query}`);
         if (active) {
           for (const e of next.events) if (!['catch-all', 'management'].includes(e.service))
             extraNames.current.set(e.service, `Previous route · ${e.service.slice(0, 8)}`);
-          setData(next); setError('');
+          setData(next); setOptions(next.summary?.options ?? {}); setError('');
         }
       } catch (e) {
         if (active) { setError(e.message); if (e.status === 401) onLogout(); }
@@ -75,17 +88,17 @@ export default function Monitoring({ state, onLogout, audit = false }) {
     { label: 'Client errors', value: totals?.clientErrors.toLocaleString() ?? '—', detail: periodLabel, icon: ShieldAlert },
     { label: 'Server errors', value: totals?.serverErrors.toLocaleString() ?? '—', detail: periodLabel, icon: ListFilter },
   ];
-  const download = new URLSearchParams({ ...(data?.period ?? logPeriod(period)), kind, source, columns: JSON.stringify(columns),
+  const download = new URLSearchParams({ ...(data?.period ?? logPeriod(period)), kind, columns: JSON.stringify(columns),
     ...(selection === null ? {} : { services: selection }) });
+  const hasFilters = services !== null || Object.keys(columns).length > 0;
   const tableColumns = [['time', 'Time'], ['service', 'Service'], ['event', 'Event'],
     ...(audit ? [['generation', 'Generation'], ['role', 'Role'], ['details', 'Details'], ['severity', 'Severity']] : kind === 'traffic' ? [['suspicious', 'Classification']] : [['severity', 'Severity']]),
     ['source', 'Client IP'], ['method', 'Method'], ['url', 'Request URL'], ['status', 'Status']];
   return <section className="monitoring logs-dashboard">
+    <div className="logs-toolbar">
     {!audit && <div className="filter-tabs" aria-label="Log view">{[['traffic', 'Logs'], ['alert', 'Alerts']].map(([value, label]) =>
-      <Button key={value} aria-pressed={kind === value} onClick={() => { setKind(value); setColumns({}); setSource(''); setSourceInput(''); }}>{label}</Button>)}</div>}
+      <Button key={value} aria-pressed={kind === value} onClick={() => { setKind(value); setColumns({}); }}>{label}</Button>)}</div>}
     <div className="logs-top-filters">
-      <div className="filter-tabs logs-periods" aria-label="Log period">{logPeriods.map(([value, label]) =>
-        <Button key={value} aria-pressed={period === value} onClick={() => { setPeriod(value); setPage(null); setPrevious([]); }}>{label}</Button>)}</div>
       <Select className="logs-period-select" aria-label="Log period" value={period} allowDeselect={false}
         data={logPeriods.map(([value, label]) => ({ value, label }))}
         onChange={(value) => { setPeriod(value ?? 'hour'); setPage(null); setPrevious([]); }} />
@@ -101,6 +114,7 @@ export default function Monitoring({ state, onLogout, audit = false }) {
         </Popover.Dropdown>
       </Popover>
     </div>
+    </div>
     {error && <Alert color="red" role="alert">{error}</Alert>}
     {data && !data.edgeAvailable && <Alert color="yellow">Edge logs unavailable. Showing available records; complete download is unavailable.</Alert>}
     {!audit && kind === 'traffic' && <><div className="logs-metrics">{metrics.map(({ label, value, detail, icon: Icon }) => <Paper key={label} withBorder className="logs-metric">
@@ -109,16 +123,12 @@ export default function Monitoring({ state, onLogout, audit = false }) {
     <LogCharts key={scope} summary={summary} periodLabel={periodLabel} /></>}
     <Paper withBorder className="logs-surface logs-events">
       <div className="logs-panel-heading"><h2>{audit ? 'Audit events' : kind === 'alert' ? 'Alerts' : 'Traffic logs'}</h2>
-        <Button className="secondary logs-download" component="a" href={data?.edgeAvailable ? `/api/logs/download?${download}` : undefined} download
-          aria-disabled={!data?.edgeAvailable} disabled={!data?.edgeAvailable}><Download size={15} />Download all</Button>
+        {hasFilters ? <Button className="secondary logs-clear-filters" color="red" onClick={() => { setColumns({}); setServices(null); }}>Clear filters</Button>
+          : <Button className="secondary logs-download" component="a" href={data?.edgeAvailable ? `/api/logs/download?${download}` : undefined} download
+            aria-disabled={!data?.edgeAvailable} disabled={!data?.edgeAvailable}><Download size={15} />Download all</Button>}
       </div>
-      <form className="monitoring-filters" onSubmit={(e) => { e.preventDefault(); setSource(sourceInput.trim()); }}>
-        <TextInput className="logs-client-filter" label="Client IP" placeholder="All addresses" value={sourceInput} onChange={(e) => setSourceInput(e.currentTarget.value)} />
-        <Button type="submit" className="secondary logs-apply-filter">Apply</Button>
-        <Button className="text-button" onClick={() => { setColumns({}); setSource(''); setSourceInput(''); setServices(null); }}>Clear filters</Button>
-      </form>
       <Table.ScrollContainer minWidth={1000}><Table className="logs-table" verticalSpacing="sm">
-        <Table.Thead><Table.Tr>{tableColumns.map((column) => <Table.Th key={column[0]}><ColumnFilter column={column} names={names} filter={columns[column[0]]} onChange={(filter) => setColumns((old) => {
+        <Table.Thead><Table.Tr>{tableColumns.map((column) => <Table.Th key={column[0]}><ColumnFilter column={column} options={options[column[0]]} filter={columns[column[0]]} onChange={(filter) => setColumns((old) => {
           const next = { ...old }; if (filter) next[column[0]] = filter; else delete next[column[0]]; return next;
         })} /></Table.Th>)}</Table.Tr></Table.Thead>
         <Table.Tbody>{data?.events.map((e) => <Table.Tr key={`${e.component}:${e.id}`}>
@@ -127,8 +137,9 @@ export default function Monitoring({ state, onLogout, audit = false }) {
           <Table.Td><span className={`logs-event-label ${e.type === 'alert' || e.suspicious || e.event === 'Exploit-path probe' ? 'alert' : e.severity === 'warning' ? 'warning' : ''}`}>{e.type === 'alert' && <ShieldAlert size={13} />}{e.event}</span></Table.Td>
           {audit ? <><Table.Td><code>{e.generation ?? '—'}</code></Table.Td><Table.Td>{e.role ?? '—'}</Table.Td><Table.Td>{e.details ?? '—'}</Table.Td><Table.Td>{e.severity ?? '—'}</Table.Td></>
             : <Table.Td>{e.type === 'traffic' ? (e.suspicious || e.event === 'Exploit-path probe' ? <span className="logs-event-label alert"><ShieldAlert size={13} />Suspicious</span> : 'Normal') : e.severity ?? '—'}</Table.Td>}
-          <Table.Td>{e.source ? /[.:]/.test(e.source) ? <button type="button" className="logs-ip-filter" onClick={() => { setSource(e.source); setSourceInput(e.source); }}><code>{e.source}</code></button> : <code>{e.source}</code> : '—'}</Table.Td>
-          <Table.Td>{e.method ?? '—'}</Table.Td>          <Table.Td className="logs-url">{e.url ? <code>{e.url}</code> : '—'}</Table.Td>
+          <Table.Td>{e.source ? /[.:]/.test(e.source) ? <button type="button" className="logs-ip-filter" onClick={() => { setColumns((old) => ({ ...old, source: { op: 'equals', value: e.source } })); }}><code>{e.source}</code></button> : <code>{e.source}</code> : '—'}</Table.Td>
+          <Table.Td>{e.method ?? '—'}</Table.Td>
+          <Table.Td className="logs-url">{e.url ? <code>{e.url}</code> : '—'}</Table.Td>
           <Table.Td><span className={`logs-status-code ${e.status >= 400 ? 'error' : ''}`}>{e.status ?? '—'}</span></Table.Td>
         </Table.Tr>)}{data?.events.length === 0 && <Table.Tr><Table.Td colSpan={tableColumns.length}>No matching {audit ? 'audit events' : kind === 'alert' ? 'alerts' : 'traffic logs'}.</Table.Td></Table.Tr>}</Table.Tbody>
       </Table></Table.ScrollContainer>
