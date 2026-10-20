@@ -10,7 +10,13 @@ services:
       - data:/var/lib/crowdsec/data
       - ipc:/security-ipc
     healthcheck:
-      test: [CMD, cscli, lapi, status]
+      test:
+        - CMD-SHELL
+        - >-
+          cscli lapi status >/dev/null &&
+          test -s /security-ipc/bouncer.conf &&
+          test -S /security-ipc/crowdsec.sock &&
+          python3 -c "import socket; s=socket.create_connection(('127.0.0.1', 7422), timeout=1); s.close()"
       interval: 5s
       retries: 30
   tests:

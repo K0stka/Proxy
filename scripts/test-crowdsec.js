@@ -13,7 +13,7 @@ try {
   }
   run([...compose, 'up', '-d', '--wait', '--wait-timeout', '180', 'crowdsec']);
   run([...compose, 'exec', '-T', 'crowdsec', 'cscli', 'decisions', 'add', '--ip', '198.51.100.24', '--duration', '4h', '--reason', 'proxy-local-test']);
-  run([...compose, 'run', '--rm', 'tests']);
+  run([...compose, 'run', '--no-deps', '--rm', 'tests']);
 } finally {
   run([...compose, 'logs', '--tail', '30', 'crowdsec']);
   run([...compose, 'down', '--volumes']);

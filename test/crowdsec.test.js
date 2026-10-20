@@ -10,13 +10,20 @@ import { LogStore } from '../shared/log-store.js';
 import { startMonitor } from '../edge/monitor.js';
 import { bodyJSON, json } from '../shared/http.js';
 
-test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statistics', { skip: process.env.PROXY_CROWDSEC_TEST !== 'true' }, async (t) => {
+test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statistics', { skip: process.env.PROXY_CROWDSEC_TEST !== 'true', timeout: 180_000 }, async (t) => {
   const directory = await mkdtemp('/tmp/proxy-crowdsec-');
   const archive = new LogStore(':memory:'), traffic = await startMonitor({ archive });
+  t.after(() => { traffic.close(); archive.close(); });
   let policy = effectivePolicy({ origin: 'https://proxy.example.net', ingressIPs: ['127.0.0.1'] }, defaultSettings);
   const security = new Security({ archive, monitor: traffic.monitor, policy: () => policy, enabled: true });
   assert.equal((await security.status()).available, true);
-  assert.equal((await security.check({ ip: '198.51.100.24', service: 'catch-all' })).action, 'Blocked', 'LAPI must return the seeded ban');
+  let seededBan;
+  for (let i = 0; i < 30; i++) {
+    seededBan = await security.check({ ip: '198.51.100.24', service: 'catch-all' });
+    if (seededBan.action === 'Blocked') break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  assert.equal(seededBan.action, 'Blocked', `LAPI must return the seeded ban: ${JSON.stringify(seededBan)}`);
   const server = http.createServer(async (req, res) => {
     try { json(res, await security.check(await bodyJSON(req))); } catch { json(res, {}, 503); }
   });
@@ -34,7 +41,7 @@ test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statist
   execFileSync('nginx', ['-t', '-e', 'stderr', '-c', directory + '/nginx.conf']);
   const nginx = spawn('nginx', ['-g', 'daemon off;', '-e', 'stderr', '-c', directory + '/nginx.conf'], { stdio: ['ignore', 'ignore', 'pipe'] });
   let errors = ''; nginx.stderr.on('data', (d) => errors += d);
-  t.after(async () => { nginx.kill('SIGTERM'); await new Promise((r) => server.close(r)); traffic.close(); archive.close(); });
+  t.after(async () => { nginx.kill('SIGTERM'); await new Promise((r) => server.close(r)); });
   const request = (path = '/', ip = '198.51.100.99', options = {}) => fetch('http://127.0.0.1:18080' + path, { ...options, headers: { 'X-Test-IP': ip, ...options.headers }, redirect: 'manual' });
   for (let i = 0; i < 50; i++) { try { await request(); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
   assert.equal(nginx.exitCode, null, errors);
