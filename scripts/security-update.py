@@ -218,6 +218,13 @@ def main():
     repo = args.repo.resolve(strict=True)
     if run(['git', 'status', '--porcelain'], cwd=repo, capture=True).strip():
         raise RuntimeError('Deployment checkout has local changes; refusing to overwrite them')
+    run(['git', 'fetch', 'origin', 'main'], cwd=repo)
+    run(['git', 'merge-base', '--is-ancestor', 'HEAD', 'origin/main'], cwd=repo)
+    revision = run(['git', 'rev-parse', 'origin/main'], cwd=repo, capture=True).strip()
+    last_success = args.state / 'last-success.json'
+    if last_success.exists() and json.loads(last_success.read_text()).get('revision') == revision:
+        print('No repository changes since the last successful update; skipping build and deployment', flush=True)
+        return
     if shutil.disk_usage(args.state).free < 5 * 1024 ** 3:
         raise RuntimeError('At least 5 GiB of free disk space is required')
     previous = containers()
@@ -229,9 +236,6 @@ def main():
     db_path = Path(state_mount['source']) / 'proxy.db'
     with sqlite3.connect(db_path.as_uri() + '?mode=ro', uri=True) as database:
         settings = json.loads(database.execute("SELECT value FROM data WHERE key='settings'").fetchone()[0])
-    run(['git', 'fetch', 'origin', 'main'], cwd=repo)
-    run(['git', 'merge-base', '--is-ancestor', 'HEAD', 'origin/main'], cwd=repo)
-    revision = run(['git', 'rev-parse', 'origin/main'], cwd=repo, capture=True).strip()
     environment_hash = hashlib.sha256((repo / '.env').read_bytes()).digest()
     work = Path(tempfile.mkdtemp(prefix='run-', dir=args.state))
     template_backup = work / 'rollback.templates.json' if TEMPLATE_PATH.exists() else None

@@ -70,8 +70,12 @@ ordinary application updates do not silently replace privileged host programs.
 
 Detailed update output: /var/lib/proxylogs/host/updates/update-*.log (root-only, latest seven
 runs). Komodo receives the log path and at most the last 16 KB, so verbose Docker
-progress cannot overflow its execution document. Builds pull current base images,
-refresh OS package layers daily, and cache unchanged layers between same-day runs.
+progress cannot overflow its execution document. The updater checks the fetched
+`main` revision against the last successful revision before inspecting containers
+or creating backups; when unchanged, it exits without building or deploying.
+Consequently, upstream base-image and OS package refreshes happen when a new
+repository revision is processed, rather than on no-change daily runs. Docker
+reuses unchanged layers between update runs.
 
 Deployment audit: /var/lib/proxylogs/host/deployments.jsonl. Management audit:
 /var/lib/proxylogs/audit/events.jsonl. Traffic and administration archives:

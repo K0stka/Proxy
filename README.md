@@ -14,7 +14,7 @@ The deployed Compose stack includes CrowdSec. **Security** uses live edge measur
 
 The WAF uses CrowdSec's maintained Lua inspection library, virtual patches, generic rules, and OWASP CRS. HTTP access logs feed maintained scanning/abuse scenarios. Raw TCP/UDP traffic is still logged, but this integration does not apply protocol inspection or firewall bans to it. Client attribution uses the socket peer; forwarded IP headers remain untrusted.
 
-Rule updates run daily inside the CrowdSec service and can be requested in Security. Failures appear in Alerts. The existing daily image updater rebuilds CrowdSec along with the application. CrowdSec's community reputation requires outbound access to its services; request inspection and local decisions run on the VPS. The official engine's default community participation settings apply.
+Rule updates run daily inside the CrowdSec service and can be requested in Security. Failures appear in Alerts. The image updater rebuilds CrowdSec with the application when the repository advances; on unchanged days it skips image builds. CrowdSec's community reputation requires outbound access to its services; request inspection and local decisions run on the VPS. The official engine's default community participation settings apply.
 
 CrowdSec's API/WAF/syslog listeners bind only VPS loopback (8088/7422/7423). Its administration socket and generated bouncer key use a private Docker volume; no key is entered in the UI or exposed to browsers. Back up `crowdsec_config` and `crowdsec_data` (or `crowdsec-config/` and `crowdsec-data/` under the configured host data directory) along with the other persistent state. The `security_ipc` volume is generated runtime state.
 
