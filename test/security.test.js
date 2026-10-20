@@ -37,10 +37,10 @@ test('recovery revokes links and pending challenges across management origins', 
   const store = new Store(':memory:');
   t.after(() => store.close());
   const origin = 'https://proxy.example.net';
-  const auth = new Auth(store, { origin });
-  const other = new Auth(store, { origin: 'https://private.example.net' });
   const code = randomToken(), token = randomToken();
-  store.set('recovery', hash(code));
+  const auth = new Auth(store, { origin, bootstrapToken: code });
+  const other = new Auth(store, { origin: 'https://private.example.net' });
+  store.set('credentials', [{ id: 'existing-passkey' }]);
   store.set('deviceTokens', [{ token: hash(token), origin, expires: Date.now() + 300000 }]);
   let cookie;
   const res = response();
@@ -50,6 +50,25 @@ test('recovery revokes links and pending challenges across management origins', 
   assert.deepEqual(store.get('deviceTokens'), []);
   assert.throws(() => auth.deviceLink(token), /invalid or has expired/);
   assert.throws(() => other.consume({ headers: { cookie } }, response(), 'login'), /Authorization changed/);
+});
+
+test('recovery requires an enrolled proxy and a sufficiently long configured setup token', async (t) => {
+  const store = new Store(':memory:');
+  t.after(() => store.close());
+  const code = randomToken();
+  const auth = new Auth(store, { origin: 'https://proxy.example.net', bootstrapToken: code });
+  const recover = (value) => auth.handle('/api/auth/recover', { method: 'POST', headers: {} }, response(), { code: value });
+  await assert.rejects(recover(code), /Invalid recovery code/);
+  store.set('credentials', [{ id: 'existing-passkey' }]);
+  for (const configured of [undefined, '', 'short']) {
+    auth.bootstrapToken = configured;
+    await assert.rejects(recover(configured), /Invalid recovery code/);
+  }
+  auth.bootstrapToken = code;
+  assert.equal((await recover(code)).authenticated, true);
+  auth.bootstrapToken = randomToken();
+  await assert.rejects(recover(code), /Invalid recovery code/);
+  assert.equal((await recover(auth.bootstrapToken)).authenticated, true);
 });
 
 test('removing a passkey revokes sessions and device authorizations atomically', async (t) => {

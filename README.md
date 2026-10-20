@@ -30,7 +30,7 @@ npm run setup
 npm run dev
 ```
 
-Open [localhost:5173](http://localhost:5173). Setup creates a local `.env` with `PROXY_ORIGIN=http://localhost:5173` and a random `PROXY_BOOTSTRAP_TOKEN`. Read that token locally to enroll your passkey, then save the recovery code. Existing `.env` files are never overwritten. Local development data lives in `.local/control/proxy.db`.
+Open [localhost:5173](http://localhost:5173). Setup creates a local `.env` with `PROXY_ORIGIN=http://localhost:5173` and a random `PROXY_BOOTSTRAP_TOKEN`. Keep that token in your password manager: it is used for both initial enrollment and recovery, and does not rotate. Existing `.env` files are never overwritten. Local development data lives in `.local/control/proxy.db`.
 
 ## Install through Komodo on the VPS
 
@@ -55,7 +55,7 @@ Paste the variables from [.env.example](.env.example) into the stack's **Environ
 | `PROXY_INGRESS_IPS`                        | Comma-separated IPs actually assigned to the VPS interface, with no wildcard binds                           |
 | `PROXY_SITES_PATH`                         | Absolute VPS directory containing your website folders; create it before deployment                          |
 | `PROXY_DATA_PATH`                          | Optional private data directory; requires `compose.paths.yaml` as described below                            |
-| `PROXY_BOOTSTRAP_TOKEN`                    | Random enrollment token of at least 32 characters                                                            |
+| `PROXY_BOOTSTRAP_TOKEN`                    | Persistent setup and recovery code of at least 32 random characters                                                            |
 | `PROXY_KOMODO_URL`                         | Core URL reachable from the proxy: verified HTTPS, or HTTP over a literal Tailscale IPv4 address             |
 | `PROXY_KOMODO_KEY` / `PROXY_KOMODO_SECRET` | Dedicated Core account; every server it can Read is discovered automatically                                 |
 | `PROXY_CLOUDFLARE_TOKEN`                   | Cloudflare token with Zone Read and DNS Edit for the required zones                                          |
@@ -115,7 +115,7 @@ Create the external log volume once with `docker volume create proxy_logs`. Depl
 sudo tailscale serve --bg --https=8443 http://127.0.0.1:3001
 ```
 
-Set `PROXY_ORIGIN` to the exact Serve URL, including the port, for example `https://byttorrent.pancake-ghost.ts.net:8443`. [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) terminates private HTTPS and forwards to loopback. Limit access to administrators with Tailscale grants. Do not enable Funnel. The management port is bound to VPS loopback; NGINX binds public traffic only on configured ingress addresses. Enroll with `PROXY_BOOTSTRAP_TOKEN` and store the recovery code. Open **Services** to see discovered servers and their container ports. Set the shared email in **Settings → Certificates**, add domains individually through **Domains → Add domain**, then connect services to routes.
+Set `PROXY_ORIGIN` to the exact Serve URL, including the port, for example `https://byttorrent.pancake-ghost.ts.net:8443`. [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) terminates private HTTPS and forwards to loopback. Limit access to administrators with Tailscale grants. Do not enable Funnel. The management port is bound to VPS loopback; NGINX binds public traffic only on configured ingress addresses. Enroll and recover with `PROXY_BOOTSTRAP_TOKEN`; keep it in your password manager. Open **Services** to see discovered servers and their container ports. Set the shared email in **Settings → Certificates**, add domains individually through **Domains → Add domain**, then connect services to routes.
 
 ### 4. DNS, certificates, then publish
 
@@ -131,7 +131,7 @@ In **Settings → General**, set a public hostname covered by a configured domai
 
 Management API errors remain JSON, including gateway failures, so action errors can be shown in toasts. Proxied websites use the shared HTML error pages. The management hostname uses trusted built-in errors and blocks custom error assets.
 
-The private Tailscale Serve address remains independent of public DNS, the edge, and Let's Encrypt: `https://byttorrent.pancake-ghost.ts.net:8443` for the example above. Both addresses use passkeys and exact Host/Origin checks. Sessions and passkeys are scoped to their hostname/origin. Existing private-host passkeys remain valid. On first access at the other hostname, enter the recovery code to authorize creating a passkey there, then save the newly rotated recovery code. Cancelling that passkey prompt still shows the recovery code; you can register the passkey later with a one-time link from **Settings → Devices**. Recovery revokes other sessions but preserves existing passkeys. Private availability still requires the control container and host Tailscale service to be running.
+The private Tailscale Serve address remains independent of public DNS, the edge, and Let's Encrypt: `https://byttorrent.pancake-ghost.ts.net:8443` for the example above. Both addresses use passkeys and exact Host/Origin checks. Sessions and passkeys are scoped to their hostname/origin. Existing private-host passkeys remain valid. On first access at the other hostname, enter `PROXY_BOOTSTRAP_TOKEN` to authorize creating a passkey there. It is the same persistent code used during setup; recovery never rotates or returns it. Cancelling that passkey prompt keeps you signed in; you can register the passkey later with a one-time link from **Settings → Devices**. Recovery revokes other sessions but preserves existing passkeys. Changing the environment token and recreating the controller changes the recovery code; previously generated recovery codes are no longer accepted. Private availability still requires the control container and host Tailscale service to be running.
 
 ## Automatic discovery
 
@@ -203,7 +203,7 @@ For root-owned repositories/keys use UID `0` and `/root/.ssh`. The SSH directory
 
 ## State, security and updates
 
-Routes, domains, certificate preferences, folder rules, page selections, passkey public keys, one-time device links, sessions and recovery-code hashes live in **`/state/proxy.db`** (`control_state`). This is the source of truth.
+Routes, domains, certificate preferences, folder rules, page selections, passkey public keys, one-time device links and sessions live in **`/state/proxy.db`** (`control_state`). This is the source of truth.
 
 The edge caches its last working routes and settings in **`/runtime/edge.db`** (`edge_state`) so traffic resumes without the controller. The certificate worker reads only domains and certificate preferences from **`/cert-policy/policy.db`** (`certificate_policy`, read-only in the worker), maintained by the controller. It cannot read the authentication database or Core credentials. Both caches can be reconstructed from the controller's saved configuration.
 

@@ -268,7 +268,13 @@ map $host $security_action { default Allowed; }
 map $host $security_engine { default ''; }
 map $host $security_reason { default ''; }
 server_rewrite_by_lua_file /app/edge/security.lua;
-access_log syslog:server=127.0.0.1:7423,tag=nginx combined;` : ''}
+# Do not turn our own blocks or management authentication failures into IP bans.
+map "$monitor_service:$security_action" $crowdsec_behavior_log {
+    default 1;
+    ~^management: 0;
+    ~:(Blocked|Detected|Error)$ 0;
+}
+access_log syslog:server=127.0.0.1:7423,tag=nginx combined if=$crowdsec_behavior_log;` : ''}
 map $request_method $proxy_auth_key { default ""; POST $binary_remote_addr; }
 limit_req_zone $proxy_auth_key zone=proxy_auth:1m rate=20r/m;
 map $http_upgrade $connection_upgrade { default upgrade; '' close; }

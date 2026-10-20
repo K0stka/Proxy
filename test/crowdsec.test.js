@@ -47,6 +47,9 @@ test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statist
   assert.equal(nginx.exitCode, null, errors);
   assert.equal((await request()).status, 404, errors);
   assert.equal((await request('/', '198.51.100.24')).status, 403, 'local IP ban must stop a request');
+  assert.equal((await request('/socket.io/?EIO=4&transport=polling', '198.51.100.96', {
+    method: 'POST', headers: { 'content-type': 'text/plain;charset=UTF-8' }, body: '40',
+  })).status, 404, 'Socket.IO polling must pass the WAF and reach the application');
   policy = { ...policy, security: { ...policy.security, mode: 'monitor' } };
   assert.equal((await request('/', '198.51.100.24')).status, 404, 'monitor-only does not enforce an IP ban');
   policy = { ...policy, security: { ...policy.security, mode: 'block', exceptions: [{ ip: '198.51.100.24', note: '' }] } };

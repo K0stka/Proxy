@@ -226,12 +226,7 @@ export class Auth {
           created: new Date().toISOString(),
         },
       ]);
-      let recoveryCode;
-      if (pending.initial) {
-        recoveryCode = randomToken();
-        this.store.set('recovery', hash(recoveryCode));
-      }
-      return { ...this.issue(req, res), recoveryCode };
+      return this.issue(req, res);
     }
     if (path === '/api/auth/devices/link') {
       this.require(req, true);
@@ -348,19 +343,16 @@ export class Auth {
     }
     if (path === '/api/auth/recover') {
       if (
-        !this.store.get('recovery') ||
-        !equalSecret(
-          hash(typeof body.code === 'string' ? body.code : ''),
-          this.store.get('recovery'),
-        )
+        !this.credentials().length ||
+        typeof this.bootstrapToken !== 'string' || this.bootstrapToken.length < 32 ||
+        !equalSecret(body.code, this.bootstrapToken)
       )
         throw new Problem(403, 'Invalid recovery code');
-      const recoveryCode = randomToken();
       this.store.transaction(() => {
-        this.store.set('recovery', hash(recoveryCode));
+        this.store.set('recovery', null);
         this.revokeAuthorizations();
       });
-      return { ...this.issue(req, res), recoveryCode };
+      return this.issue(req, res);
     }
     if (path === '/api/auth/logout') {
       const s = this.require(req, true);

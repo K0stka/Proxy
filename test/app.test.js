@@ -633,8 +633,7 @@ test('domain CRUD, global preferences and admin origins preserve private access 
   assert.equal(publicStatus.enrolled, true);
   assert.equal(publicStatus.originEnrolled, false);
   assert.equal((await (await f.request('/api/auth/status', { authenticated: false })).json()).originEnrolled, true);
-  const code = randomToken();
-  f.store.set('recovery', hash(code));
+  const code = f.app.auth.bootstrapToken;
   const recovered = await f.request('/api/auth/recover', { method: 'POST', authenticated: false, extra: publicHeaders, body: { code } });
   assert.equal(recovered.status, 200);
   const session = await recovered.json(), cookie = recovered.headers.getSetCookie()[0].split(';')[0];
@@ -839,10 +838,12 @@ test('enrollment requires secret; challenges are single-use; bogus attestations 
   );
   assert.equal(f.app.auth.credentials().length, 0);
 });
-test('recovery is single-use, rotates code, and revokes all existing sessions', async (t) => {
+test('recovery reuses the configured setup token and revokes all existing sessions', async (t) => {
   const f = await fixture(t),
-    code = randomToken();
-  f.store.set('recovery', hash(code));
+    code = f.app.auth.bootstrapToken;
+  f.store.set('credentials', [{ id: 'existing-passkey' }]);
+  const legacy = randomToken();
+  f.store.set('recovery', hash(legacy));
   assert.equal(
     (
       await f.request('/api/auth/recover', {
@@ -860,14 +861,15 @@ test('recovery is single-use, rotates code, and revokes all existing sessions', 
   });
   assert.equal(response.status, 200);
   const result = await response.json();
-  assert(result.recoveryCode);
-  assert.notEqual(result.recoveryCode, code);
+  assert.equal(result.recoveryCode, undefined);
+  assert(!JSON.stringify(result).includes(code));
+  assert.equal((await f.request('/api/state')).status, 401);
   assert.equal(
     (await f.request('/api/auth/recover', { method: 'POST', authenticated: false, body: { code } }))
       .status,
-    403,
+    200,
   );
-  assert.equal((await f.request('/api/state')).status, 401);
+  assert.equal((await f.request('/api/auth/recover', { method: 'POST', authenticated: false, body: { code: legacy } })).status, 403);
 });
 test('certificate requests cannot select paths or unauthorized zones', async (t) => {
   const f = await fixture(t);
@@ -983,7 +985,7 @@ test('real WebAuthn registration and signatures work; wrong origin, RP, UV, repl
     body: registration,
   });
   assert.equal(enrolled.status, 200);
-  assert((await enrolled.json()).recoveryCode);
+  assert.equal((await enrolled.json()).recoveryCode, undefined);
   assert.equal(f.app.auth.credentials().length, 1);
   async function attempt({
     origin,

@@ -2,25 +2,13 @@ import { Button } from './controls.jsx';
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
-import { Waypoints, Check, KeyRound, Fingerprint, CircleAlert, Smartphone } from 'lucide-react';
+import { Waypoints, KeyRound, Fingerprint, CircleAlert, Smartphone } from 'lucide-react';
 import { api, setCSRF } from './api.js';
-import Modal from './dialog.jsx';
 import Workspace from './workspace.jsx';
 import { ToastProvider } from './toasts.jsx';
 import { MantineProvider, createTheme, PasswordInput, TextInput, Text, Alert } from '@mantine/core';
 import '@mantine/core/styles.css';
 import './style.css';
-function Recovery({ code, onClose }) {
-  return (
-    <Modal title="Save your recovery code" onClose={onClose}>
-      <p>Save this code in your password manager. It is shown once.</p>
-      <code className="recovery-code">{code}</code>
-      <Button className="primary full" onClick={onClose}>
-        <Check size={16} /> I've saved it
-      </Button>
-    </Modal>
-  );
-}
 function AuthScreen({ status, onAuth }) {
   const [token, setToken] = useState(''),
     [code, setCode] = useState(''),
@@ -80,12 +68,9 @@ function AuthScreen({ status, onAuth }) {
             body: response,
           });
           setCSRF(registered.csrf);
-          result = {
-            ...registered,
-            recoveryCode: result.recoveryCode,
-          };
+          result = registered;
         } catch {
-          // Recovery already rotated the code; show it even if passkey setup was cancelled.
+          // Recovery already signed in; passkey setup can be completed later.
           onAuth(result);
           return;
         }
@@ -120,8 +105,8 @@ function AuthScreen({ status, onAuth }) {
               label="Recovery code"
               description={
                 status.originEnrolled === false && status.enrolled
-                  ? 'Authorize a passkey for this hostname.'
-                  : undefined
+                  ? 'Use PROXY_BOOTSTRAP_TOKEN from Komodo to authorize a passkey for this hostname.'
+                  : 'The same PROXY_BOOTSTRAP_TOKEN used during setup. This code does not rotate.'
               }
             />
           ) : (
@@ -241,8 +226,7 @@ function DeviceSetup({ token, onAuth }) {
 }
 function App() {
   const [status, setStatus] = useState(null),
-    [error, setError] = useState(''),
-    [recovery, setRecovery] = useState(null);
+    [error, setError] = useState('');
   const deviceToken =
     window.location.pathname.replace(/\/+$/, '') === '/device'
       ? window.location.hash.slice(1)
@@ -265,7 +249,6 @@ function App() {
       enrolled: true,
       authenticated: true,
     });
-    if (result.recoveryCode) setRecovery(result.recoveryCode);
   };
   if (error)
     return (
@@ -304,7 +287,6 @@ function App() {
       ) : (
         <AuthScreen status={status} onAuth={completeAuth} />
       )}
-      {recovery && <Recovery code={recovery} onClose={() => setRecovery(null)} />}
     </>
   );
 }

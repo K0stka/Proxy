@@ -36,7 +36,16 @@ os.chown(conf, 0, 10000)
 conf.chmod(0o640)
 (ROOT / 'config.yaml.local').write_text('api:\n  server:\n    listen_uri: 127.0.0.1:8088\ncommon:\n  log_media: stdout\n')
 (ROOT / 'appsec-configs').mkdir(exist_ok=True)
-(ROOT / 'appsec-configs' / 'proxy-crs.yaml').write_text('name: proxy/crs\ndefault_remediation: ban\ninband_rules:\n - crowdsecurity/crs\n')
+(ROOT / 'appsec-configs' / 'proxy-crs.yaml').write_text('''name: proxy/crs
+default_remediation: ban
+inband_rules:
+ - crowdsecurity/crs
+inband:
+  pre_eval:
+   - filter: 'req.Method == "POST" && req.URL.Path == "/socket.io/" && req.Header.Get("Content-Type") matches "(?i)^text/plain(;|$)"'
+     apply:
+      - RemoveInBandRuleByID(920420)
+''')
 (ROOT / 'acquis.yaml').write_text('source: syslog\nlisten_addr: 127.0.0.1\nlisten_port: 7423\nlabels:\n  type: nginx\n---\nsource: appsec\nlisten_addr: 127.0.0.1:7422\nappsec_configs:\n - crowdsecurity/appsec-default\n - proxy/crs\nlabels:\n  type: appsec\n')
 
 def save():
