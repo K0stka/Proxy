@@ -36,6 +36,15 @@ os.chown(conf, 0, 10000)
 conf.chmod(0o640)
 (ROOT / 'config.yaml.local').write_text('api:\n  server:\n    listen_uri: 127.0.0.1:8088\ncommon:\n  log_media: stdout\n')
 (ROOT / 'appsec-configs').mkdir(exist_ok=True)
+# Successful recorder traffic is legitimate automation, despite the hub's UA regex.
+(ROOT / 'parsers' / 's02-enrich').mkdir(parents=True, exist_ok=True)
+(ROOT / 'parsers' / 's02-enrich' / 'proxy-recorder.yaml').write_text('''name: proxy/recorder
+description: Allow successful recorder requests
+whitelist:
+  reason: Successful AutoTournament recorder request
+  expression:
+   - evt.Meta.log_type == "http_access-log" && evt.Meta.http_user_agent == "AutoTournament-Recorder/1.0" && evt.Meta.http_status matches "^2[0-9]{2}$"
+''')
 (ROOT / 'appsec-configs' / 'proxy-crs.yaml').write_text('''name: proxy/crs
 default_remediation: ban
 inband_rules:
