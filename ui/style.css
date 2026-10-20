@@ -1945,3 +1945,6 @@ textarea):focus-visible {
 .logs-column-filter { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: inherit; padding: 4px 0; font: inherit; cursor: pointer; white-space: nowrap; }
 .logs-column-filter.active { color: var(--accent); font-weight: 600; }
 .settings-section .logs-surface { padding: 16px; }
+
+.logs-audit-table .logs-event { min-width: 360px; }
+.logs-audit-table .logs-details { min-width: 180px; overflow-wrap: anywhere; }

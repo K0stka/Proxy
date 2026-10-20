@@ -7,7 +7,7 @@ import LogCharts from './log-charts.jsx';
 import { logPeriod, logPeriods } from './log-period.js';
 import { formatDateTime } from './date-time.js';
 
-const choiceColumns = ['event', 'suspicious', 'method', 'severity', 'role'];
+const choiceColumns = ['event', 'suspicious', 'method', 'status', 'severity', 'role'];
 
 function ColumnFilter({ column, filter, options = [], onChange }) {
   const [opened, setOpened] = useState(false), [op, setOp] = useState('contains'), [value, setValue] = useState('');
@@ -47,7 +47,7 @@ function ColumnFilter({ column, filter, options = [], onChange }) {
 export default function Monitoring({ state, onLogout, audit = false }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false),
     [period, setPeriod] = useState('hour'), [services, setServices] = useState(null),
-    [kind, setKind] = useState(audit ? 'administration' : 'traffic'), [columns, setColumns] = useState({}), [options, setOptions] = useState({}),
+    [kind, setKind] = useState(audit ? 'administration' : 'traffic'), [columns, setColumns] = useState({}), [options, setOptions] = useState({}), [fields, setFields] = useState([]),
     [page, setPage] = useState(null), [previous, setPrevious] = useState([]);
   const extraNames = useRef(new Map());
   const selection = services === null ? null : services.join(',');
@@ -66,7 +66,7 @@ export default function Monitoring({ state, onLogout, audit = false }) {
         if (active) {
           for (const e of next.events) if (!['catch-all', 'management'].includes(e.service))
             extraNames.current.set(e.service, `Previous route · ${e.service.slice(0, 8)}`);
-          setData(next); setOptions(next.summary?.options ?? {}); setError('');
+          setData(next); setOptions(next.summary?.options ?? {}); setFields(next.summary?.fields ?? []); setError('');
         }
       } catch (e) {
         if (active) { setError(e.message); if (e.status === 401) onLogout(); }
@@ -91,9 +91,10 @@ export default function Monitoring({ state, onLogout, audit = false }) {
   const download = new URLSearchParams({ ...(data?.period ?? logPeriod(period)), kind, columns: JSON.stringify(columns),
     ...(selection === null ? {} : { services: selection }) });
   const hasFilters = services !== null || Object.keys(columns).length > 0;
-  const tableColumns = [['time', 'Time'], ['service', 'Service'], ['event', 'Event'],
+  const tableColumns = [['time', 'Time'], ...(!audit ? [['service', 'Service']] : []), ['event', 'Event'],
     ...(audit ? [['generation', 'Generation'], ['role', 'Role'], ['details', 'Details'], ['severity', 'Severity']] : kind === 'traffic' ? [['suspicious', 'Classification']] : [['severity', 'Severity']]),
-    ['source', 'Client IP'], ['method', 'Method'], ['url', 'Request URL'], ['status', 'Status']];
+    ['source', 'Client IP'], ['method', 'Method'], ['url', 'Request URL'], ['status', 'Status']]
+    .filter(([field]) => !audit || ['time', 'event'].includes(field) || fields.includes(field) || columns[field]);
   return <section className="monitoring logs-dashboard">
     <div className="logs-toolbar">
     {!audit && <div className="filter-tabs" aria-label="Log view">{[['traffic', 'Logs'], ['alert', 'Alerts']].map(([value, label]) =>
@@ -102,7 +103,7 @@ export default function Monitoring({ state, onLogout, audit = false }) {
       <Select className="logs-period-select" aria-label="Log period" value={period} allowDeselect={false}
         data={logPeriods.map(([value, label]) => ({ value, label }))}
         onChange={(value) => { setPeriod(value ?? 'hour'); setPage(null); setPrevious([]); }} />
-      <Popover position="bottom-end" shadow="md" width={300}>
+      {!audit && <Popover position="bottom-end" shadow="md" width={300}>
         <Popover.Target><Button className="secondary logs-service-select"><ListFilter size={15} />{services === null ? 'All services' : `${selectedCount} service${selectedCount === 1 ? '' : 's'}`}<ChevronDown size={14} /></Button></Popover.Target>
         <Popover.Dropdown>
           <Group justify="space-between" mb="sm"><Button className="text-button small" onClick={() => setServices(null)}>Select all</Button><Button className="text-button small" onClick={() => setServices([])}>Deselect all</Button></Group>
@@ -112,7 +113,7 @@ export default function Monitoring({ state, onLogout, audit = false }) {
               setServices((old) => checked ? [...new Set([...(old ?? names.keys()), id])] : [...(old ?? names.keys())].filter((value) => value !== id));
             }} />)}</div>
         </Popover.Dropdown>
-      </Popover>
+      </Popover>}
     </div>
     </div>
     {error && <Alert color="red" role="alert">{error}</Alert>}
@@ -127,20 +128,21 @@ export default function Monitoring({ state, onLogout, audit = false }) {
           : <Button className="secondary logs-download" component="a" href={data?.edgeAvailable ? `/api/logs/download?${download}` : undefined} download
             aria-disabled={!data?.edgeAvailable} disabled={!data?.edgeAvailable}><Download size={15} />Download all</Button>}
       </div>
-      <Table.ScrollContainer minWidth={1000}><Table className="logs-table" verticalSpacing="sm">
+      <Table.ScrollContainer minWidth={1000}><Table className={`logs-table${audit ? ' logs-audit-table' : ''}`} verticalSpacing="sm">
         <Table.Thead><Table.Tr>{tableColumns.map((column) => <Table.Th key={column[0]}><ColumnFilter column={column} options={options[column[0]]} filter={columns[column[0]]} onChange={(filter) => setColumns((old) => {
           const next = { ...old }; if (filter) next[column[0]] = filter; else delete next[column[0]]; return next;
         })} /></Table.Th>)}</Table.Tr></Table.Thead>
         <Table.Tbody>{data?.events.map((e) => <Table.Tr key={`${e.component}:${e.id}`}>
-          <Table.Td className="logs-time">{formatDateTime(e.time)}</Table.Td>
-          <Table.Td>{names.get(e.service) ?? 'Previous route'}</Table.Td>
-          <Table.Td><span className={`logs-event-label ${e.type === 'alert' || e.suspicious || e.event === 'Exploit-path probe' ? 'alert' : e.severity === 'warning' ? 'warning' : ''}`}>{e.type === 'alert' && <ShieldAlert size={13} />}{e.event}</span></Table.Td>
-          {audit ? <><Table.Td><code>{e.generation ?? '—'}</code></Table.Td><Table.Td>{e.role ?? '—'}</Table.Td><Table.Td>{e.details ?? '—'}</Table.Td><Table.Td>{e.severity ?? '—'}</Table.Td></>
-            : <Table.Td>{e.type === 'traffic' ? (e.suspicious || e.event === 'Exploit-path probe' ? <span className="logs-event-label alert"><ShieldAlert size={13} />Suspicious</span> : 'Normal') : e.severity ?? '—'}</Table.Td>}
-          <Table.Td>{e.source ? /[.:]/.test(e.source) ? <button type="button" className="logs-ip-filter" onClick={() => { setColumns((old) => ({ ...old, source: { op: 'equals', value: e.source } })); }}><code>{e.source}</code></button> : <code>{e.source}</code> : '—'}</Table.Td>
-          <Table.Td>{e.method ?? '—'}</Table.Td>
-          <Table.Td className="logs-url">{e.url ? <code>{e.url}</code> : '—'}</Table.Td>
-          <Table.Td><span className={`logs-status-code ${e.status >= 400 ? 'error' : ''}`}>{e.status ?? '—'}</span></Table.Td>
+          {tableColumns.map(([field]) => <Table.Td key={field} className={['time', 'event', 'url', 'details'].includes(field) ? `logs-${field}` : undefined}>
+            {field === 'time' ? formatDateTime(e.time)
+              : field === 'service' ? names.get(e.service) ?? 'Previous route'
+              : field === 'event' ? <span className={`logs-event-label ${e.type === 'alert' || e.suspicious || e.event === 'Exploit-path probe' ? 'alert' : e.severity === 'warning' ? 'warning' : ''}`}>{e.type === 'alert' && <ShieldAlert size={13} />}{e.event}</span>
+              : field === 'suspicious' ? (e.suspicious || e.event === 'Exploit-path probe' ? <span className="logs-event-label alert"><ShieldAlert size={13} />Suspicious</span> : 'Normal')
+              : field === 'source' ? (e.source ? /[.:]/.test(e.source) ? <button type="button" className="logs-ip-filter" onClick={() => setColumns((old) => ({ ...old, source: { op: 'equals', value: e.source } }))}><code>{e.source}</code></button> : <code>{e.source}</code> : '—')
+              : field === 'url' || field === 'generation' ? (e[field] ? <code>{e[field]}</code> : '—')
+              : field === 'status' ? <span className={`logs-status-code ${e.status >= 400 ? 'error' : ''}`}>{e.status ?? '—'}</span>
+              : e[field] || '—'}
+          </Table.Td>)}
         </Table.Tr>)}{data?.events.length === 0 && <Table.Tr><Table.Td colSpan={tableColumns.length}>No matching {audit ? 'audit events' : kind === 'alert' ? 'alerts' : 'traffic logs'}.</Table.Td></Table.Tr>}</Table.Tbody>
       </Table></Table.ScrollContainer>
       <Group justify="space-between"><span className="logs-caption">{data ? `${data.events.length} of ${totals.count.toLocaleString()} matching events` : 'Loading events…'}</span>

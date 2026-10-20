@@ -169,11 +169,14 @@ export class LogStore {
       for (const key of ['count', 'requests', 'alerts', 'success', 'clientErrors', 'serverErrors']) sum[key] += bucket[key] ?? 0;
       return sum;
     }, { count: 0, requests: 0, alerts: 0, success: 0, clientErrors: 0, serverErrors: 0 });
-    const choiceFields = ['event', 'suspicious', 'method', 'severity', 'role'];
+    const choiceFields = ['event', 'suspicious', 'method', 'status', 'severity', 'role'];
+    const optionalFields = ['generation', 'role', 'details', 'severity', 'source', 'method', 'url', 'status'];
     const choices = this.db.prepare(`SELECT ${choiceFields.map((field) =>
-      `json_group_array(DISTINCT COALESCE(CAST(${filterColumns[field]} AS TEXT),'')) AS ${field}`).join(',')} ${where}`).get(...parameters);
+      `json_group_array(DISTINCT COALESCE(CAST(${filterColumns[field]} AS TEXT),'')) AS ${field}`).concat(optionalFields.map((field) =>
+      `MAX(COALESCE(CAST(${filterColumns[field]} AS TEXT),'')!='') AS has_${field}`)).join(',')} ${where}`).get(...parameters);
     const options = Object.fromEntries(choiceFields.map((field) => [field, JSON.parse(choices[field]).sort()]));
-    const value = { buckets, totals, from, to, step, options };
+    const fields = optionalFields.filter((field) => choices[`has_${field}`]);
+    const value = { buckets, totals, from, to, step, options, fields };
     this.summaryCache = { at: this.now(), key, value };
     return value;
   }

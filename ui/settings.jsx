@@ -130,7 +130,6 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
   }
   return (
     <div className="settings-page">
-      <Group><Anchor href="#audit-log">Audit log</Anchor></Group>
       <section id="general" className="settings-section" aria-labelledby="general-heading">
         <form onSubmit={(e) => savePreferences(e, 'general')}>
           <Stack gap="lg">

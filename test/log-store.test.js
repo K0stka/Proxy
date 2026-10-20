@@ -13,7 +13,7 @@ test('checkbox filters support multiple values and deselect all without losing a
   const archive = new LogStore(':memory:'); t.after(() => archive.close());
   const now = Date.now() - 1000;
   for (let i = 0; i < 230; i++) archive.append({ ...event(now, i), event: i < 120 ? 'First' : 'Second',
-    method: i % 2 ? 'GET' : 'POST', suspicious: i % 2 === 0 });
+    method: i % 2 ? 'GET' : 'POST', status: i % 2 ? 200 : 503, suspicious: i % 2 === 0 });
   archive.append({ ...event(now, 1, 'audit'), event: 'Admin event', role: 'control' });
   archive.append({ ...event(now, 2), service: 'management', event: 'Hidden' });
   const query = (values) => logQuery(new URLSearchParams({ kind: 'traffic', hideManagement: 'true',
@@ -24,6 +24,7 @@ test('checkbox filters support multiple values and deselect all without losing a
     assert.equal(archive.history(query(values)).events.length, Math.min(count, 100));
     assert.deepEqual(summary.options.event, ['First', 'Second']);
     assert.deepEqual(summary.options.method, ['GET', 'POST']);
+    assert.deepEqual(summary.options.status, ['200', '503']);
     assert.deepEqual(summary.options.suspicious, ['Normal', 'Suspicious']);
   }
   assert.equal(archive.history({ ...query(['First']), before: archive.history(query(['First'])).next }).events.length, 20);
@@ -32,6 +33,21 @@ test('checkbox filters support multiple values and deselect all without losing a
   const audit = archive.summary({ kind: 'administration' });
   assert.deepEqual(audit.options.role, ['control']);
   assert.deepEqual(audit.options.event, ['Admin event']);
+});
+
+test('audit field availability covers the full period and stays stable across column filtering', (t) => {
+  const archive = new LogStore(':memory:'); t.after(() => archive.close());
+  const now = Date.now() - 1000;
+  archive.append({ ...event(now, 0, 'audit'), event: 'Admin action', method: 'POST', url: '/api/preferences', status: 200, source: '203.0.113.1' });
+  for (let i = 0; i < 120; i++) archive.append({ ...event(now, i, 'operation'), event: 'Router activated', generation: 'rev-1', role: 'edge', details: '' });
+  archive.append({ ...event(now - 2 * 86400000, 0, 'operation'), details: 'Outside selected period' });
+  const query = { kind: 'administration', from: new Date(now - 3600000).toISOString(), to: new Date(now + 1000).toISOString() };
+  assert(archive.history(query).events.every((e) => e.type === 'operation'));
+  const expected = ['generation', 'role', 'severity', 'source', 'method', 'url', 'status'];
+  assert.deepEqual(archive.summary(query).fields, expected);
+  assert.deepEqual(archive.summary({ ...query, columns: { event: { op: 'in', value: ['Router activated'] } } }).fields, expected);
+  assert.deepEqual(archive.summary({ ...query, services: [] }).fields, []);
+  assert.deepEqual(archive.summary({ ...query, kind: 'operation' }).fields, ['generation', 'role', 'severity']);
 });
 
 test('every table column filters stored events and totals with bound values', (t) => {

@@ -73,6 +73,7 @@ test('traffic, alerts and administration stay separate through filtering, pagina
   assert.equal(audit.summary.totals.count, 3);
   assert(audit.events.every((e) => ['audit', 'operation'].includes(e.type)));
   assert.deepEqual(audit.summary.options.event, ['Admin event', 'NGINX configuration activated', 'Spawned new generation']);
+  assert(audit.summary.fields.includes('generation'));
   params.set('columns', JSON.stringify({ event: { op: 'in', value: ['Admin event', 'NGINX configuration activated'] } }));
   const selected = await logView(control, edge, params);
   assert.equal(selected.summary.totals.count, 2);
