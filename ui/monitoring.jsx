@@ -46,7 +46,7 @@ function ColumnFilter({ column, filter, options = [], onChange }) {
 
 export default function Monitoring({ state, onLogout, audit = false }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false),
-    [period, setPeriod] = useState('hour'), [services, setServices] = useState(null),
+    [period, setPeriod] = useState('today'), [services, setServices] = useState(null),
     [customInterval, setCustomInterval] = useState(null), [chartSummary, setChartSummary] = useState(null),
     [kind, setKind] = useState(audit ? 'administration' : 'traffic'), [columns, setColumns] = useState({}), [options, setOptions] = useState({}), [fields, setFields] = useState([]),
     [page, setPage] = useState(null), [previous, setPrevious] = useState([]);
@@ -105,7 +105,7 @@ export default function Monitoring({ state, onLogout, audit = false }) {
     <div className="logs-top-filters">
       <Select className="logs-period-select" aria-label="Log period" value={customInterval ? 'custom' : period} allowDeselect={false}
         data={[...logPeriods.map(([value, label]) => ({ value, label })), ...(customInterval ? [{ value: 'custom', label: 'Custom', disabled: true }] : [])]}
-        onChange={(value) => { if (value === 'custom') return; setCustomInterval(null); setPeriod(value ?? 'hour'); setPage(null); setPrevious([]); }} />
+        onChange={(value) => { if (value === 'custom') return; setCustomInterval(null); setPeriod(value ?? 'today'); setPage(null); setPrevious([]); }} />
       {!audit && <Popover position="bottom-end" shadow="md" width={300}>
         <Popover.Target><Button className="secondary logs-service-select"><ListFilter size={15} />{services === null ? 'All services' : `${selectedCount} service${selectedCount === 1 ? '' : 's'}`}<ChevronDown size={14} /></Button></Popover.Target>
         <Popover.Dropdown>

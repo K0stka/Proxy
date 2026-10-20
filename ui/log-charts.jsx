@@ -7,7 +7,7 @@ import { logSelection, logSelectionIndices } from './log-period.js';
 import { formatDateTime } from './date-time.js';
 const time = (minute) => formatDateTime(minute * 60000);
 const number = (value) => value.toLocaleString();
-export default function LogCharts({ summary, outcomeSummary = summary, periodLabel = 'Last hour', outcomePeriodLabel = periodLabel,
+export default function LogCharts({ summary, outcomeSummary = summary, periodLabel = 'Today', outcomePeriodLabel = periodLabel,
   selection = null, onSelectionChange, onClearSelection }) {
   const id = useId(), [hover, setHover] = useState(null), [draft, setDraft] = useState(null), drag = useRef(null);
   const buckets = summary?.buckets ?? [], chartTotals = summary?.totals, totals = outcomeSummary?.totals;
