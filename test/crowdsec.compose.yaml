@@ -22,8 +22,6 @@ services:
     volumes:
       - ipc:/security-ipc:ro
       - ${PROXY_TEST_SOURCE:-..}/test/crowdsec.test.js:/app/test/crowdsec.test.js:ro
-      - ${PROXY_TEST_SOURCE:-..}/edge:/app/edge:ro
-      - ${PROXY_TEST_SOURCE:-..}/shared:/app/shared:ro
       - ${PROXY_TEST_SOURCE:-..}/server:/app/server:ro
 volumes:
   config:
