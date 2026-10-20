@@ -26,6 +26,12 @@ The root-owned `var-lib-proxylogs.mount` exposes the same volume at
 deployment and management audits use this location. No Docker socket or additional
 capability is given to application containers.
 
+Exclude this bind alias from Komodo Periphery's disk statistics to avoid counting
+the root filesystem twice. Add `/var/lib/proxylogs` to `exclude_disk_mounts` in
+`/etc/komodo/periphery.config.toml`, preserving any existing exclusions, then
+restart `periphery.service`. This restarts monitoring only, not proxy containers.
+The VPS has this exclusion configured.
+
 Before a fresh direct Compose deployment:
 
 ```sh
