@@ -10,7 +10,7 @@ export class Security {
     this.cache = new Map(); this.lastAlert = Math.max(storage?.get('crowdsec-alert-cursor') ?? 0,
       archive?.db.prepare("SELECT MAX(json_extract(data,'$.crowdsecAlertId')) AS id FROM logs WHERE kind='alert'").get().id ?? 0); this.lastHealth = null;
   }
-  admin(path, body) { return unixRequest(this.socket, path, body ? { method: 'POST', body, timeout: 10000 } : {}); }
+  admin(path, body) { return unixRequest(this.socket, path, body ? { method: 'POST', body, timeout: path === '/policy' ? 30000 : 10000 } : {}); }
   async key() {
     const config = await readFile('/security-ipc/bouncer.conf', 'utf8');
     return config.match(/^API_KEY=(.+)$/m)?.[1];

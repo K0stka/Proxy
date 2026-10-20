@@ -258,12 +258,12 @@ export function createApp({
           const security = parse(settingsSchema, { ...settingsFromPolicy(policy), security: await bodyJSON(req) }).security;
           json(res, await serial(async () => {
             const previous = policy.security;
-            await edge('/security/configure', { method: 'POST', body: security });
+            await edge('/security/configure', { method: 'POST', body: security, timeout: 35000 });
             try {
               const next = effectivePolicy(deployment, { ...settingsFromPolicy(policy), security }, { development });
               await apply(store.snapshot(), next);
             } catch (e) {
-              await edge('/security/configure', { method: 'POST', body: previous }).catch(() => {});
+              await edge('/security/configure', { method: 'POST', body: previous, timeout: 35000 }).catch(() => {});
               throw e;
             }
             return { ok: true };

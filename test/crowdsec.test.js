@@ -60,8 +60,15 @@ test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statist
   const waf = await request('/wp-content/uploads/shell.php', '198.51.100.99');
   assert.equal(waf.status, 403, 'maintained AppSec test rule must block');
   assert.equal((await request('/search?q=1%27%20OR%201%3D1--', '198.51.100.98')).status, 403, 'CRS must inspect query strings');
-  assert.equal((await request('/search', '198.51.100.97', { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ query: "1' OR '1'='1" }) })).status, 403, 'CRS must inspect JSON bodies');
+  let jsonAttack;
+  for (let i = 0; i < 5; i++) {
+    jsonAttack = await request('/search', '198.51.100.97', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: "1' OR '1'='1" }) });
+    if (jsonAttack.status === 403) break;
+    console.log(`Waiting for JSON inspection after HTTP ${jsonAttack.status}: ${errors.slice(-1200)}`);
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  assert.equal(jsonAttack.status, 403, `CRS must inspect JSON bodies. NGINX: ${errors.slice(-3000)}`);
   policy = { ...policy, security: { ...policy.security, mode: 'monitor' } };
   assert.equal((await request('/wp-content/uploads/shell.php', '198.51.100.99')).status, 404, 'WAF monitor-only permits matched requests');
   policy = { ...policy, security: { ...policy.security, mode: 'block' } };

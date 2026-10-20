@@ -31,7 +31,7 @@ if not key_file.exists():
 key = key_file.read_text().strip()
 # The key is readable only by the edge's group, never returned through the UI.
 conf = IPC / 'bouncer.conf'
-conf.write_text('API_URL=http://127.0.0.1:8088\nAPI_KEY=' + key + '\nAPPSEC_URL=http://127.0.0.1:7422\nMODE=live\nENABLED=true\nAPPSEC_DROP_UNREADABLE_BODY=true\n')
+conf.write_text('API_URL=http://127.0.0.1:8088\nAPI_KEY=' + key + '\nAPPSEC_URL=http://127.0.0.1:7422\nAPPSEC_PROCESS_TIMEOUT=2000\nMODE=live\nENABLED=true\nAPPSEC_DROP_UNREADABLE_BODY=true\n')
 os.chown(conf, 0, 10000)
 conf.chmod(0o640)
 (ROOT / 'config.yaml.local').write_text('api:\n  server:\n    listen_uri: 127.0.0.1:8088\ncommon:\n  log_media: stdout\n')
