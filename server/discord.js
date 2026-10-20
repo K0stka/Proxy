@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { parse, Problem } from '../shared/model.js';
 
+const edgeAlertsUnavailable = 'Edge alerts unavailable; delivery will retry.';
+const edgeAlertsTimeout = 5000;
+
 export const discordSettings = z.object({
   enabled: z.boolean(),
   webhookURL: z.string().max(512).optional(),
@@ -29,7 +32,7 @@ export class DiscordAlerts {
     if ((!old.enabled && input.enabled) || (input.webhookURL && url !== old.webhookURL)) {
       // Enabling starts with new alerts, rather than replaying a month of history.
       let edgeId;
-      try { edgeId = (await this.edge('/alerts?after=0', { timeout: 1500 })).latest; }
+      try { edgeId = (await this.edge('/alerts?after=0', { timeout: edgeAlertsTimeout })).latest; }
       catch { if (input.enabled) throw new Problem(503, 'Edge unavailable; try enabling alerts again when it recovers.'); }
       this.store.set('discord-cursors', { control: this.archive.latestId(), edge: edgeId ?? 0 });
       this.store.set('discord-dedup', []);
@@ -91,9 +94,13 @@ export class DiscordAlerts {
     try {
       const cursors = this.store.get('discord-cursors', { control: 0, edge: 0 });
       const groups = [['control', this.archive.alertsAfter(cursors.control)]];
-      try { groups.push(['edge', (await this.edge(`/alerts?after=${cursors.edge}`, { timeout: 1500 })).events]); }
+      try {
+        groups.push(['edge', (await this.edge(`/alerts?after=${cursors.edge}`, { timeout: edgeAlertsTimeout })).events]);
+        if (this.status().error === edgeAlertsUnavailable)
+          this.store.set('discord-status', { ...this.statusFields(), error: null });
+      }
       catch {
-        this.store.set('discord-status', { ...this.statusFields(), error: 'Edge alerts unavailable; delivery will retry.' });
+        this.store.set('discord-status', { ...this.statusFields(), error: edgeAlertsUnavailable });
       }
       const dedup = this.store.get('discord-dedup', []).filter(([, time]) => this.now() - time < 900000);
       for (const [component, events] of groups) for (const event of events) {

@@ -88,3 +88,45 @@ test('rate limits retain cursors for retry and report sanitized failures', async
   assert.equal(f.store.get('discord-cursors').edge, 1);
   assert.equal(f.discord.status().error, null);
 });
+
+test('an empty successful edge poll clears only the stale edge warning without sending notifications', async (t) => {
+  const f = fixture(t);
+  await f.discord.save({ enabled: true, webhookURL: url });
+  const edge = f.discord.edge;
+  let offline = true;
+  f.discord.edge = async (path, options) => {
+    assert.equal(options.timeout, 5000);
+    if (offline) throw new Error('Edge unavailable');
+    return edge(path, options);
+  };
+  await f.discord.tick();
+  assert.equal(f.discord.status().error, 'Edge alerts unavailable; delivery will retry.');
+  assert.deepEqual(f.store.get('discord-cursors'), { control: 0, edge: 0 });
+  offline = false;
+  f.advance(10000);
+  await f.discord.tick();
+  assert.equal(f.discord.status().error, null);
+  assert.equal(f.discord.status().lastSuccess, null);
+  assert.equal(f.calls.length, 0);
+  const status = { lastSuccess: null, error: 'Discord returned HTTP 403. Check the webhook and channel permissions.', nextAttempt: null };
+  f.store.set('discord-status', status);
+  await f.discord.tick();
+  assert.deepEqual(f.discord.status(), { enabled: true, configured: true, ...status });
+});
+
+test('an edge outage retains the cursor and delivers queued alerts when polling recovers', async (t) => {
+  const f = fixture(t);
+  await f.discord.save({ enabled: true, webhookURL: url });
+  const edge = f.discord.edge;
+  f.edgeEvents.push(f.alert(1));
+  f.discord.edge = async () => { throw new Error('Edge unavailable'); };
+  await f.discord.tick();
+  assert.equal(f.store.get('discord-cursors').edge, 0);
+  assert.equal(f.calls.length, 0);
+  f.discord.edge = edge;
+  f.advance(10000);
+  await f.discord.tick();
+  assert.equal(f.store.get('discord-cursors').edge, 1);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.discord.status().error, null);
+});
