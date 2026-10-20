@@ -10,6 +10,16 @@ spec.loader.exec_module(updater)
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_crowdsec_upgrade_adds_only_the_private_readonly_socket_volume(self):
+        templates = {'edge': {'mounts': [{'Source': '/state', 'Destination': '/runtime', 'RW': True}]}}
+        fresh = {'services': {'edge': {'environment': {'PROXY_CROWDSEC_ENABLED': 'true'}}},
+                 'volumes': {'security_ipc': {'name': 'proxy_security_ipc'}}}
+        with patch.object(updater, 'run') as run:
+            updater.security_mount(templates, fresh)
+            run.assert_called_once_with(['docker', 'volume', 'create', 'proxy_security_ipc'])
+        self.assertEqual(templates['edge']['mounts'][0]['Destination'], '/runtime')
+        self.assertEqual(templates['edge']['mounts'][1], {
+            'Source': 'proxy_security_ipc', 'Destination': '/security-ipc', 'RW': False, 'Type': 'volume'})
     def test_managed_rollback_restores_environment_before_restarting_old_images(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

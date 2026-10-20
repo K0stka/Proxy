@@ -58,7 +58,7 @@ function staticLocations(manifest, route, overrides) {
 export function render(
   policy,
   raw,
-  { revision, directory, readyDomains = [], wildcardDomains = readyDomains, staticSites = {}, errorSites = {}, bindIP, monitorPort },
+  { revision, directory, readyDomains = [], wildcardDomains = readyDomains, staticSites = {}, errorSites = {}, bindIP, monitorPort, securityEnabled = false },
 ) {
   const snapshot = validateSnapshot(policy, raw),
     routes = snapshot.routes.filter((r) => r.published),
@@ -240,7 +240,10 @@ ${r.upstreamTLS ? `proxy_ssl_server_name on; proxy_ssl_name ${r.upstreamServerNa
       );
     }
   }
-  const config = `pid /tmp/nginx.pid;
+  const config = `load_module /usr/lib/nginx/modules/ngx_stream_module.so;
+load_module /usr/lib/nginx/modules/ndk_http_module.so;
+load_module /usr/lib/nginx/modules/ngx_http_lua_module.so;
+pid /tmp/nginx.pid;
 error_log stderr crit;
 worker_processes 2;
 worker_shutdown_timeout 3600s;
@@ -254,7 +257,18 @@ proxy_temp_path /tmp/proxy_temp;
 fastcgi_temp_path /tmp/fastcgi_temp;
 uwsgi_temp_path /tmp/uwsgi_temp;
 scgi_temp_path /tmp/scgi_temp;
-${monitorPort ? httpMonitoring(routes, policy.adminHostname, monitorPort) : 'access_log off;'}
+${monitorPort ? httpMonitoring(routes, policy.adminHostname, monitorPort, securityEnabled) : 'access_log off;'}
+${securityEnabled ? `lua_package_path '/usr/local/share/lua/5.1/?.lua;/usr/local/share/lua/5.1/?/init.lua;;';
+lua_shared_dict crowdsec_cache 10m;
+init_by_lua_block { local cs = require 'crowdsec'; cs.proxy_initialized = cs.init('/security-ipc/bouncer.conf', 'proxy-crowdsec/1') }
+map $monitor_service $security_mode { default ${policy.security.mode}; ${Object.entries(policy.security.routes).filter(([, mode]) => mode !== 'inherit').map(([id, mode]) => `${id} ${mode};`).join(' ')} }
+map $host $security_failure { default ${policy.security.failure}; }
+map $host $security_inspected { default false; }
+map $host $security_action { default Allowed; }
+map $host $security_engine { default ''; }
+map $host $security_reason { default ''; }
+server_rewrite_by_lua_file /app/edge/security.lua;
+access_log syslog:server=127.0.0.1:7423,tag=nginx combined;` : ''}
 map $request_method $proxy_auth_key { default ""; POST $binary_remote_addr; }
 limit_req_zone $proxy_auth_key zone=proxy_auth:1m rate=20r/m;
 map $http_upgrade $connection_upgrade { default upgrade; '' close; }
@@ -279,7 +293,7 @@ ${stream.join('\n')}
   };
 }
 
-function httpMonitoring(routes, adminHostname, port) {
+function httpMonitoring(routes, adminHostname, port, securityEnabled) {
   const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const matches = routes.filter((r) => ['http', 'static', 'redirect'].includes(r.kind))
     .toSorted((a, b) => b.path.length - a.path.length)
@@ -291,7 +305,7 @@ ${matches.join('\n')}
 }
 map $request_uri $monitor_signal {
 default none;
-${quote('~*^[^?]*(?:\\.env|\\.git|wp-login|wp-admin|xmlrpc\\.php|/phpmyadmin|/vendor/phpunit|%2e%2e|\\.\\./)')} probe;
+${securityEnabled ? '' : `${quote('~*^[^?]*(?:\\.env|\\.git|wp-login|wp-admin|xmlrpc\\.php|/phpmyadmin|/vendor/phpunit|%2e%2e|\\.\\./)')} probe;`}
 }
 map $http_user_agent $monitor_uptime_kuma {
 default false;
@@ -301,6 +315,6 @@ map $http_user_agent $monitor_cs2_renderer {
 default false;
 ~^AutoTournament-Recorder/1[.]0$ true;
 }
-log_format proxy_monitor escape=json '{"protocol":"http","service":"$monitor_service","address":"$remote_addr","status":"$status","bytes":"$bytes_sent","signal":"$monitor_signal","url":"$scheme://$host$request_uri","method":"$request_method","uptimeKuma":$monitor_uptime_kuma,"cs2Renderer":$monitor_cs2_renderer}';
+log_format proxy_monitor escape=json '{"protocol":"http","service":"$monitor_service","address":"$remote_addr","status":"$status","bytes":"$bytes_sent","signal":"$monitor_signal","url":"$scheme://$host$request_uri","method":"$request_method","uptimeKuma":$monitor_uptime_kuma,"cs2Renderer":$monitor_cs2_renderer${securityEnabled ? ',"securityInspected":$security_inspected,"securityAction":"$security_action","securityEngine":"$security_engine","securityReason":"$security_reason"' : ''}}';
 access_log syslog:server=127.0.0.1:${port},tag=proxy_http proxy_monitor;`;
 }

@@ -21,6 +21,23 @@ import { isoCBOR } from '@simplewebauthn/server/helpers';
 import { fileFilter } from '../edge/sites.js';
 import { LogStore, logQuery } from '../shared/log-store.js';
 
+test('security controls require authentication and CSRF, validate policies and retain settings through normal applies', async (t) => {
+  const f = await fixture(t);
+  for (const [path, method] of [['/api/security', 'GET'], ['/api/security/policy', 'PUT'], ['/api/security/release', 'POST'], ['/api/security/update', 'POST']]) {
+    assert.equal((await f.request(path, { method, authenticated: false })).status, 401);
+    if (method !== 'GET') assert.equal((await f.request(path, { method, extra: { 'x-csrf-token': '' } })).status, 403);
+  }
+  assert.equal((await f.request('/api/security?from=wrong&to=wrong')).status, 400);
+  assert.equal((await f.request('/api/security/policy', { method: 'PUT', body: { mode: 'invented' } })).status, 400);
+  assert.equal((await f.request('/api/security/policy', { method: 'PUT', body: { exceptions: [{ ip: 'not-an-ip' }] } })).status, 400);
+  const security = { ...defaultSettings.security, mode: 'monitor', exceptions: [{ ip: '2001:db8::1', note: 'Office' }] };
+  assert.equal((await f.request('/api/security/policy', { method: 'PUT', body: security })).status, 200);
+  assert.deepEqual(f.store.get('settings').security, security);
+  f.setFail(true);
+  assert.equal((await f.request('/api/security/policy', { method: 'PUT', body: { ...security, mode: 'block' } })).status, 502);
+  assert.equal(f.store.get('settings').security.mode, 'monitor');
+});
+
 async function fixture(t, { empty = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'proxy-app-')),
     store = new Store(':memory:'),

@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
-SERVICES = ('control', 'edge', 'files', 'certificates')
+SERVICES = ('control', 'edge', 'files', 'certificates', 'crowdsec')
 TEMPLATE_PATH = Path('/var/lib/proxy-handoff/templates.json')
 
 
@@ -41,9 +41,27 @@ def compose(directory):
 def containers():
     state_file = Path('/var/lib/proxy-handoff/state.json')
     generations = json.loads(state_file.read_text()) if state_file.exists() else {}
-    return [json.loads(run(['docker', 'inspect', generations[service]['container']
-                           if service in generations else 'proxy-' + service + '-1'], capture=True))[0]
-            for service in SERVICES]
+    result = []
+    for service in SERVICES:
+        try:
+            result.append(json.loads(run(['docker', 'inspect', generations[service]['container']
+                                         if service in generations else 'proxy-' + service + '-1'], capture=True,
+                                         stderr=subprocess.DEVNULL))[0])
+        except subprocess.CalledProcessError:
+            if service != 'crowdsec':
+                raise
+    return result
+
+
+def security_mount(templates, fresh):
+    """Add the new private socket volume to existing generation templates on upgrade."""
+    if fresh['services']['edge'].get('environment', {}).get('PROXY_CROWDSEC_ENABLED') != 'true':
+        return
+    name = fresh['volumes']['security_ipc']['name']
+    run(['docker', 'volume', 'create', name])
+    mounts = templates['edge']['mounts']
+    templates['edge']['mounts'] = [m for m in mounts if m['Destination'] != '/security-ipc'] + [
+        {'Source': name, 'Destination': '/security-ipc', 'RW': False, 'Type': 'volume'}]
 
 
 def handoff(images):
@@ -107,7 +125,10 @@ def preserve_images(previous, work):
 
 
 def health(previous, admin_host, isolation=True):
-    for container in containers():
+    current = containers()
+    if len(current) < len(SERVICES) and 'PROXY_CROWDSEC_ENABLED=true' in current[1]['Config'].get('Env', []):
+        return False
+    for container in current:
         if not container['State']['Running'] or container['State'].get('Health', {}).get('Status', 'healthy') != 'healthy':
             return False
     origin = dict(value.split('=', 1) for value in previous[0]['Config']['Env'])['PROXY_ORIGIN']
@@ -142,9 +163,10 @@ def deploy(directory, previous, admin_host, rollback_file, check=health,
     switched = False
     inventory_managed = managed and Path('/var/lib/proxy-handoff/templates.json').exists() and json.loads(
         Path('/var/lib/proxy-handoff/templates.json').read_text()).get('komodoManaged', False)
-    selected_services = ['files', 'certificates'] if inventory_managed else []
+    selected_services = ['files', 'certificates', 'crowdsec'] if inventory_managed else []
     try:
         if managed:
+            run(compose(directory) + ['up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '180', 'crowdsec'])
             images = {service: run(['docker', 'image', 'inspect', 'proxy-' + service,
                                    '--format', '{{.Id}}'], capture=True).strip() for service in ['control', 'edge']}
             handoff(images)
@@ -250,6 +272,7 @@ def main():
             templates = json.loads(template_path.read_text())
             if templates.get('komodoManaged'):
                 fresh = json.loads(run(compose(repo) + ['config', '--format', 'json'], capture=True))
+                security_mount(templates, fresh)
                 for service in ['control', 'edge']:
                     templates[service]['config']['Env'] = [key + '=' + str(value) for key, value in
                         fresh['services'][service].get('environment', {}).items() if value is not None]

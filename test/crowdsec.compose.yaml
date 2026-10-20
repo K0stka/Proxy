@@ -1,0 +1,31 @@
+name: proxy-crowdsec-test
+services:
+  crowdsec:
+    image: proxy-crowdsec:latest
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - config:/etc/crowdsec
+      - data:/var/lib/crowdsec/data
+      - ipc:/security-ipc
+    healthcheck:
+      test: [CMD, cscli, lapi, status]
+      interval: 5s
+      retries: 30
+  tests:
+    image: proxy-edge:latest
+    network_mode: service:crowdsec
+    entrypoint: [proxy-as-edge, node, --test, /app/test/crowdsec.test.js]
+    environment:
+      PROXY_CROWDSEC_TEST: 'true'
+    volumes:
+      - ipc:/security-ipc:ro
+      - ${PROXY_TEST_SOURCE:-..}/test/crowdsec.test.js:/app/test/crowdsec.test.js:ro
+      - ${PROXY_TEST_SOURCE:-..}/edge:/app/edge:ro
+      - ${PROXY_TEST_SOURCE:-..}/shared:/app/shared:ro
+      - ${PROXY_TEST_SOURCE:-..}/server:/app/server:ro
+volumes:
+  config:
+  data:
+  ipc:

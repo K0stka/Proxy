@@ -37,7 +37,7 @@ import Modal from './dialog.jsx';
 import Folders, { FolderWizard } from './folders.jsx';
 import DomainWizard from './domains-wizard.jsx';
 import Monitoring from './monitoring.jsx';
-import SecurityPreview from './security-preview.jsx';
+import Security from './security.jsx';
 import { useNavigation } from './navigation.js';
 import { formatDateTime as when } from './date-time.js';
 const icons = {
@@ -226,7 +226,7 @@ export default function Workspace({ onLogout }) {
             ['Folders', FolderOpen],
             ['Domains', Globe],
             ['Logs', Activity],
-            ...(document.querySelector('meta[name="proxy-preview"]') ? [['Security', ShieldCheck]] : []),
+            ['Security', ShieldCheck],
             ['Settings', SettingsIcon],
           ].map(([name, Icon]) => (
             <NavLink
@@ -352,8 +352,8 @@ export default function Workspace({ onLogout }) {
                 </Button>
               )}
             </div>
-            {page === 'Logs' && <Monitoring state={state} onLogout={onLogout} view={document.querySelector('meta[name="proxy-preview"]') ? 'traffic' : null} />}
-            {page === 'Security' && document.querySelector('meta[name="proxy-preview"]') && <SecurityPreview state={state} onLogout={onLogout} />}
+            {page === 'Logs' && <Monitoring state={state} onLogout={onLogout} view="traffic" />}
+            {page === 'Security' && <Security state={state} onLogout={onLogout} />}
             {state.edge.error && (
               <Alert className="notice error" role="alert" color="red" variant="light">
                 {state.edge.error}

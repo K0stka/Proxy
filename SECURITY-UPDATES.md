@@ -29,8 +29,8 @@ remain manual. GitHub Actions and Dependabot must be enabled for the repository.
 
 The Komodo Procedure runs daily at 04:15 Europe/Prague. The former systemd update
 timer is disabled. It fetches main, creates a private candidate source tree, pulls current
-Node 26 / Alpine 3.24, official stable NGINX, and Certbot images, upgrades Alpine packages, and rebuilds all
-four services. A UTC-date build argument invalidates OS package layers daily;
+Node 26 / Alpine 3.24, NGINX/Lua packages, the official stable CrowdSec image, and Certbot images, upgrades Alpine packages, and rebuilds all
+five services. A UTC-date build argument invalidates OS package layers daily;
 unchanged layers are cached for additional updates on the same day. Base images
 are still checked with --pull on every update. Node's major version and Alpine's release remain selected explicitly;
 Certbot follows its upstream latest image. New images must pass application, build,

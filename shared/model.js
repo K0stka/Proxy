@@ -4,6 +4,7 @@ import { domainToASCII } from 'node:url';
 import { createHash } from 'node:crypto';
 import { parsePorts, portRanges, formatPorts, samePorts } from './ports.js';
 import { defaultLogFilters } from './log-filters.js';
+import { securityPolicySchema, defaultSecurityPolicy } from './security-policy.js';
 
 export class Problem extends Error {
   constructor(status, message) {
@@ -91,6 +92,7 @@ export const policySchema = z
     origin: z.string().url(),
     ingressIPs: z.array(ip).min(1).max(8),
     adminHostname: z.union([hostname, z.literal('')]).default(''),
+    security: securityPolicySchema.default(defaultSecurityPolicy),
     domains: z.array(domainSchema).max(50),
     logFilters: z.preprocess((value) => {
       if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
@@ -116,6 +118,7 @@ export const settingsSchema = policySchema.omit({
   ingressIPs: true,
 });
 export const defaultSettings = {
+  security: defaultSecurityPolicy,
   logFilters: defaultLogFilters,
   adminHostname: '',
   domains: [],

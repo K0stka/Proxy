@@ -1,5 +1,15 @@
 # Optional host storage: use after compose.yaml in Komodo Compose files.
 services:
+  crowdsec:
+    volumes:
+      - type: bind
+        source: ${PROXY_DATA_PATH:?Set PROXY_DATA_PATH}/crowdsec-config
+        target: /etc/crowdsec
+        bind: { create_host_path: true }
+      - type: bind
+        source: ${PROXY_DATA_PATH:?Set PROXY_DATA_PATH}/crowdsec-data
+        target: /var/lib/crowdsec/data
+        bind: { create_host_path: true }
   control:
     environment:
       PROXY_HANDOFF_AGENT: ${PROXY_HANDOFF_ENABLED:-false}

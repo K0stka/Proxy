@@ -249,6 +249,30 @@ export function createApp({
       }
       if (path.startsWith('/api/')) {
         requestAuth.require(req, mutation);
+        if (path === '/api/security' && req.method === 'GET') {
+          // Reuse log period validation, including the 32-day ceiling.
+          logQuery(url.searchParams);
+          json(res, await edge('/security' + url.search)); return;
+        }
+        if (path === '/api/security/policy' && req.method === 'PUT') {
+          const security = parse(settingsSchema, { ...settingsFromPolicy(policy), security: await bodyJSON(req) }).security;
+          json(res, await serial(async () => {
+            const previous = policy.security;
+            await edge('/security/configure', { method: 'POST', body: security });
+            try {
+              const next = effectivePolicy(deployment, { ...settingsFromPolicy(policy), security }, { development });
+              await apply(store.snapshot(), next);
+            } catch (e) {
+              await edge('/security/configure', { method: 'POST', body: previous }).catch(() => {});
+              throw e;
+            }
+            return { ok: true };
+          })); return;
+        }
+        if (['/api/security/release', '/api/security/update'].includes(path) && req.method === 'POST') {
+          const input = await bodyJSON(req);
+          json(res, await serial(() => edge(path.slice(4), { method: 'POST', body: input }))); return;
+        }
         if (path === '/api/logs/view' && req.method === 'GET') {
           json(res, await logView(archive, edge, url.searchParams, policy.logFilters)); return;
         }

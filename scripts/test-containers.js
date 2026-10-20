@@ -55,10 +55,10 @@ const hostStorage = JSON.parse(
     },
   ),
 );
-assert.deepEqual(Object.keys(hostStorage.services).sort(), ['certificates', 'control', 'edge', 'files']);
+assert.deepEqual(Object.keys(hostStorage.services).sort(), ['certificates', 'control', 'crowdsec', 'edge', 'files']);
 for (const [name, service] of Object.entries(hostStorage.services)) {
   for (const mount of service.volumes) {
-    if (['/ipc', '/files-ipc', '/logs'].includes(mount.target)) {
+    if (['/ipc', '/files-ipc', '/logs', '/security-ipc'].includes(mount.target)) {
       assert.equal(mount.type, 'volume');
       continue;
     }
@@ -212,3 +212,7 @@ try {
   run([...isolated, 'down', '--volumes'], JSON.stringify(manifest));
   run(['volume', 'rm', logVolume]);
 }
+
+execFileSync(process.execPath, ['scripts/test-crowdsec.js'], {
+  stdio: 'inherit', env: { ...process.env, PROXY_SKIP_BUILD: 'true' },
+});

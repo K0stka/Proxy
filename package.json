@@ -15,6 +15,7 @@
     "edge": "node --env-file-if-exists=.env edge/main.js",
     "test": "node --test test/*.test.js",
     "test:containers": "node scripts/test-containers.js",
+    "test:crowdsec": "node scripts/test-crowdsec.js",
     "check": "npm run test && npm run build"
   },
   "dependencies": {

@@ -57,14 +57,24 @@ export class Monitor {
         (raw.cs2Renderer !== undefined && typeof raw.cs2Renderer !== 'boolean')) return;
     this.prune();
     const source = raw.address;
+    const security = raw.protocol === 'http' && raw.securityInspected === true &&
+      ['Allowed', 'Blocked', 'Detected', 'Error'].includes(raw.securityAction) &&
+      ['', 'WAF', 'Behavior', 'Reputation', 'Availability'].includes(raw.securityEngine) &&
+      typeof raw.securityReason === 'string' && raw.securityReason.length <= 200;
+    const matched = security && raw.securityEngine !== 'Availability' && ['Blocked', 'Detected'].includes(raw.securityAction);
     const status = Number(raw.status), bytes = Math.min(Number(raw.bytes), Number.MAX_SAFE_INTEGER);
     const event = { type: 'traffic', service: raw.service, protocol: raw.protocol,
-      suspicious: raw.signal === 'probe',
+      suspicious: raw.signal === 'probe' || matched,
+      ...(security ? { securityInspected: true, securityAction: raw.securityAction, securityEngine: raw.securityEngine, securityReason: raw.securityReason } : {}),
       source, status, bytes, ...(raw.url === undefined ? {} : { url: raw.url, method: raw.method?.slice(0, 32) }),
       ...(raw.protocol === 'http' ? { uptimeKuma: raw.uptimeKuma === true, cs2Renderer: raw.cs2Renderer === true } : {}),
       event: raw.signal === 'probe' ? 'Exploit-path probe' : 'Request / session completed',
       severity: raw.signal === 'probe' || status >= 400 ? 'warning' : 'info' };
     this.add(event);
+    if (security && raw.securityEngine === 'Availability' && (!this.securityFailureAt || this.now() - this.securityFailureAt > 60000)) {
+      this.securityFailureAt = this.now();
+      this.add({ type: 'alert', service: raw.service, severity: 'warning', event: raw.securityReason });
+    }
     for (const key of [raw.service, `${raw.service}:${source}`]) {
       if (this.windows.has(key) && this.now() - this.windows.get(key).started >= 60000)
         this.windows.delete(key);

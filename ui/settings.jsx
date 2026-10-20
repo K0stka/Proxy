@@ -8,7 +8,6 @@ import { api } from './api.js';
 import { useNavigation } from './navigation.js';
 import { compareNames } from './order.js';
 import DiscordAlerts from './discord.jsx';
-import Monitoring from './monitoring.jsx';
 import { formatDateTime as when } from './date-time.js';
 import { defaultLogFilters } from '../shared/log-filters.js';
 export default function Settings({ state, refresh, report, onLogout, onEditPage }) {
@@ -290,11 +289,6 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
             </div>
           ))}
       </section>
-      {!document.querySelector('meta[name="proxy-preview"]') && <section id="audit-log" className="settings-section" aria-labelledby="audit-log-heading">
-        <h2 id="audit-log-heading">Audit log</h2>
-        <Text size="sm" c="dimmed" mb="md">Administration actions, edge operations and update lifecycle events.</Text>
-        <Monitoring state={state} onLogout={onLogout} audit />
-      </section>}
       {renaming && (
         <Modal
           title="Name device"

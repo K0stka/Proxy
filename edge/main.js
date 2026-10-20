@@ -36,6 +36,8 @@ import { readDeployment } from '../shared/env.js';
 import { Store } from '../shared/store.js';
 import { startMonitor } from './monitor.js';
 import { LogStore, logQuery } from '../shared/log-store.js';
+import { Security } from './security.js';
+import { logBounds } from '../shared/log-store.js';
 
 process.umask(0o007);
 const run = promisify(execFile),
@@ -47,6 +49,19 @@ await mkdir(runtime, { recursive: true });
 const state = new Store(join(runtime, 'edge.db'));
 const logArchive = new LogStore(process.env.PROXY_LOG_PATH ?? join(runtime, 'logs.db'));
 const traffic = await startMonitor({ archive: logArchive });
+const security = new Security({ archive: logArchive, monitor: traffic.monitor, storage: state, policy: () => policy,
+  enabled: process.env.PROXY_CROWDSEC_ENABLED === 'true' });
+const securityServer = http.createServer(async (req, res) => {
+  try {
+    if (req.url !== '/check' || req.method !== 'POST') throw new Problem(404, 'Not found');
+    json(res, await security.check(await bodyJSON(req, 4096)));
+  } catch { json(res, { error: 'Inspection unavailable' }, 503); }
+});
+if (security.enabled) {
+  await unlink('/tmp/proxy-security.sock').catch((e) => { if (e.code !== 'ENOENT') throw e; });
+  await new Promise((resolve) => securityServer.listen('/tmp/proxy-security.sock', resolve));
+  await chmod('/tmp/proxy-security.sock', 0o600);
+}
 let child,
   applied = null,
   snapshot = { routes: [], pages: defaultPages },
@@ -150,6 +165,7 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
     errorSites: content.errors,
     bindIP: process.env.PROXY_EDGE_BIND_IP,
     monitorPort: traffic.port,
+    securityEnabled: security.enabled,
   });
   await mkdir(directory, { mode: 0o750 });
   await writeFile(join(directory, 'nginx.conf'), output.config, { mode: 0o640 });
@@ -265,6 +281,18 @@ try {
 const server = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {
   try {
     const logURL = new URL(req.url, 'http://edge.local');
+    if (logURL.pathname === '/security' && req.method === 'GET') {
+      json(res, await security.status(logBounds(logURL.searchParams))); return;
+    }
+    if (req.url === '/security/configure' && req.method === 'POST') {
+      json(res, await security.configure(await bodyJSON(req))); return;
+    }
+    if (req.url === '/security/release' && req.method === 'POST') {
+      await security.release((await bodyJSON(req)).ip); json(res, { ok: true }); return;
+    }
+    if (req.url === '/security/update' && req.method === 'POST') {
+      json(res, await security.admin('/update', {})); return;
+    }
     if (logURL.pathname === '/logs' && req.method === 'GET') {
       json(res, logArchive.history(logQuery(logURL.searchParams)));
       return;
@@ -365,6 +393,8 @@ const certTimer = setInterval(
   30000,
 );
 certTimer.unref();
+const securityTimer = security.enabled ? setInterval(() => security.status().catch(() => {}), 15000) : null;
+securityTimer?.unref();
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.on(signal, () => {
     if (shuttingDown) return;
@@ -372,6 +402,8 @@ for (const signal of ['SIGINT', 'SIGTERM'])
     traffic.monitor.add({ type: 'operation', service: 'management', severity: 'info', event: 'Edge shutdown requested', generation: applied?.revision, details: signal });
     logArchive.flush();
     clearInterval(certTimer);
+    clearInterval(securityTimer);
+    securityServer.close();
     server.close();
     traffic.close();
     child.kill('SIGQUIT');

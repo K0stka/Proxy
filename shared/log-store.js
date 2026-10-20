@@ -102,10 +102,14 @@ export class LogStore {
       this.db.exec('BEGIN IMMEDIATE');
       let { written } = this.db.prepare('SELECT written FROM log_stats WHERE id=1').get();
       const insert = this.db.prepare('INSERT INTO logs(time,service,kind,position,bytes,data) VALUES (?,?,?,?,?,?)');
+      const insertDetection = this.db.prepare(`INSERT INTO logs(time,service,kind,position,bytes,data)
+        SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM logs WHERE kind='alert' AND json_extract(data,'$.crowdsecAlertId')=?)`);
       for (const e of batch) {
         const data = JSON.stringify(e), bytes = Buffer.byteLength(data);
-        insert.run(e.time, e.service, e.type, written, bytes, data);
-        written += bytes;
+        const detection = e.type === 'alert' && Number.isSafeInteger(e.crowdsecAlertId) && e.crowdsecAlertId > 0;
+        const result = detection ? insertDetection.run(e.time, e.service, e.type, written, bytes, data, e.crowdsecAlertId)
+          : insert.run(e.time, e.service, e.type, written, bytes, data);
+        if (result.changes) written += bytes;
       }
       this.db.prepare('UPDATE log_stats SET written=? WHERE id=1').run(written);
       this.db.prepare('DELETE FROM logs WHERE position<?').run(written - this.maxBytes);
