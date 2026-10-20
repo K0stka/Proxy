@@ -72,7 +72,7 @@ export function createApp({
     return next;
   };
   const edge = (path, options) => edgeRequest(edgeSocket, path, options);
-  const discord = new DiscordAlerts({ store, archive, edge, routes: () => store.snapshot().routes, request: notificationRequest });
+  const discord = new DiscordAlerts({ store, archive, edge, routes: () => store.snapshot().routes, origin: policy.origin, request: notificationRequest });
   const notificationTimer = setInterval(() => activeController().then(async (active) => {
     if (!active) return;
     const before = JSON.stringify(discord.status());

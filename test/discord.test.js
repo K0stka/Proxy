@@ -11,7 +11,7 @@ function fixture(t, request = async () => new Response(null, { status: 204 })) {
   const store = new Store(':memory:'), archive = new LogStore(':memory:');
   let now = Date.now();
   const edgeEvents = [], calls = [];
-  const discord = new DiscordAlerts({ store, archive, now: () => now, routes: () => [],
+  const discord = new DiscordAlerts({ store, archive, now: () => now, routes: () => [], origin: 'https://proxy.example.net',
     edge: async (path) => ({ events: edgeEvents.filter((e) => e.id > Number(new URL(path, 'http://edge').searchParams.get('after'))).slice(0, 100), latest: edgeEvents.at(-1)?.id ?? 0 }),
     request: async (...args) => {
       calls.push(args);
@@ -88,6 +88,10 @@ test('bursts are counted together and pending summaries survive recreation durin
   const payload = f.messages()[1];
   assert.equal(payload.content, 'Proxy · 3 alerts');
   assert.equal(payload.embeds[0].fields.length, 2);
+  assert.equal(payload.embeds[0].url, 'https://proxy.example.net/logs');
+  assert.match(payload.embeds[0].description, /\[Open Proxy\]\(https:\/\/proxy\.example\.net\/\)/);
+  assert.match(payload.embeds[0].description, /\[View Logs\]\(https:\/\/proxy\.example\.net\/logs\)/);
+  assert.equal(payload.embeds[0].footer, undefined);
   const fields = payload.embeds[0].fields;
   assert(fields.some((field) => field.value.includes('203.0.113.45')));
   assert(fields.some((field) => field.value.includes('Scope: service-wide') && !field.value.includes('protocol')));
@@ -110,7 +114,7 @@ test('summaries and pending state stay bounded under many distinct alerts', asyn
   assert.equal(payload.content, 'Proxy · 100 alerts');
   assert.equal(embed.fields.length, 6);
   assert.match(embed.description, /94 additional alerts/);
-  const size = embed.title.length + embed.description.length + embed.footer.text.length + embed.fields.reduce((n, field) => n + field.name.length + field.value.length, 0);
+  const size = embed.title.length + embed.description.length + (embed.footer?.text.length ?? 0) + embed.fields.reduce((n, field) => n + field.name.length + field.value.length, 0);
   assert(size < 6000);
   assert(embed.fields.every((field) => field.name.length <= 256 && field.value.length <= 1024));
   assert.equal(f.store.get('discord-queue').groups.length, 0);
@@ -278,7 +282,7 @@ test('DM summaries escape event formatting, reject untrusted rule links and fit 
   assert(!JSON.stringify(payload).includes('evil.test'));
   assert(embed.fields.every((field) => field.value.length <= 750 && field.name.length <= 256));
   assert(embed.fields[0].value.includes('\\<@'));
-  const size = embed.title.length + embed.description.length + embed.footer.text.length + embed.fields.reduce((n, field) => n + field.name.length + field.value.length, 0);
+  const size = embed.title.length + embed.description.length + (embed.footer?.text.length ?? 0) + embed.fields.reduce((n, field) => n + field.name.length + field.value.length, 0);
   assert(size < 6000);
   assert.deepEqual(payload.allowed_mentions, { parse: [] });
 });

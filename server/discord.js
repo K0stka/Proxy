@@ -29,8 +29,8 @@ export const discordSettings = z.object({
 }).strict();
 
 export class DiscordAlerts {
-  constructor({ store, archive, edge, routes, request = fetch, now = Date.now }) {
-    Object.assign(this, { store, archive, edge, routes, request, now });
+  constructor({ store, archive, edge, routes, origin, request = fetch, now = Date.now }) {
+    Object.assign(this, { store, archive, edge, routes, origin, request, now });
     this.busy = false;
     this.channel = null;
   }
@@ -118,10 +118,12 @@ export class DiscordAlerts {
     const total = groups.reduce((sum, group) => sum + group.count, overflow);
     const ordered = [...groups].sort((a, b) => priority(b) - priority(a));
     const shown = ordered.slice(0, 6), hidden = ordered.slice(6).reduce((sum, group) => sum + group.count, overflow);
+    const proxyUrl = this.origin ? new URL('/logs', this.origin).href : null;
     return { content: `Proxy · ${total} alert${total === 1 ? '' : 's'}`,
       embeds: [{ title: 'Proxy alert summary', color: groups.some((g) => g.severity !== 'info') || overflow ? 15105570 : 3066993,
-        description: 'Grouped by service, reason and recorded outcome. Counts are alert events, not requests. Source samples and request outcomes do not describe every request.' +
-          (hidden ? `\n${hidden} additional alerts omitted from this summary. See Logs for full details.` : ''),
+        ...(proxyUrl ? { url: proxyUrl } : {}),
+        description: [proxyUrl ? `[Open Proxy](${new URL('/', this.origin).href}) · [View Logs](${proxyUrl})` : null,
+          hidden ? `${hidden} additional alerts omitted from this summary.` : null].filter(Boolean).join('\n'),
         fields: shown.map((group) => {
           const service = this.routes().find((r) => r.id === group.service)?.name ??
             ({ 'catch-all': 'Wildcard / unmatched traffic', management: 'Management' }[group.service] ?? 'Previous route');
@@ -141,7 +143,6 @@ export class DiscordAlerts {
               group.protocol ? `Latest protocol / status: ${text(group.protocol, 20)} / ${text(group.status ?? '—', 10)}` : null,
             ].filter(Boolean).join('\n').slice(0, 750 - (link ? link.length + 1 : 0)) + (link ? `\n${link}` : '') };
         }), timestamp: new Date(this.now()).toISOString(),
-        footer: { text: 'At most one automatic DM every 5 minutes · Full details in Logs' },
       }] };
   }
   async tick() {
