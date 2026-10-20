@@ -739,6 +739,14 @@ a:hover {
   justify-content: center;
   gap: 12px;
 }
+.workspace-loading {
+  max-width: 1100px;
+  margin: 12vh auto;
+  padding: 24px;
+  display: grid;
+  gap: 20px;
+}
+.workspace-loading > div:last-child { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .dialog-actions {
   justify-content: flex-end;
 }

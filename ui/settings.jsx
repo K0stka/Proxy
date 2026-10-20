@@ -10,6 +10,7 @@ import { compareNames } from './order.js';
 import DiscordAlerts from './discord.jsx';
 import { formatDateTime as when } from './date-time.js';
 import { defaultLogFilters } from '../shared/log-filters.js';
+import { subscribeUpdates } from './events.js';
 export default function Settings({ state, refresh, report, onLogout, onEditPage }) {
   const { settingsSection } = useNavigation();
   const [preferences, setPreferences] = useState(state.settings);
@@ -33,8 +34,8 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
   }
   useEffect(() => {
     load();
-    const timer = setInterval(() => load(true), 15000);
-    return () => clearInterval(timer);
+    const unsubscribe = subscribeUpdates(() => load(true), 'state');
+    return unsubscribe;
   }, []);
   useEffect(() => {
     if (settingsSection === 'general') return;

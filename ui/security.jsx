@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Badge, Group, Paper, Select, Stack, Switch, Table, TextInput, Textarea } from '@mantine/core';
+import { Alert, Badge, Group, Paper, Select, Skeleton, Stack, Switch, Table, TextInput, Textarea } from '@mantine/core';
 import { ShieldCheck, ShieldOff, ShieldAlert, Activity, RefreshCw, Plus, Trash2, ArrowUpRight, Search } from 'lucide-react';
 import { Button } from './controls.jsx';
 import Modal from './dialog.jsx';
@@ -9,6 +9,7 @@ import { formatDateTime } from './date-time.js';
 import { logPeriod, logPeriods } from './log-period.js';
 import Monitoring from './monitoring.jsx';
 import { api } from './api.js';
+import { subscribeUpdates } from './events.js';
 
 const initialPolicy = { mode: 'block', waf: true, behavior: true, reputation: true, updates: true, duration: '4h', failure: 'allow', routes: {} };
 function readPreview() {
@@ -99,8 +100,9 @@ export default function Security({ state, onLogout }) {
       catch (e) { if (active) { setError(e.message); if (e.status === 401) onLogout(); } }
       finally { inFlight = false; }
     };
-    refresh(); const timer = setInterval(refresh, 5000);
-    return () => { active = false; clearInterval(timer); };
+    refresh();
+    const unsubscribeSecurity = subscribeUpdates(refresh, 'security'), unsubscribeAlerts = subscribeUpdates(refresh, 'alerts');
+    return () => { active = false; unsubscribeSecurity(); unsubscribeAlerts(); };
   }, [period]);
   async function persist(value) {
     if (preview) { setSaved(structuredClone(value)); return; }
@@ -155,7 +157,7 @@ export default function Security({ state, onLogout }) {
     setDecisions((items) => items.map((d) => d.ip === ip ? { ...d, action: 'Allowed' } : d));
     setDialog(null); report('Address allowed and existing block removed');
   }
-  if (!preview && !data) return error ? <Alert color="red">{error}</Alert> : <p>Loading security…</p>;
+  if (!preview && !data) return error ? <Alert color="red">{error}</Alert> : <Stack gap="lg" aria-label="Loading security"><Skeleton height={34} width="30%" /><div className="logs-metrics">{[1, 2, 3, 4].map((n) => <Skeleton key={n} height={105} radius="md" />)}</div><Skeleton height={280} radius="md" /></Stack>;
   return <section className="monitoring logs-dashboard security-page" aria-label="Security">
     {(error || (!preview && data.error)) && <Alert color="yellow">{error || data.error}</Alert>}
     <Paper withBorder className="security-health">

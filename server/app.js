@@ -57,6 +57,9 @@ export function createApp({
   notificationRequest = fetch,
 }) {
   const deployment = { origin: policy.origin, ingressIPs: policy.ingressIPs };
+  const eventClients = new Set();
+  const publishUpdate = (type) => { for (const client of eventClients) client.write(`event: ${type}\ndata: {}\n\n`); };
+  discovery.onUpdate = () => publishUpdate('state');
   if (!store.get('settings')) store.set('settings', settingsFromPolicy(policy));
   const auth = new Auth(store, { origin: policy.origin, bootstrapToken, development });
   const publicAuth = new Map();
@@ -70,7 +73,12 @@ export function createApp({
   };
   const edge = (path, options) => edgeRequest(edgeSocket, path, options);
   const discord = new DiscordAlerts({ store, archive, edge, routes: () => store.snapshot().routes, request: notificationRequest });
-  const notificationTimer = setInterval(() => activeController().then((active) => active && discord.tick()).catch(() => {}), 10000);
+  const notificationTimer = setInterval(() => activeController().then(async (active) => {
+    if (!active) return;
+    const before = JSON.stringify(discord.status());
+    await discord.tick();
+    if (JSON.stringify(discord.status()) !== before) publishUpdate('notifications');
+  }).catch(() => {}), 10000);
   notificationTimer.unref();
   function configuredFolders() {
     const snapshot = store.snapshot();
@@ -235,6 +243,10 @@ export function createApp({
             method: req.method, origin, status: res.statusCode, source: req.socket.remoteAddress,
             url: `${origin}${req.url}` };
           monitoring.audit(record);
+          publishUpdate('logs');
+          publishUpdate('state');
+          if (event === 'admin.security.changed') publishUpdate('security');
+          if (event === 'admin.notifications.changed') publishUpdate('notifications');
           auditLog(record);
         } catch { console.error('Audit log unavailable'); }
       });
@@ -249,6 +261,18 @@ export function createApp({
       }
       if (path.startsWith('/api/')) {
         requestAuth.require(req, mutation);
+        if (path === '/api/events' && req.method === 'GET') {
+          res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive' });
+          res.write(': connected\n\n'); eventClients.add(res);
+          const upstream = http.request({ socketPath: edgeSocket, path: '/events' }, (stream) => {
+            if (stream.statusCode !== 200) { res.end(); return; }
+            stream.pipe(res);
+            stream.on('error', () => res.destroy());
+          });
+          upstream.on('error', () => res.destroy());
+          res.on('close', () => { eventClients.delete(res); upstream.destroy(); });
+          upstream.end(); return;
+        }
         if (path === '/api/security' && req.method === 'GET') {
           // Reuse log period validation, including the 32-day ceiling.
           logQuery(url.searchParams);

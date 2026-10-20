@@ -98,7 +98,8 @@ proxy_set_header X-Real-IP $remote_addr;
 proxy_set_header Forwarded "";
 proxy_set_header Proxy "";
 proxy_connect_timeout 5s;
-proxy_read_timeout 180s;`;
+proxy_read_timeout 180s;
+proxy_buffering off;`;
     http.push(`server { ${policy.ingressIPs.map((ip) => listen(ip, 80)).join(' ')} server_name ${policy.adminHostname}; location / { return 308 https://${policy.adminHostname}$request_uri; } }`);
     const adminAPI = `${adminProxy}
 proxy_intercept_errors off;
@@ -257,7 +258,7 @@ proxy_temp_path /tmp/proxy_temp;
 fastcgi_temp_path /tmp/fastcgi_temp;
 uwsgi_temp_path /tmp/uwsgi_temp;
 scgi_temp_path /tmp/scgi_temp;
-${monitorPort ? httpMonitoring(routes, policy.adminHostname, monitorPort, securityEnabled) : 'access_log off;'}
+${monitorPort ? httpMonitoring(routes, [...new Set([policy.adminHostname, new URL(policy.origin).hostname].filter(Boolean))], monitorPort, securityEnabled) : 'access_log off;'}
 ${securityEnabled ? `lua_package_path '/usr/local/share/lua/5.1/?.lua;/usr/local/share/lua/5.1/?/init.lua;;';
 lua_shared_dict crowdsec_cache 10m;
 init_by_lua_block { local cs = require 'crowdsec'; cs.proxy_initialized = cs.init('/security-ipc/bouncer.conf', 'proxy-crowdsec/1') }
@@ -299,14 +300,14 @@ ${stream.join('\n')}
   };
 }
 
-function httpMonitoring(routes, adminHostname, port, securityEnabled) {
+function httpMonitoring(routes, adminHostnames, port, securityEnabled) {
   const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const matches = routes.filter((r) => ['http', 'static', 'redirect'].includes(r.kind))
     .toSorted((a, b) => b.path.length - a.path.length)
     .map((r) => `${quote(`~^${escape(r.hostname)}:${escape(r.path)}${r.path === '/' ? '' : '(?:[/?]|$)'}`)} ${r.id};`);
   return `map "$host:$request_uri" $monitor_service {
 default catch-all;
-${adminHostname ? `${quote(`~^${escape(adminHostname)}:`)} management;` : ''}
+${adminHostnames.map((hostname) => `${quote(`~^${escape(hostname)}:`)} management;`).join('\n')}
 ${matches.join('\n')}
 }
 map $request_uri $monitor_signal {

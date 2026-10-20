@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Alert, Checkbox, Group, Paper, Popover, Select, Table, TextInput, Tooltip, Stack } from '@mantine/core';
+import { Alert, Checkbox, Group, Paper, Popover, Select, Skeleton, Table, TextInput, Tooltip, Stack } from '@mantine/core';
 import { Activity, ShieldAlert, ListFilter, CircleCheck, Download, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft } from 'lucide-react';
 import { Button } from './controls.jsx';
 import Modal from './dialog.jsx';
@@ -8,6 +8,7 @@ import { api } from './api.js';
 import LogCharts from './log-charts.jsx';
 import { logPeriod, logPeriods } from './log-period.js';
 import { formatDateTime } from './date-time.js';
+import { subscribeUpdates } from './events.js';
 
 const choiceColumns = ['event', 'action', 'suspicious', 'method', 'status', 'severity', 'role'];
 
@@ -89,8 +90,8 @@ export default function Monitoring({ state, onLogout, audit = false, view = null
       } finally { inFlight = false; if (active) setBusy(false); }
     }
     load();
-    const timer = page ? null : setInterval(load, 5000);
-    return () => { active = false; clearInterval(timer); };
+    const unsubscribe = page ? null : subscribeUpdates(load, 'logs');
+    return () => { active = false; unsubscribe?.(); };
   }, [scope, page]);
   const names = new Map([...extraNames.current, ['catch-all', 'Wildcard / unmatched'], ['management', 'Management'],
     ...state.routes.map((r) => [r.id, r.name])]);
@@ -165,7 +166,7 @@ export default function Monitoring({ state, onLogout, audit = false, view = null
               : field === 'status' ? <span className={`logs-status-code ${e.status >= 400 ? 'error' : ''}`}>{e.status ?? '—'}</span>
               : e[field] || '—'}
           </Table.Td>)}
-        </Table.Tr>)}{data?.events.length === 0 && <Table.Tr><Table.Td colSpan={tableColumns.length}>No matching {audit ? 'audit events' : kind === 'alert' ? 'alerts' : 'traffic logs'}.</Table.Td></Table.Tr>}</Table.Tbody>
+        </Table.Tr>)}{!data && Array.from({ length: 6 }, (_, i) => <Table.Tr key={`skeleton-${i}`} aria-hidden="true">{tableColumns.map(([field]) => <Table.Td key={field}><Skeleton height={14} width={`${45 + (i * 17 + field.length * 11) % 45}%`} /></Table.Td>)}</Table.Tr>)}{data?.events.length === 0 && <Table.Tr><Table.Td colSpan={tableColumns.length}>No matching {audit ? 'audit events' : kind === 'alert' ? 'alerts' : 'traffic logs'}.</Table.Td></Table.Tr>}</Table.Tbody>
       </Table></Table.ScrollContainer>
       <Group justify="space-between"><span className="logs-caption">{data ? `${data.events.length} of ${totals.count.toLocaleString()} matching events` : 'Loading events…'}</span>
         <Group gap="xs" className="logs-pagination" aria-label="Event pages">

@@ -36,7 +36,12 @@ ngx.var.security_engine = p.engine
 ngx.var.security_reason = p.reason
 local failed = p.error ~= nil
 if p.action == "Blocked" then return ngx.exit(403) end
-if p.waf then
+-- Management APIs validate authenticated, CSRF-protected requests in the controller;
+-- avoid CRS false positives on legitimate settings payloads such as bot tokens.
+local managementAPI = ngx.var.monitor_service == "management"
+  and string.sub(ngx.var.uri or "", 1, 5) == "/api/"
+  and string.sub(ngx.var.uri or "", 1, 10) ~= "/api/auth/"
+if p.waf and not managementAPI then
   local cs = require "crowdsec"
   if not cs.proxy_initialized then cs.proxy_initialized = cs.init('/security-ipc/bouncer.conf', 'proxy-crowdsec/1') end
   local called, ok, remediation, status, extra, err = pcall(cs.AppSecCheck, ngx.var.remote_addr)

@@ -1,5 +1,5 @@
 import { Button } from './controls.jsx';
-import { Alert, Paper, NavLink, Menu, Switch, Tooltip } from '@mantine/core';
+import { Alert, Paper, NavLink, Menu, Skeleton, Switch, Tooltip } from '@mantine/core';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Waypoints,
@@ -40,6 +40,7 @@ import Monitoring from './monitoring.jsx';
 import Security from './security.jsx';
 import { useNavigation } from './navigation.js';
 import { formatDateTime as when } from './date-time.js';
+import { subscribeUpdates } from './events.js';
 const icons = {
   http: Globe,
   static: FolderOpen,
@@ -91,8 +92,7 @@ export default function Workspace({ onLogout }) {
   }
   useEffect(() => {
     refresh();
-    const timer = setInterval(refresh, 15000);
-    return () => clearInterval(timer);
+    return subscribeUpdates(refresh, 'state');
   }, []);
   useEffect(() => {
     content.current?.scrollTo({
@@ -161,9 +161,10 @@ export default function Workspace({ onLogout }) {
   }
   if (!state)
     return (
-      <div className="loading">
-        <Waypoints />
-        Loading…
+      <div className="workspace-loading" aria-label="Loading workspace">
+        <Skeleton height={42} width="35%" radius="md" />
+        <Skeleton height={110} radius="md" />
+        <div><Skeleton height={180} radius="md" /><Skeleton height={180} radius="md" /></div>
       </div>
     );
   let flow = null;

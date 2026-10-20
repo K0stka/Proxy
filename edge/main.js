@@ -47,7 +47,24 @@ const runtime = process.env.PROXY_EDGE_STATE ?? '/runtime',
   socket = process.env.PROXY_EDGE_SOCKET ?? '/ipc/edge.sock';
 await mkdir(runtime, { recursive: true });
 const state = new Store(join(runtime, 'edge.db'));
-const logArchive = new LogStore(process.env.PROXY_LOG_PATH ?? join(runtime, 'logs.db'));
+const eventClients = new Set();
+const updateTimers = new Map();
+function publishUpdate(type) {
+  if (updateTimers.has(type)) return;
+  const timer = setTimeout(() => {
+    updateTimers.delete(type);
+    for (const client of eventClients) client.write(`event: ${type}\ndata: {}\n\n`);
+  }, 250);
+  updateTimers.set(type, timer);
+  timer.unref();
+}
+const logArchive = new LogStore(process.env.PROXY_LOG_PATH ?? join(runtime, 'logs.db'), {
+  onAppend: (event) => {
+    publishUpdate('logs');
+    if (event.type === 'alert') publishUpdate('alerts');
+    if (event.securityInspected && ['Blocked', 'Detected'].includes(event.securityAction)) publishUpdate('security');
+  },
+});
 const traffic = await startMonitor({ archive: logArchive });
 const security = new Security({ archive: logArchive, monitor: traffic.monitor, storage: state, policy: () => policy,
   enabled: process.env.PROXY_CROWDSEC_ENABLED === 'true' });
@@ -281,6 +298,13 @@ try {
 const server = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {
   try {
     const logURL = new URL(req.url, 'http://edge.local');
+    if (logURL.pathname === '/events' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive' });
+      res.write(': connected\n\n'); eventClients.add(res);
+      const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 20000);
+      res.on('close', () => { clearInterval(heartbeat); eventClients.delete(res); });
+      return;
+    }
     if (logURL.pathname === '/security' && req.method === 'GET') {
       json(res, await security.status(logBounds(logURL.searchParams))); return;
     }
@@ -401,6 +425,7 @@ for (const signal of ['SIGINT', 'SIGTERM'])
     shuttingDown = true;
     traffic.monitor.add({ type: 'operation', service: 'management', severity: 'info', event: 'Edge shutdown requested', generation: applied?.revision, details: signal });
     logArchive.flush();
+    for (const timer of updateTimers.values()) clearTimeout(timer);
     clearInterval(certTimer);
     clearInterval(securityTimer);
     securityServer.close();

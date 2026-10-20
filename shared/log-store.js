@@ -68,8 +68,8 @@ export function logQuery(params) {
 }
 
 export class LogStore {
-  constructor(file, { now = Date.now, maxBytes = LOG_BYTES } = {}) {
-    this.file = file; this.now = now; this.maxBytes = maxBytes; this.pending = []; this.error = null;
+  constructor(file, { now = Date.now, maxBytes = LOG_BYTES, onAppend = () => {} } = {}) {
+    this.file = file; this.now = now; this.maxBytes = maxBytes; this.onAppend = onAppend; this.pending = []; this.error = null;
     if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(file);
     this.db.exec(`PRAGMA auto_vacuum=INCREMENTAL; PRAGMA journal_mode=WAL;
@@ -94,6 +94,7 @@ export class LogStore {
     const data = JSON.stringify(event);
     if (Buffer.byteLength(data) > 32768) return;
     this.pending.push(event);
+    this.onAppend(event);
     if (this.pending.length >= 256) this.flush();
   }
   flush() {

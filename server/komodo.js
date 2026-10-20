@@ -93,12 +93,14 @@ export class Discovery {
     localAddresses = async () => [],
     key = process.env.PROXY_KOMODO_KEY ?? '',
     secret = process.env.PROXY_KOMODO_SECRET ?? '',
+    onUpdate = () => {},
   } = {}) {
     this.url = url;
     this.fetcher = fetcher;
     this.lookup = lookup;
     this.localAddresses = localAddresses;
     this.credentials = [key, secret];
+    this.onUpdate = onUpdate;
     this.inventory = [];
     this.servers = [];
     this.lastSuccess = null;
@@ -152,6 +154,7 @@ export class Discovery {
     return this.running;
   }
   async poll() {
+    const before = JSON.stringify([this.servers, this.inventory, this.version, this.error, Boolean(this.lastSuccess)]);
     try {
       if (!this.url || this.credentials.some((value) => !value))
         throw Error('Missing Core environment');
@@ -233,6 +236,7 @@ export class Discovery {
           : 'Discovery unavailable. Check Core connectivity and Read permissions. Last inventory retained.';
       this.failures++;
     }
+    if (before !== JSON.stringify([this.servers, this.inventory, this.version, this.error, Boolean(this.lastSuccess)])) this.onUpdate();
   }
   status() {
     return {

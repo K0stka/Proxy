@@ -5,6 +5,7 @@ import { api } from './api.js';
 import Help from './help.jsx';
 import { formatDateTime } from './date-time.js';
 import { useToast } from './toasts.jsx';
+import { subscribeUpdates } from './events.js';
 
 export default function DiscordAlerts() {
   const report = useToast(), lastLoadError = useRef('');
@@ -23,8 +24,8 @@ export default function DiscordAlerts() {
       }
     }
     load(true);
-    const timer = setInterval(load, 10000);
-    return () => { active = false; clearInterval(timer); };
+    const unsubscribe = subscribeUpdates(() => load(), 'notifications');
+    return () => { active = false; unsubscribe(); };
   }, [report]);
   useEffect(() => { if (status?.error) report(status.error, true); }, [status?.error, report]);
   async function action(operation) {
