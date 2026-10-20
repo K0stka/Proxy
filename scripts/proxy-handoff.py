@@ -728,7 +728,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 elif (self.command, self.path) in [('GET', '/status'), ('GET', '/network'),
                        ('POST', '/probe'), ('POST', '/pages/validate'), ('POST', '/sites/inspect')] or (
                        self.command == 'GET' and self.path.partition('?')[0] in
-                       ['/logs', '/log-summary', '/monitoring', '/alerts']):
+                       ['/logs', '/log-summary', '/monitoring', '/alerts', '/security']) or (
+                       self.command == 'POST' and self.path in
+                       ['/security/configure', '/security/release', '/security/update']):
                     result = request(broker.state['edge']['socket'], self.command, self.path, body)
                     if self.path == '/status':
                         if not result.get('available') or result.get('error'):
