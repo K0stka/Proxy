@@ -8,7 +8,7 @@ import { formatDateTime } from './date-time.js';
 const time = (minute) => formatDateTime(minute * 60000);
 const number = (value) => value.toLocaleString();
 export default function LogCharts({ summary, outcomeSummary = summary, periodLabel = 'Last hour', outcomePeriodLabel = periodLabel,
-  selection = null, onSelectionChange, onClearSelection, showOutcomes = true }) {
+  selection = null, onSelectionChange, onClearSelection }) {
   const id = useId(), [hover, setHover] = useState(null), [draft, setDraft] = useState(null), drag = useRef(null);
   const buckets = summary?.buckets ?? [], chartTotals = summary?.totals, totals = outcomeSummary?.totals;
   const peak = Math.max(1, ...buckets.map((b) => b.requests));
@@ -45,7 +45,7 @@ export default function LogCharts({ summary, outcomeSummary = summary, periodLab
     { label: 'Server errors', value: totals?.serverErrors ?? 0, color: '#ea7171' },
   ];
   let offset = 0;
-  return <div className={`logs-chart-grid${showOutcomes ? '' : ' logs-chart-single'}`}>
+  return <div className="logs-chart-grid">
     <Paper withBorder className="logs-surface">
       <div className="logs-panel-heading"><div><h2>Traffic</h2><span className="logs-caption">{periodLabel} · selected services</span></div>
         <div className="logs-chart-actions">{selection && <Button className="text-button small" onClick={onClearSelection}>Clear interval</Button>}
@@ -98,7 +98,7 @@ export default function LogCharts({ summary, outcomeSummary = summary, periodLab
       </svg>
       <div className="logs-chart-legend"><span><i className="legend-dot success" /> Requests</span><span><i className="legend-dot warning" /> Client errors {selected ? `· ${selected.clientErrors}` : ''}</span><span><i className="legend-dot errors" /> Server errors {selected ? `· ${selected.serverErrors}` : ''}</span></div>
     </Paper>
-    {showOutcomes && <Paper withBorder className="logs-surface logs-response-panel">
+    <Paper withBorder className="logs-surface logs-response-panel">
       <div className="logs-panel-heading"><div><h2>Responses</h2><span className="logs-caption">{outcomePeriodLabel}</span></div>
         <Help label="About response outcomes">Successful includes redirects. Client errors are 4xx; server errors are 5xx. Rejected TLS handshakes before HTTP and unproxied traffic are not included.</Help>
       </div>
@@ -114,6 +114,6 @@ export default function LogCharts({ summary, outcomeSummary = summary, periodLab
         <div className="logs-donut-label"><strong>{totals ? number(totals.requests) : '—'}</strong><span>responses</span></div>
       </div>
       <div className="logs-outcomes">{outcomes.map((o, i) => <div key={o.label}><span><i className={`legend-dot ${['success', 'warning', 'errors'][i]}`} />{o.label}</span><strong>{totals ? number(o.value) : '—'}</strong></div>)}</div>
-    </Paper>}
+    </Paper>
   </div>;
 }

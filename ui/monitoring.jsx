@@ -94,7 +94,7 @@ export default function Monitoring({ state, onLogout, audit = false }) {
   const download = new URLSearchParams({ ...(data?.period ?? customInterval ?? logPeriod(period)), kind, columns: JSON.stringify(columns),
     ...(selection === null ? {} : { services: selection }) });
   const hasFilters = services !== null || Object.keys(columns).length > 0;
-  const tableColumns = [['time', 'Time'], ...(!audit ? [['service', 'Service']] : []), ['event', 'Event'],
+  const tableColumns = [['time', 'Time'], ...(!audit ? [['service', 'Service']] : []), ...(audit || kind === 'alert' ? [['event', 'Event']] : []),
     ...(audit ? [['generation', 'Generation'], ['role', 'Role'], ['details', 'Details'], ['severity', 'Severity']] : kind === 'traffic' ? [['suspicious', 'Classification']] : [['severity', 'Severity']]),
     ['source', 'Client IP'], ['method', 'Method'], ['url', 'Request URL'], ['status', 'Status']]
     .filter(([field]) => !audit || ['time', 'event'].includes(field) || fields.includes(field) || columns[field]);
@@ -124,9 +124,9 @@ export default function Monitoring({ state, onLogout, audit = false }) {
     {!audit && kind === 'traffic' && <div className="logs-metrics">{metrics.map(({ label, value, detail, icon: Icon }) => <Paper key={label} withBorder className="logs-metric">
       <div className="logs-metric-label">{label}<Icon size={17} /></div><strong>{value}</strong><span>{detail}</span>
     </Paper>)}</div>}
-    {!audit && (kind === 'traffic' || customInterval) && <LogCharts summary={customInterval ? chartSummary : summary} outcomeSummary={summary}
+    {!audit && kind === 'traffic' && <LogCharts summary={customInterval ? chartSummary : summary} outcomeSummary={summary}
       periodLabel={presetLabel} outcomePeriodLabel={periodLabel} selection={customInterval} onSelectionChange={setCustomInterval}
-      onClearSelection={() => setCustomInterval(null)} showOutcomes={kind === 'traffic'} />}
+      onClearSelection={() => setCustomInterval(null)} />}
     <Paper withBorder className="logs-surface logs-events">
       <div className="logs-panel-heading"><h2>{audit ? 'Audit events' : kind === 'alert' ? 'Alerts' : 'Traffic logs'}</h2>
         {hasFilters ? <Button className="secondary logs-clear-filters" color="red" onClick={() => { setColumns({}); setServices(null); }}>Clear filters</Button>
