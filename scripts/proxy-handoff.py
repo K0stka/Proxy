@@ -371,6 +371,7 @@ class Broker:
             result = docker('POST', '/containers/create?name=' + quote(entry['name'], safe=''), config)
             entry['container'] = result['Id']
             docker('POST', '/containers/' + entry['container'] + '/start')
+            audit('spawned', role=role, generation=identifier, name=entry['name'])
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
                 try:

@@ -4,6 +4,7 @@ import { defaultLogFilters } from '../shared/log-filters.js';
 
 export function filteredLogQuery(params, filters = defaultLogFilters) {
   return { ...logQuery(params), hideUptimeKuma: filters.hideUptimeKuma,
+    hideCS2Renderer: filters.hideCS2Renderer ?? defaultLogFilters.hideCS2Renderer,
     hideManagement: filters.hideManagement };
 }
 
@@ -20,7 +21,7 @@ export function logCursor(value) {
 }
 export function logParameters(query, before = query.before) {
   const paging = before && typeof before === 'object' ? { before: before.id, beforeTime: before.time } : { before };
-  return new URLSearchParams(Object.entries({ ...query, ...paging }).filter(([, value]) => value !== null && value !== undefined));
+  return new URLSearchParams(Object.entries({ ...query, columns: JSON.stringify(query.columns ?? {}), ...paging }).filter(([, value]) => value !== null && value !== undefined));
 }
 export async function logPage(archive, edge, query, cursor = {}, { strict = false } = {}) {
   const control = archive.history({ ...query, before: cursor.control?.id ?? null, beforeTime: cursor.control?.time ?? null });

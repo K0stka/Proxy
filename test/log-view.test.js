@@ -4,6 +4,76 @@ import { LogStore, logQuery } from '../shared/log-store.js';
 import { logView, logPage, logCursor, filteredLogQuery } from '../server/logs.js';
 import { logPeriod } from '../ui/log-period.js';
 
+test('CS2 Renderer settings filter before pagination, charts and export while retaining alerts and old logs', async (t) => {
+  const control = new LogStore(':memory:'), traffic = new LogStore(':memory:');
+  t.after(() => { control.close(); traffic.close(); });
+  const time = new Date(Date.now() - 1000).toISOString();
+  for (let i = 0; i < 280; i++) traffic.append({ time, type: 'traffic', service: 'catch-all',
+    source: '203.0.113.44', cs2Renderer: i >= 130, status: 200, event: `Request ${i}` });
+  traffic.append({ time, type: 'traffic', service: 'catch-all', status: 200, event: 'Legacy request' });
+  traffic.append({ time, type: 'alert', service: 'catch-all', cs2Renderer: true, event: 'Security alert' });
+  control.append({ time, type: 'audit', service: 'management', cs2Renderer: true, event: 'Admin event' });
+  const edge = async (path) => {
+    const url = new URL(path, 'http://edge'), query = logQuery(url.searchParams);
+    return url.pathname === '/logs' ? traffic.history(query) : traffic.summary(query);
+  };
+  const params = new URLSearchParams(logPeriod('hour'));
+  const view = await logView(control, edge, params);
+  assert.equal(view.summary.totals.requests, 131);
+  assert.equal(view.summary.totals.count, 133);
+  const exported = [];
+  let cursor = {};
+  do {
+    const page = await logPage(control, edge, filteredLogQuery(params), cursor, { strict: true });
+    exported.push(...page.events);
+    cursor = page.next ? logCursor(page.next) : null;
+  } while (cursor);
+  assert.equal(exported.length, 133);
+  assert(exported.every((e) => e.type !== 'traffic' || !e.cs2Renderer));
+  const shown = await logView(control, edge, params, { hideUptimeKuma: true, hideManagement: true, hideCS2Renderer: false });
+  assert.equal(shown.summary.totals.requests, 281);
+  assert.equal(traffic.history().storage.count, 282);
+  assert.throws(() => logQuery(new URLSearchParams('hideCS2Renderer=yes')), /Invalid log filter/);
+});
+
+test('traffic, alerts and administration stay separate through filtering, pagination and export', async (t) => {
+  const control = new LogStore(':memory:'), traffic = new LogStore(':memory:');
+  t.after(() => { control.close(); traffic.close(); });
+  const time = new Date(Date.now() - 1000).toISOString();
+  for (let i = 0; i < 240; i++) traffic.append({ time, type: 'traffic', service: 'catch-all',
+    event: 'Exploit-path probe', url: 'https://example.net/.env', method: 'GET', status: 404 });
+  traffic.append({ time, type: 'traffic', service: 'catch-all', event: 'Request / session completed', status: 200 });
+  traffic.append({ time, type: 'alert', service: 'catch-all', event: 'Repeated exploit-path probes' });
+  traffic.append({ time, type: 'operation', service: 'management', event: 'NGINX configuration activated' });
+  control.append({ time, type: 'audit', service: 'management', event: 'Admin event' });
+  control.append({ time, type: 'operation', service: 'management', event: 'Spawned new generation', generation: 'edge-1' });
+  const edge = async (path) => {
+    const url = new URL(path, 'http://edge'), query = logQuery(url.searchParams);
+    return url.pathname === '/logs' ? traffic.history(query) : traffic.summary(query);
+  };
+  const params = new URLSearchParams({ ...logPeriod('hour'), kind: 'traffic', columns: JSON.stringify({
+    suspicious: { op: 'equals', value: 'Suspicious' }, method: { op: 'equals', value: 'GET' }, url: { op: 'contains', value: '/.env' },
+  }) });
+  const view = await logView(control, edge, params);
+  assert.equal(view.summary.totals.count, 240);
+  assert.equal(view.events.length, 100);
+  const exported = [];
+  let cursor = {};
+  do {
+    const page = await logPage(control, edge, filteredLogQuery(params), cursor, { strict: true });
+    exported.push(...page.events);
+    cursor = page.next ? logCursor(page.next) : null;
+  } while (cursor);
+  assert.equal(exported.length, 240);
+  assert(exported.every((e) => e.type === 'traffic'));
+  params.delete('columns'); params.set('kind', 'alert');
+  assert.equal((await logView(control, edge, params)).summary.totals.count, 1);
+  params.set('kind', 'administration');
+  const audit = await logView(control, edge, params);
+  assert.equal(audit.summary.totals.count, 3);
+  assert(audit.events.every((e) => ['audit', 'operation'].includes(e.type)));
+});
+
 test('default exclusions filter requests before pagination, totals and export, retaining audit and alerts', async (t) => {
   const control = new LogStore(':memory:'), traffic = new LogStore(':memory:');
   t.after(() => { control.close(); traffic.close(); });

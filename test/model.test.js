@@ -6,8 +6,10 @@ import { validateSnapshot, validatePolicy, safeTarget } from '../shared/model.js
 test('legacy IP log filters migrate to Kuma filtering while preserving management preferences', () => {
   const previous = policy();
   previous.logFilters = { hideByttorrent: false, byttorrentIPs: ['100.89.5.109'], hideManagement: false };
-  assert.deepEqual(validatePolicy(previous, { development: true }).logFilters, { hideUptimeKuma: true, hideManagement: false });
+  assert.deepEqual(validatePolicy(previous, { development: true }).logFilters, { hideUptimeKuma: true, hideCS2Renderer: true, hideManagement: false });
   previous.logFilters = { hideUptimeKuma: false, hideManagement: true };
+  assert.deepEqual(validatePolicy(previous, { development: true }).logFilters, { ...previous.logFilters, hideCS2Renderer: true });
+  previous.logFilters.hideCS2Renderer = false;
   assert.deepEqual(validatePolicy(previous, { development: true }).logFilters, previous.logFilters);
 });
 

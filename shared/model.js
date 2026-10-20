@@ -99,6 +99,7 @@ export const policySchema = z
       return current;
     }, z.object({
       hideUptimeKuma: z.boolean().default(true),
+      hideCS2Renderer: z.boolean().default(true),
       hideManagement: z.boolean(),
     }).strict()).default(defaultLogFilters),
     certificates: z

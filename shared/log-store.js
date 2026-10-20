@@ -5,6 +5,37 @@ import { Problem } from './model.js';
 import { isIP } from 'node:net';
 
 export const LOG_DAYS = 30, LOG_BYTES = 128 * 1024 * 1024;
+const filterColumns = {
+  time: 'time', service: 'service', event: "json_extract(data,'$.event')",
+  source: "json_extract(data,'$.source')", url: "json_extract(data,'$.url')",
+  method: "json_extract(data,'$.method')", status: "json_extract(data,'$.status')",
+  severity: "json_extract(data,'$.severity')", generation: "json_extract(data,'$.generation')",
+  role: "json_extract(data,'$.role')", details: "json_extract(data,'$.details')",
+  suspicious: "CASE WHEN kind='traffic' AND (json_extract(data,'$.suspicious')=1 OR json_extract(data,'$.event')='Exploit-path probe') THEN 'Suspicious' ELSE 'Normal' END",
+};
+export function columnFilters(value = '{}') {
+  try {
+    if (value.length > 8192) throw Error();
+    const filters = JSON.parse(value);
+    if (!filters || typeof filters !== 'object' || Array.isArray(filters) ||
+        Object.entries(filters).some(([key, f]) => !Object.hasOwn(filterColumns, key) || !f ||
+          !['contains', 'equals', 'excludes', 'empty', 'present'].includes(f.op) ||
+          typeof f.value !== 'string' || f.value.length > 500)) throw Error();
+    return filters;
+  } catch { throw new Problem(400, 'Invalid column filter'); }
+}
+function columnWhere(filters) {
+  const clauses = [], values = [];
+  for (const [key, { op, value }] of Object.entries(columnFilters(JSON.stringify(filters)))) {
+    const expression = `COALESCE(CAST(${filterColumns[key]} AS TEXT),'')`;
+    if (op === 'empty' || op === 'present') clauses.push(`${expression}${op === 'empty' ? '=' : '!='}''`);
+    else {
+      clauses.push(op === 'contains' ? `instr(lower(${expression}),lower(?))>0` : `${expression}${op === 'equals' ? '=' : '!='}? COLLATE NOCASE`);
+      values.push(value);
+    }
+  }
+  return { sql: clauses.length ? ` AND ${clauses.join(' AND ')}` : '', values };
+}
 export function logBounds(params) {
   const from = params.get('from'), to = params.get('to');
   if (from === null && to === null) return {};
@@ -17,17 +48,18 @@ export function logQuery(params) {
   const before = params.get('before'), service = params.get('service') ?? 'all', kind = params.get('kind') ?? 'all';
   const source = params.get('source') ?? '';
   const hideUptimeKuma = params.get('hideUptimeKuma') ?? 'false';
+  const hideCS2Renderer = params.get('hideCS2Renderer') ?? 'false';
   const hideManagement = params.get('hideManagement') ?? 'false';
   const beforeTime = params.get('beforeTime');
   const services = params.has('services') ? (params.get('services') ? params.get('services').split(',') : []) : null;
   if ((before !== null && (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before)))) ||
       !/^(all|catch-all|management|[0-9a-f-]{36})$/.test(service) ||
-      !['all', 'traffic', 'alert', 'audit', 'operation'].includes(kind) || (source && !isIP(source)) ||
-      !['true', 'false'].includes(hideUptimeKuma) || !['true', 'false'].includes(hideManagement) ||
+      !['all', 'traffic', 'alert', 'audit', 'operation', 'administration'].includes(kind) || (source && !isIP(source)) ||
+      !['true', 'false'].includes(hideUptimeKuma) || !['true', 'false'].includes(hideCS2Renderer) || !['true', 'false'].includes(hideManagement) ||
       (services && (services.length > 512 || services.some((id) => !/^(catch-all|management|[0-9a-f-]{36})$/.test(id)))) ||
       (beforeTime !== null && (before === null || !Number.isFinite(Date.parse(beforeTime)))))
     throw new Problem(400, 'Invalid log filter');
-  return { before: before === null ? null : Number(before), beforeTime: beforeTime === null ? null : new Date(beforeTime).toISOString(), service, services, kind, source, hideUptimeKuma: hideUptimeKuma === 'true', hideManagement: hideManagement === 'true', ...logBounds(params) };
+  return { before: before === null ? null : Number(before), beforeTime: beforeTime === null ? null : new Date(beforeTime).toISOString(), service, services, kind, source, columns: columnFilters(params.get('columns') ?? '{}'), hideUptimeKuma: hideUptimeKuma === 'true', hideCS2Renderer: hideCS2Renderer === 'true', hideManagement: hideManagement === 'true', ...logBounds(params) };
 }
 
 export class LogStore {
@@ -82,16 +114,17 @@ export class LogStore {
       this.error = 'Log persistence failed; recent events may be missing. Check disk space and permissions.';
     }
   }
-  history({ before = null, beforeTime = null, service = 'all', services = null, kind = 'all', source = '', from = null, to = null, hideUptimeKuma = false, hideManagement = false } = {}) {
+  history({ before = null, beforeTime = null, service = 'all', services = null, kind = 'all', source = '', columns = {}, from = null, to = null, hideUptimeKuma = false, hideCS2Renderer = false, hideManagement = false } = {}) {
     this.flush();
     const selection = services === null ? service === 'all' ? null : JSON.stringify([service]) : JSON.stringify(services);
+    const filter = columnWhere(columns);
     const rows = this.db.prepare(`SELECT id,data FROM logs WHERE
       ((? IS NULL AND (? IS NULL OR id<?)) OR (? IS NOT NULL AND (time<? OR (time=? AND id<?))))
-      AND (? IS NULL OR service IN (SELECT value FROM json_each(?))) AND (?='all' OR kind=?)
+      AND (? IS NULL OR service IN (SELECT value FROM json_each(?))) AND (?='all' OR kind=? OR (?='administration' AND kind IN ('audit','operation')))
       AND (?='' OR json_extract(data,'$.source')=?)
-      AND (kind!='traffic' OR ((?=0 OR service!='management') AND (?=0 OR COALESCE(json_extract(data,'$.uptimeKuma'),0)=0)))
-      AND (? IS NULL OR time>=?) AND (? IS NULL OR time<?) ORDER BY time DESC,id DESC LIMIT 101`)
-      .all(beforeTime, before, before, beforeTime, beforeTime, beforeTime, before, selection, selection, kind, kind, source, source, Number(hideManagement), Number(hideUptimeKuma), from, from, to, to);
+      AND (kind!='traffic' OR ((?=0 OR service!='management') AND (?=0 OR COALESCE(json_extract(data,'$.uptimeKuma'),0)=0) AND (?=0 OR COALESCE(json_extract(data,'$.cs2Renderer'),0)=0)))
+      AND (? IS NULL OR time>=?) AND (? IS NULL OR time<?)${filter.sql} ORDER BY time DESC,id DESC LIMIT 101`)
+      .all(beforeTime, before, before, beforeTime, beforeTime, beforeTime, before, selection, selection, kind, kind, kind, source, source, Number(hideManagement), Number(hideUptimeKuma), Number(hideCS2Renderer), from, from, to, to, ...filter.values);
     const page = rows.slice(0, 100);
     return { events: page.map((r) => ({ ...JSON.parse(r.data), id: r.id })),
       next: rows.length > 100 ? page.at(-1).id : null, storage: this.status() };
@@ -106,9 +139,10 @@ export class LogStore {
     return this.db.prepare('SELECT COALESCE(MAX(id),0) AS id FROM logs').get().id;
   }
   summary({ from = new Date((Math.floor(this.now() / 60000) - 59) * 60000).toISOString(),
-    to = new Date(this.now() + 1).toISOString(), service = 'all', services = null, kind = 'all', source = '', hideUptimeKuma = false, hideManagement = false } = {}) {
+    to = new Date(this.now() + 1).toISOString(), service = 'all', services = null, kind = 'all', source = '', columns = {}, hideUptimeKuma = false, hideCS2Renderer = false, hideManagement = false } = {}) {
     const selection = services === null ? service === 'all' ? null : JSON.stringify([service]) : JSON.stringify(services);
-    const key = JSON.stringify([from, to, selection, kind, source, hideUptimeKuma, hideManagement]);
+    const filter = columnWhere(columns);
+    const key = JSON.stringify([from, to, selection, kind, source, columns, hideUptimeKuma, hideCS2Renderer, hideManagement]);
     if (this.summaryCache?.key === key && this.now() - this.summaryCache.at < 10000) return this.summaryCache.value;
     this.flush();
     const start = Date.parse(from), end = Date.parse(to), step = Math.max(60000, Math.ceil((end - start) / 60 / 60000) * 60000);
@@ -118,11 +152,11 @@ export class LogStore {
       SUM(kind='traffic' AND CAST(json_extract(data,'$.status') AS INTEGER)<400) AS success,
       SUM(kind='traffic' AND CAST(json_extract(data,'$.status') AS INTEGER) BETWEEN 400 AND 499) AS clientErrors,
       SUM(kind='traffic' AND CAST(json_extract(data,'$.status') AS INTEGER)>=500) AS serverErrors
-      FROM logs WHERE time>=? AND time<? AND (? IS NULL OR service IN (SELECT value FROM json_each(?))) AND (?='all' OR kind=?)
+      FROM logs WHERE time>=? AND time<? AND (? IS NULL OR service IN (SELECT value FROM json_each(?))) AND (?='all' OR kind=? OR (?='administration' AND kind IN ('audit','operation')))
       AND (?='' OR json_extract(data,'$.source')=?)
-      AND (kind!='traffic' OR ((?=0 OR service!='management') AND (?=0 OR COALESCE(json_extract(data,'$.uptimeKuma'),0)=0)))
-      GROUP BY bucket ORDER BY bucket`)
-      .all(start, step, from, to, selection, selection, kind, kind, source, source, Number(hideManagement), Number(hideUptimeKuma));
+      AND (kind!='traffic' OR ((?=0 OR service!='management') AND (?=0 OR COALESCE(json_extract(data,'$.uptimeKuma'),0)=0) AND (?=0 OR COALESCE(json_extract(data,'$.cs2Renderer'),0)=0)))
+      ${filter.sql} GROUP BY bucket ORDER BY bucket`)
+      .all(start, step, from, to, selection, selection, kind, kind, kind, source, source, Number(hideManagement), Number(hideUptimeKuma), Number(hideCS2Renderer), ...filter.values);
     const grouped = new Map(rows.map((r) => [r.bucket, r]));
     const buckets = Array.from({ length: Math.ceil((end - start) / step) }, (_, i) => ({ minute: (start + i * step) / 60000, requests: 0,
       count: 0, alerts: 0, success: 0, clientErrors: 0, serverErrors: 0, ...grouped.get(i) }));

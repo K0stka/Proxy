@@ -177,8 +177,18 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
         ['-e', 'stderr', '-c', join(runtime, 'active/nginx.conf'), '-g', 'daemon off;'],
         { stdio: 'inherit' },
       );
-      child.on('error', () => process.exit(1));
-      child.on('exit', () => process.exit(shuttingDown ? 0 : 1));
+      traffic.monitor.add({ type: 'operation', service: 'management', severity: 'info',
+        event: 'Spawned NGINX router', generation: revision, details: `PID: ${child.pid}` });
+      child.on('error', () => {
+        traffic.monitor.add({ type: 'operation', service: 'management', severity: 'warning', event: 'NGINX router failed to start', generation: revision });
+        logArchive.flush(); process.exit(1);
+      });
+      child.on('exit', (code, signal) => {
+        traffic.monitor.add({ type: 'operation', service: 'management', severity: shuttingDown ? 'info' : 'warning',
+          event: shuttingDown ? 'NGINX router stopped after shutdown' : 'NGINX router stopped by itself',
+          generation: applied?.revision ?? revision, details: `Exit code: ${code}, signal: ${signal ?? 'none'}` });
+        logArchive.flush(); process.exit(shuttingDown ? 0 : 1);
+      });
     } else if (!child.kill('SIGHUP')) throw new Error('NGINX is not running');
     await verifyRevision(revision);
     const result = {
@@ -207,7 +217,7 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
     applied = result;
     certFingerprint = certs.fingerprint;
     failed = null;
-    traffic.monitor.add({ type: 'operation', service: 'management', severity: 'info', event: 'NGINX configuration activated' });
+    traffic.monitor.add({ type: 'operation', service: 'management', severity: 'info', event: 'NGINX configuration activated', generation: revision });
     // Retain files for workers draining long-lived connections after a reload.
     setTimeout(() => cleanup().catch(() => {}), 3605000).unref();
     return result;
@@ -357,11 +367,13 @@ const certTimer = setInterval(
 certTimer.unref();
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.on(signal, () => {
+    if (shuttingDown) return;
     shuttingDown = true;
+    traffic.monitor.add({ type: 'operation', service: 'management', severity: 'info', event: 'Edge shutdown requested', generation: applied?.revision, details: signal });
+    logArchive.flush();
     clearInterval(certTimer);
     server.close();
     traffic.close();
-    logArchive.close();
     child.kill('SIGQUIT');
     setTimeout(() => process.exit(0), 31000).unref();
   });

@@ -63,12 +63,59 @@ def save(config):
     temporary.replace(CONFIG)
 
 
+def deployment_rows(source, cursor=0):
+    labels = {'spawned': 'Spawned new generation', 'switched': 'Activated new edge generation',
+              'retired': 'Outdated generation stopped after draining',
+              'forced_retirement': 'Force terminated generation', 'rollback': 'Deployment rolled back',
+              'candidate_failed': 'New generation failed', 'abandoned_candidate': 'Abandoned generation removed',
+              'operator_stopped': 'Generation stopped by operator'}
+    rows = []
+    with source.open('rb') as stream:
+        stream.seek(cursor)
+        for _ in range(1000):
+            line = stream.readline(32769)
+            if not line or not line.endswith(b'\n') or len(line) > 32768:
+                break
+            cursor = stream.tell()
+            try:
+                raw = json.loads(line)
+                event = raw['event'].removeprefix('deployment.')
+                timestamp = datetime.datetime.fromisoformat(raw['time']).astimezone(datetime.timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+                record = {'time': timestamp, 'type': 'operation', 'service': 'management',
+                          'event': labels.get(event, raw['event']),
+                          'severity': 'warning' if event in ['forced_retirement', 'rollback', 'candidate_failed'] else 'info',
+                          'generation': raw.get('generation'), 'role': raw.get('role'),
+                          'details': ', '.join(f'{key}: {raw[key]}' for key in
+                                              ['name', 'reason', 'remainingConnections', 'retiring', 'retirementDeadline'] if key in raw)}
+                rows.append((cursor, timestamp, 'management', 'operation', json.dumps(record)))
+            except (ValueError, KeyError, TypeError, AttributeError):
+                continue
+    return rows, cursor
+
+
 def sync(config=None, *, complete=False):
     if config is None:
         if not CONFIG.exists():
             return
         config = json.loads(CONFIG.read_text())
     root = Path(config['root'])
+    # Import host events as the controller UID so its SQLite files stay writable.
+    source = root / 'host/deployments.jsonl'
+    if source.exists():
+        identity = f'{source.stat().st_dev}:{source.stat().st_ino}'
+        cursor = config.setdefault('deploymentCursors', {}).get(identity, 0)
+        if cursor > source.stat().st_size:
+            cursor = 0
+        while True:
+            rows, next_cursor = deployment_rows(source, cursor)
+            if rows:
+                subprocess.run([sys.executable, __file__, 'import', str(root / 'control/logs.db'), 'deployments:' + identity],
+                               input=json.dumps(rows), capture_output=True, text=True, check=True,
+                               user=10001, group=10000, extra_groups=[])
+            config['deploymentCursors'][identity] = next_cursor
+            if not complete or next_cursor == cursor:
+                break
+            cursor = next_cursor
     state = json.loads((CONFIG.parent / 'state.json').read_text())
     known = {item['path'] for item in config['sources']}
     for entry in [state['edge'], *state['draining']]:

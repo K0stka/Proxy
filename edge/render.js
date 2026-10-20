@@ -297,6 +297,10 @@ map $http_user_agent $monitor_uptime_kuma {
 default false;
 ~*^Uptime-Kuma/ true;
 }
-log_format proxy_monitor escape=json '{"protocol":"http","service":"$monitor_service","address":"$remote_addr","status":"$status","bytes":"$bytes_sent","signal":"$monitor_signal","url":"$scheme://$host$request_uri","method":"$request_method","uptimeKuma":$monitor_uptime_kuma}';
+map $http_user_agent $monitor_cs2_renderer {
+default false;
+~^AutoTournament-Recorder/1[.]0$ true;
+}
+log_format proxy_monitor escape=json '{"protocol":"http","service":"$monitor_service","address":"$remote_addr","status":"$status","bytes":"$bytes_sent","signal":"$monitor_signal","url":"$scheme://$host$request_uri","method":"$request_method","uptimeKuma":$monitor_uptime_kuma,"cs2Renderer":$monitor_cs2_renderer}';
 access_log syslog:server=127.0.0.1:${port},tag=proxy_http proxy_monitor;`;
 }

@@ -1951,3 +1951,7 @@ textarea):focus-visible {
   .logs-apply-filter { grid-column: 2; grid-row: 2; width: 84px; }
   .logs-response-panel .logs-donut svg { max-height: 240px; }
 }
+
+.logs-column-filter { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: inherit; padding: 4px 0; font: inherit; cursor: pointer; white-space: nowrap; }
+.logs-column-filter.active { color: var(--accent); font-weight: 600; }
+.settings-section .logs-surface { padding: 16px; }

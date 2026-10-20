@@ -8,6 +8,7 @@ import { api } from './api.js';
 import { useNavigation } from './navigation.js';
 import { compareNames } from './order.js';
 import DiscordAlerts from './discord.jsx';
+import Monitoring from './monitoring.jsx';
 import { formatDateTime as when } from './date-time.js';
 import { defaultLogFilters } from '../shared/log-filters.js';
 export default function Settings({ state, refresh, report, onLogout, onEditPage }) {
@@ -129,6 +130,7 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
   }
   return (
     <div className="settings-page">
+      <Group><Anchor href="#audit-log">Audit log</Anchor></Group>
       <section id="general" className="settings-section" aria-labelledby="general-heading">
         <form onSubmit={(e) => savePreferences(e, 'general')}>
           <Stack gap="lg">
@@ -167,6 +169,10 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
               description="Matches the Uptime-Kuma/ user agent, regardless of client IP."
               checked={(preferences.logFilters ?? defaultLogFilters).hideUptimeKuma}
               onChange={(e) => { const checked = e.currentTarget.checked; setPreferences((p) => ({ ...p, logFilters: { ...(p.logFilters ?? defaultLogFilters), hideUptimeKuma: checked } })); }} />
+            <Switch label="Hide requests from CS2 Renderer"
+              description="Matches the AutoTournament-Recorder/1.0 user agent, regardless of client IP."
+              checked={(preferences.logFilters ?? defaultLogFilters).hideCS2Renderer ?? defaultLogFilters.hideCS2Renderer}
+              onChange={(e) => { const checked = e.currentTarget.checked; setPreferences((p) => ({ ...p, logFilters: { ...(p.logFilters ?? defaultLogFilters), hideCS2Renderer: checked } })); }} />
             <Switch label="Hide requests to the management panel"
               checked={(preferences.logFilters ?? defaultLogFilters).hideManagement}
               onChange={(e) => { const checked = e.currentTarget.checked; setPreferences((p) => ({ ...p, logFilters: { ...(p.logFilters ?? defaultLogFilters), hideManagement: checked } })); }} />
@@ -284,6 +290,11 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
               </Group>
             </div>
           ))}
+      </section>
+      <section id="audit-log" className="settings-section" aria-labelledby="audit-log-heading">
+        <h2 id="audit-log-heading">Audit log</h2>
+        <Text size="sm" c="dimmed" mb="md">Administration actions, edge operations and update lifecycle events.</Text>
+        <Monitoring state={state} onLogout={onLogout} audit />
       </section>
       {renaming && (
         <Modal

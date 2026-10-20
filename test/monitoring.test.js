@@ -9,6 +9,18 @@ import { policy, route, snapshot } from './fixtures.js';
 const record = (changes = {}) => JSON.stringify({ protocol: 'http', service: 'catch-all',
   address: '203.0.113.77', status: '404', bytes: '100', signal: 'none', ...changes });
 
+test('one exploit request is suspicious traffic without generating an alert', () => {
+  const m = new Monitor();
+  m.ingest(record({ signal: 'probe', url: 'https://example.net/.env', method: 'GET' }));
+  assert.equal(m.snapshot().events.length, 1);
+  assert.equal(m.snapshot().events[0].type, 'traffic');
+  assert.equal(m.snapshot().events[0].suspicious, true);
+  for (let i = 0; i < 3; i++) m.ingest(record({ signal: 'probe' }));
+  assert(!m.snapshot().events.some((e) => e.type === 'alert'));
+  m.ingest(record({ signal: 'probe' }));
+  assert(m.snapshot().events.some((e) => e.type === 'alert'));
+});
+
 test('HTTP logs retain only the Kuma classification and validate its type', () => {
   const m = new Monitor();
   m.ingest(record({ uptimeKuma: true, userAgent: 'not-retained' }));
@@ -18,6 +30,18 @@ test('HTTP logs retain only the Kuma classification and validate its type', () =
   assert.equal(events.length, 2);
   assert.deepEqual(events.map((e) => e.uptimeKuma).sort(), [false, true]);
   assert(!JSON.stringify(events).includes('not-retained'));
+});
+
+test('HTTP logs retain the CS2 Renderer classification, reject invalid types and discard user agents', () => {
+  const m = new Monitor();
+  m.ingest(record({ cs2Renderer: true, userAgent: 'AutoTournament-Recorder/1.0' }));
+  m.ingest(record({ cs2Renderer: false }));
+  m.ingest(record({ cs2Renderer: 'true' }));
+  m.ingest(record());
+  const events = m.snapshot().events;
+  assert.equal(events.length, 3);
+  assert.deepEqual(events.map((e) => e.cs2Renderer).sort(), [false, false, true]);
+  assert(!JSON.stringify(events).includes('AutoTournament-Recorder'));
 });
 
 test('catch-all scanning retains client IPs and full request URLs but ignores unrelated request fields', () => {
@@ -97,5 +121,8 @@ test('NGINX monitoring covers routes and records URLs and IPs without request bo
   assert(config.includes('map $http_user_agent $monitor_uptime_kuma'));
   assert(config.includes('~*^Uptime-Kuma/ true;'));
   assert(formats.some((line) => line.includes('"uptimeKuma":$monitor_uptime_kuma')));
+  assert(config.includes('map $http_user_agent $monitor_cs2_renderer'));
+  assert(config.includes('~^AutoTournament-Recorder/1[.]0$ true;'));
+  assert(formats.some((line) => line.includes('"cs2Renderer":$monitor_cs2_renderer')));
   assert(config.includes('listen unix:/tmp/proxy-health.sock; access_log off;'));
 });

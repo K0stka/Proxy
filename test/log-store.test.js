@@ -9,6 +9,27 @@ import { Monitor } from '../shared/monitor.js';
 const event = (now, i = 0, type = 'traffic') => ({ time: new Date(now).toISOString(), type,
   service: 'catch-all', event: `Event ${i}`, severity: 'info' });
 
+test('every table column filters stored events and totals with bound values', (t) => {
+  const archive = new LogStore(':memory:'); t.after(() => archive.close());
+  const time = new Date().toISOString();
+  const fields = { time, service: 'management', event: "Operator's action %_", source: '203.0.113.9',
+    method: 'POST', url: '/api/routes', status: 403, severity: 'warning', generation: 'edge-2', role: 'edge', details: 'remainingConnections: 2' };
+  archive.append({ ...fields, type: 'operation' });
+  archive.append({ time, type: 'operation', service: 'catch-all', event: 'Other' });
+  for (const [field, value] of Object.entries(fields)) {
+    const query = logQuery(new URLSearchParams({ columns: JSON.stringify({ [field]: { op: 'equals', value: String(value) } }) }));
+    assert.equal(archive.history(query).events.length, field === 'time' ? 2 : 1, field);
+    assert.equal(archive.summary(query).totals.count, field === 'time' ? 2 : 1, field);
+  }
+  for (const [op, value, count] of [['contains', '%_', 1], ['excludes', fields.event, 1], ['empty', '', 0], ['present', '', 2], ['equals', "' OR 1=1 --", 0]]) {
+    const query = logQuery(new URLSearchParams({ columns: JSON.stringify({ event: { op, value } }) }));
+    assert.equal(archive.history(query).events.length, count);
+    assert.equal(archive.summary(query).totals.count, count);
+  }
+  for (const columns of ['null', '[]', '{', '{"unknown":{"op":"equals","value":"x"}}', '{"event":{"op":"SQL","value":"x"}}', '{"status":{"op":"equals","value":403}}'])
+    assert.throws(() => logQuery(new URLSearchParams({ columns })), /Invalid column filter/);
+});
+
 test('logs survive reopening, paginate without gaps, and expire after 30 days even when idle', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'proxy-logs-'));
   let now = Date.now();

@@ -191,6 +191,15 @@ test(
       }
       assert.equal(kuma?.uptimeKuma, true);
       assert(!(await edgeRequest('/logs?hideUptimeKuma=true')).events.some((e) => e.url === kuma.url));
+      await request('whatever.invalid', '/renderer-check', false, { 'User-Agent': 'AutoTournament-Recorder/1.0' });
+      let renderer;
+      for (let i = 0; i < 50; i++) {
+        renderer = (await edgeRequest('/logs')).events.find((e) => e.url === 'http://whatever.invalid/renderer-check');
+        if (renderer) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.equal(renderer?.cs2Renderer, true);
+      assert(!(await edgeRequest('/logs?hideCS2Renderer=true')).events.some((e) => e.url === renderer.url));
       for (let i = 0; i < 5; i++) await request('whatever.invalid', '/.env?secret=never-retain', false);
       let result;
       for (let i = 0; i < 50; i++) {

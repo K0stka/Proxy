@@ -15,7 +15,7 @@ export function createNavigation(browser) {
     const code = ['files', 'settings'].includes(section) && kind === 'pages' ? ([404, 500, 502].includes(Number(name)) ? Number(name) : 404) : null;
     const page = code !== null ? 'Settings' : section === 'files' ? 'Folders' : pages.find((name) => name.toLowerCase() === section) ?? 'Routes';
     const saved = browser.history.state?.proxyNavigation;
-    const settingsSections = ['general', 'logs', 'certificates', 'error-pages', 'access', 'notifications'];
+    const settingsSections = ['general', 'logs', 'certificates', 'error-pages', 'access', 'notifications', 'audit-log'];
     const settingsSection = settingsSections.includes(url.hash.slice(1)) ? url.hash.slice(1)
       : settingsSections.includes(kind) ? kind
       : saved?.page === 'Settings' ? saved.settingsSection ?? 'general' : 'general';

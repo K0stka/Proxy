@@ -253,23 +253,24 @@ test('period log views and full NDJSON downloads are private and export more tha
 test('saved log defaults apply to views and downloads without deleting recorded requests', async (t) => {
   const f = await fixture(t);
   for (const [service, source, event] of [['management', '203.0.113.44', 'Panel poll'],
-    ['catch-all', '203.0.113.44', 'Kuma check'], ['catch-all', '203.0.113.44', 'Public request']])
-    f.edgeArchive.append({ time: new Date().toISOString(), type: 'traffic', service, source, event, uptimeKuma: event === 'Kuma check', status: 200 });
+    ['catch-all', '203.0.113.44', 'Kuma check'], ['catch-all', '203.0.113.44', 'Renderer request'], ['catch-all', '203.0.113.44', 'Public request']])
+    f.edgeArchive.append({ time: new Date().toISOString(), type: 'traffic', service, source, event, uptimeKuma: event === 'Kuma check', cs2Renderer: event === 'Renderer request', status: 200 });
   const requests = async () => (await (await f.request('/api/logs/view')).json()).summary.totals.requests;
   assert.equal(await requests(), 1);
-  const logFilters = { hideUptimeKuma: false, hideManagement: false };
+  const logFilters = { hideUptimeKuma: false, hideCS2Renderer: false, hideManagement: false };
   assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { logFilters }, authenticated: false })).status, 401);
   assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { logFilters: { ...logFilters, hideUptimeKuma: 'bad' } } })).status, 400);
+  assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { logFilters: { ...logFilters, hideCS2Renderer: 'bad' } } })).status, 400);
   assert.equal((await f.request('/api/preferences', { method: 'PUT', body: { logFilters } })).status, 200);
   assert.deepEqual(f.store.get('settings').logFilters, logFilters);
-  assert.equal(await requests(), 3);
+  assert.equal(await requests(), 4);
   const exportText = await (await f.request('/api/logs/download')).text();
-  assert.equal(exportText.trim().split('\n').map(JSON.parse).filter((e) => e.type === 'traffic').length, 3);
+  assert.equal(exportText.trim().split('\n').map(JSON.parse).filter((e) => e.type === 'traffic').length, 4);
   logFilters.hideManagement = true;
   await f.request('/api/preferences', { method: 'PUT', body: { logFilters } });
   const filtered = await (await f.request('/api/logs/download')).text();
-  assert.equal(filtered.trim().split('\n').map(JSON.parse).filter((e) => e.type === 'traffic').length, 2);
-  assert.equal(f.edgeArchive.history().events.length, 3);
+  assert.equal(filtered.trim().split('\n').map(JSON.parse).filter((e) => e.type === 'traffic').length, 3);
+  assert.equal(f.edgeArchive.history().events.length, 4);
 });
 
 test('passkey names persist without changing credentials or sessions and require authorization', async (t) => {
