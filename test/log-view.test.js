@@ -2,7 +2,43 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LogStore, logQuery } from '../shared/log-store.js';
 import { logView, logPage, logCursor, filteredLogQuery } from '../server/logs.js';
-import { logPeriod } from '../ui/log-period.js';
+import { logPeriod, logSelection } from '../ui/log-period.js';
+
+test('chart-selected intervals limit metrics, responses, every traffic page and alerts to the same bounds', async (t) => {
+  const control = new LogStore(':memory:'), traffic = new LogStore(':memory:');
+  t.after(() => { control.close(); traffic.close(); });
+  const start = Date.now() - 3600000;
+  for (let minute = 0; minute < 60; minute++) {
+    const time = new Date(start + minute * 60000).toISOString();
+    for (let i = 0; i < 20; i++) traffic.append({ time, type: 'traffic', service: 'catch-all', event: 'Request', status: i % 2 ? 200 : 404 });
+    if (minute % 3 === 0) traffic.append({ time, type: 'alert', service: 'catch-all', event: 'Security alert', status: 404 });
+  }
+  const edge = async (path) => {
+    const url = new URL(path, 'http://edge'), query = logQuery(url.searchParams);
+    return url.pathname === '/logs' ? traffic.history(query) : traffic.summary(query);
+  };
+  const base = new URLSearchParams({ from: new Date(start).toISOString(), to: new Date(start + 3600000).toISOString(), kind: 'traffic' });
+  const full = await logView(control, edge, base);
+  const interval = logSelection(full.summary, 10, 19), params = new URLSearchParams({ ...interval, kind: 'traffic' });
+  const selected = await logView(control, edge, params);
+  assert.equal(full.summary.totals.requests, 1200);
+  assert.equal(selected.summary.totals.requests, 200);
+  assert.equal(selected.summary.totals.success, 100);
+  assert.equal(selected.summary.totals.clientErrors, 100);
+  const events = [...selected.events];
+  let cursor = selected.next;
+  while (cursor) {
+    const page = await logPage(control, edge, filteredLogQuery(params), logCursor(cursor), { strict: true });
+    events.push(...page.events); cursor = page.next;
+  }
+  assert.equal(events.length, 200);
+  assert(events.every((e) => e.time >= interval.from && e.time < interval.to));
+  params.set('kind', 'alert');
+  const alerts = await logView(control, edge, params);
+  assert.equal(alerts.summary.totals.alerts, 3);
+  assert(alerts.events.every((e) => e.time >= interval.from && e.time < interval.to));
+  assert.equal((await logView(control, edge, base)).summary.totals.requests, 1200);
+});
 
 test('CS2 Renderer settings filter before pagination, charts and export while retaining alerts and old logs', async (t) => {
   const control = new LogStore(':memory:'), traffic = new LogStore(':memory:');

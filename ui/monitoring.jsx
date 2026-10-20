@@ -47,18 +47,19 @@ function ColumnFilter({ column, filter, options = [], onChange }) {
 export default function Monitoring({ state, onLogout, audit = false }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false),
     [period, setPeriod] = useState('hour'), [services, setServices] = useState(null),
+    [customInterval, setCustomInterval] = useState(null), [chartSummary, setChartSummary] = useState(null),
     [kind, setKind] = useState(audit ? 'administration' : 'traffic'), [columns, setColumns] = useState({}), [options, setOptions] = useState({}), [fields, setFields] = useState([]),
     [page, setPage] = useState(null), [previous, setPrevious] = useState([]);
   const extraNames = useRef(new Map());
   const selection = services === null ? null : services.join(',');
-  const scope = JSON.stringify([period, selection, kind, columns]);
+  const scope = JSON.stringify([period, selection, kind, columns, customInterval]);
   useEffect(() => { setPage(null); setPrevious([]); setData(null); }, [scope]);
   useEffect(() => {
     let active = true, inFlight = false;
     async function load() {
       if (inFlight) return;
       inFlight = true; setBusy(true);
-      const bounds = page?.bounds ?? logPeriod(period);
+      const bounds = page?.bounds ?? customInterval ?? logPeriod(period);
       const query = new URLSearchParams({ ...bounds, kind, columns: JSON.stringify(columns),
         ...(selection === null ? {} : { services: selection }), ...(page?.cursor ? { cursor: page.cursor } : {}) });
       try {
@@ -67,6 +68,7 @@ export default function Monitoring({ state, onLogout, audit = false }) {
           for (const e of next.events) if (!['catch-all', 'management'].includes(e.service))
             extraNames.current.set(e.service, `Previous route · ${e.service.slice(0, 8)}`);
           setData(next); setOptions(next.summary?.options ?? {}); setFields(next.summary?.fields ?? []); setError('');
+          if (!customInterval && kind === 'traffic') setChartSummary(next.summary);
         }
       } catch (e) {
         if (active) { setError(e.message); if (e.status === 401) onLogout(); }
@@ -80,7 +82,8 @@ export default function Monitoring({ state, onLogout, audit = false }) {
     ...state.routes.map((r) => [r.id, r.name])]);
   const selectedCount = services === null ? names.size : services.length;
   const summary = data?.summary, totals = summary?.totals;
-  const periodLabel = logPeriods.find(([id]) => id === period)[1];
+  const presetLabel = logPeriods.find(([id]) => id === period)[1];
+  const periodLabel = customInterval ? 'Custom interval' : presetLabel;
   const failures = totals ? totals.clientErrors + totals.serverErrors : 0;
   const metrics = [
     { label: 'Completed', value: totals?.requests.toLocaleString() ?? '—', detail: periodLabel, icon: Activity },
@@ -88,7 +91,7 @@ export default function Monitoring({ state, onLogout, audit = false }) {
     { label: 'Client errors', value: totals?.clientErrors.toLocaleString() ?? '—', detail: periodLabel, icon: ShieldAlert },
     { label: 'Server errors', value: totals?.serverErrors.toLocaleString() ?? '—', detail: periodLabel, icon: ListFilter },
   ];
-  const download = new URLSearchParams({ ...(data?.period ?? logPeriod(period)), kind, columns: JSON.stringify(columns),
+  const download = new URLSearchParams({ ...(data?.period ?? customInterval ?? logPeriod(period)), kind, columns: JSON.stringify(columns),
     ...(selection === null ? {} : { services: selection }) });
   const hasFilters = services !== null || Object.keys(columns).length > 0;
   const tableColumns = [['time', 'Time'], ...(!audit ? [['service', 'Service']] : []), ['event', 'Event'],
@@ -100,9 +103,9 @@ export default function Monitoring({ state, onLogout, audit = false }) {
     {!audit && <div className="filter-tabs" aria-label="Log view">{[['traffic', 'Logs'], ['alert', 'Alerts']].map(([value, label]) =>
       <Button key={value} aria-pressed={kind === value} onClick={() => { setKind(value); setColumns({}); }}>{label}</Button>)}</div>}
     <div className="logs-top-filters">
-      <Select className="logs-period-select" aria-label="Log period" value={period} allowDeselect={false}
-        data={logPeriods.map(([value, label]) => ({ value, label }))}
-        onChange={(value) => { setPeriod(value ?? 'hour'); setPage(null); setPrevious([]); }} />
+      <Select className="logs-period-select" aria-label="Log period" value={customInterval ? 'custom' : period} allowDeselect={false}
+        data={[...logPeriods.map(([value, label]) => ({ value, label })), ...(customInterval ? [{ value: 'custom', label: 'Custom', disabled: true }] : [])]}
+        onChange={(value) => { if (value === 'custom') return; setCustomInterval(null); setPeriod(value ?? 'hour'); setPage(null); setPrevious([]); }} />
       {!audit && <Popover position="bottom-end" shadow="md" width={300}>
         <Popover.Target><Button className="secondary logs-service-select"><ListFilter size={15} />{services === null ? 'All services' : `${selectedCount} service${selectedCount === 1 ? '' : 's'}`}<ChevronDown size={14} /></Button></Popover.Target>
         <Popover.Dropdown>
@@ -118,10 +121,12 @@ export default function Monitoring({ state, onLogout, audit = false }) {
     </div>
     {error && <Alert color="red" role="alert">{error}</Alert>}
     {data && !data.edgeAvailable && <Alert color="yellow">Edge logs unavailable. Showing available records; complete download is unavailable.</Alert>}
-    {!audit && kind === 'traffic' && <><div className="logs-metrics">{metrics.map(({ label, value, detail, icon: Icon }) => <Paper key={label} withBorder className="logs-metric">
+    {!audit && kind === 'traffic' && <div className="logs-metrics">{metrics.map(({ label, value, detail, icon: Icon }) => <Paper key={label} withBorder className="logs-metric">
       <div className="logs-metric-label">{label}<Icon size={17} /></div><strong>{value}</strong><span>{detail}</span>
-    </Paper>)}</div>
-    <LogCharts key={scope} summary={summary} periodLabel={periodLabel} /></>}
+    </Paper>)}</div>}
+    {!audit && (kind === 'traffic' || customInterval) && <LogCharts summary={customInterval ? chartSummary : summary} outcomeSummary={summary}
+      periodLabel={presetLabel} outcomePeriodLabel={periodLabel} selection={customInterval} onSelectionChange={setCustomInterval}
+      onClearSelection={() => setCustomInterval(null)} showOutcomes={kind === 'traffic'} />}
     <Paper withBorder className="logs-surface logs-events">
       <div className="logs-panel-heading"><h2>{audit ? 'Audit events' : kind === 'alert' ? 'Alerts' : 'Traffic logs'}</h2>
         {hasFilters ? <Button className="secondary logs-clear-filters" color="red" onClick={() => { setColumns({}); setServices(null); }}>Clear filters</Button>

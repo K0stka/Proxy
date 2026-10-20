@@ -1948,3 +1948,11 @@ textarea):focus-visible {
 
 .logs-audit-table .logs-event { min-width: 360px; }
 .logs-audit-table .logs-details { min-width: 180px; overflow-wrap: anywhere; }
+.logs-chart-single { grid-template-columns: minmax(0, 1fr); }
+.logs-chart-actions { display: flex; align-items: center; gap: 8px; }
+.logs-traffic-chart { touch-action: pan-y; user-select: none; cursor: crosshair; }
+.logs-selection-mask { fill: var(--surface, #101f25); opacity: .6; pointer-events: none; }
+.logs-selection-area { fill: #38b89a20; stroke: #38b89a; cursor: grab; }
+.logs-selection-handle { fill: #38b89a; fill-opacity: .65; cursor: ew-resize; }
+.logs-selection-handle:focus { outline: 2px solid var(--accent); }
+.logs-selected-interval { margin-bottom: 6px; }

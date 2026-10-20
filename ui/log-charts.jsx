@@ -1,18 +1,43 @@
-import React, { useId, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { Paper } from '@mantine/core';
 import Help from './help.jsx';
+import { Button } from './controls.jsx';
+import { logSelection, logSelectionIndices } from './log-period.js';
 
 import { formatDateTime } from './date-time.js';
 const time = (minute) => formatDateTime(minute * 60000);
 const number = (value) => value.toLocaleString();
-export default function LogCharts({ summary, periodLabel = 'Last hour' }) {
-  const id = useId(), [hover, setHover] = useState(null);
-  const buckets = summary?.buckets ?? [], totals = summary?.totals;
+export default function LogCharts({ summary, outcomeSummary = summary, periodLabel = 'Last hour', outcomePeriodLabel = periodLabel,
+  selection = null, onSelectionChange, onClearSelection, showOutcomes = true }) {
+  const id = useId(), [hover, setHover] = useState(null), [draft, setDraft] = useState(null), drag = useRef(null);
+  const buckets = summary?.buckets ?? [], chartTotals = summary?.totals, totals = outcomeSummary?.totals;
   const peak = Math.max(1, ...buckets.map((b) => b.requests));
   const x = (i) => 38 + i * 584 / Math.max(1, buckets.length - 1);
   const y = (value) => 178 - value / peak * 150;
   const line = (key) => buckets.map((b, i) => `${i ? 'L' : 'M'} ${x(i)} ${y(b[key])}`).join(' ');
-  const selected = buckets[hover ?? buckets.length - 1];
+  const selected = buckets[Math.min(hover ?? buckets.length - 1, buckets.length - 1)];
+  const interval = draft ?? selection, indices = logSelectionIndices(summary, interval);
+  const edgeX = (i) => 38 + i * 584 / Math.max(1, buckets.length);
+  function pointerIndex(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return Math.max(0, Math.min(buckets.length - 1, Math.floor(((e.clientX - rect.left) * 640 / rect.width - 38) / 584 * buckets.length)));
+  }
+  function pointerMove(e) {
+    const index = pointerIndex(e);
+    setHover(index);
+    if (!drag.current) return;
+    const { mode, anchor, initial } = drag.current;
+    let first = anchor, last = index;
+    if (mode === 'start') { first = index; last = initial[1]; }
+    if (mode === 'end') { first = initial[0]; last = index; }
+    if (mode === 'move') {
+      const delta = Math.max(-initial[0], Math.min(buckets.length - 1 - initial[1], index - anchor));
+      first = initial[0] + delta; last = initial[1] + delta;
+    }
+    setDraft(logSelection(summary, first, last));
+    drag.current.interval = logSelection(summary, first, last);
+    drag.current.moved ||= index !== anchor;
+  }
   const per = (summary?.step ?? 60000) < 3600000 ? `${Math.round((summary?.step ?? 60000) / 60000)} min` : `${Math.round(summary.step / 3600000)} hr`;
   const outcomes = [
     { label: 'Successful', value: totals?.success ?? 0, color: '#38b89a' },
@@ -20,14 +45,31 @@ export default function LogCharts({ summary, periodLabel = 'Last hour' }) {
     { label: 'Server errors', value: totals?.serverErrors ?? 0, color: '#ea7171' },
   ];
   let offset = 0;
-  return <div className="logs-chart-grid">
+  return <div className={`logs-chart-grid${showOutcomes ? '' : ' logs-chart-single'}`}>
     <Paper withBorder className="logs-surface">
       <div className="logs-panel-heading"><div><h2>Traffic</h2><span className="logs-caption">{periodLabel} · selected services</span></div>
-        <Help label="About the traffic chart">Completed requests and TCP/UDP sessions. Amber shows client errors (4xx); red shows server errors (5xx). Hover or tap a bucket for counts. Only retained events are counted.</Help>
+        <div className="logs-chart-actions">{selection && <Button className="text-button small" onClick={onClearSelection}>Clear interval</Button>}
+          <Help label="About the traffic chart">Completed requests and TCP/UDP sessions. Amber shows client errors (4xx); red shows server errors (5xx). Hover or tap for counts. Drag to select an interval; drag its handles to resize, or its middle to move it. Only retained events are counted.</Help></div>
       </div>
       <div className="logs-chart-reading"><strong>{selected ? number(selected.requests) : '—'}</strong><span>requests / {per}</span>
         <span className="logs-chart-time">{selected ? time(selected.minute, summary?.step) : 'Waiting for data'}</span></div>
-      <svg className="logs-traffic-chart" viewBox="0 0 640 210" role="img" aria-label={`Traffic for ${periodLabel}: ${totals?.requests ?? 0} completed requests or sessions, ${totals?.clientErrors ?? 0} client errors, ${totals?.serverErrors ?? 0} server errors.`}>
+      {interval && <div className="logs-caption logs-selected-interval" aria-live="polite">Selected: {formatDateTime(interval.from)} – {formatDateTime(interval.to)}</div>}
+      <svg className="logs-traffic-chart" viewBox="0 0 640 210" role={onSelectionChange ? 'group' : 'img'} aria-label={`Traffic for ${periodLabel}: ${chartTotals?.requests ?? 0} completed requests or sessions, ${chartTotals?.clientErrors ?? 0} client errors, ${chartTotals?.serverErrors ?? 0} server errors.`}
+        onPointerDown={(e) => {
+          if (!onSelectionChange || !buckets.length || e.button !== 0) return;
+          const rect = e.currentTarget.getBoundingClientRect(), px = (e.clientX - rect.left) * 640 / rect.width,
+            py = (e.clientY - rect.top) * 210 / rect.height;
+          if (px < 38 || px > 622 || py < 20 || py > 180) return;
+          e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId);
+          drag.current = { mode: e.target.dataset.handle ?? 'new', anchor: pointerIndex(e), initial: indices, moved: false };
+        }} onPointerMove={pointerMove}
+        onPointerUp={(e) => {
+          const current = drag.current;
+          if (!current) return;
+          pointerMove(e);
+          if (current.moved) onSelectionChange(current.interval);
+          drag.current = null; setDraft(null); e.currentTarget.releasePointerCapture(e.pointerId);
+        }} onPointerCancel={() => { drag.current = null; setDraft(null); }}>
         <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#38b89a" stopOpacity=".28" /><stop offset="100%" stopColor="#38b89a" stopOpacity=".015" /></linearGradient></defs>
         {[0, 0.5, 1].map((fraction) => <g key={fraction}><line x1="38" x2="622" y1={y(peak * fraction)} y2={y(peak * fraction)} className="logs-grid-line" /><text x="28" y={y(peak * fraction) + 4} textAnchor="end" className="logs-axis-label">{Math.round(peak * fraction)}</text></g>)}
         {buckets.length > 0 && <>
@@ -35,16 +77,29 @@ export default function LogCharts({ summary, periodLabel = 'Last hour' }) {
           <path d={line('requests')} fill="none" stroke="#38b89a" strokeWidth="2.5" strokeLinejoin="round" />
           <path d={line('clientErrors')} fill="none" stroke="#e7af55" strokeWidth="2" />
           <path d={line('serverErrors')} fill="none" stroke="#ea7171" strokeWidth="2" />
-          {hover !== null && <g><line x1={x(hover)} x2={x(hover)} y1="22" y2="178" className="logs-hover-line" /><circle cx={x(hover)} cy={y(buckets[hover].requests)} r="4" fill="#38b89a" /></g>}
-          {buckets.map((b, i) => <rect key={b.minute} x={x(i) - 5} y="20" width="10" height="160" fill="transparent" onMouseEnter={() => setHover(i)} onClick={() => setHover(i)}><title>{time(b.minute, summary?.step)}: {b.requests} requests, {b.clientErrors} client errors, {b.serverErrors} server errors</title></rect>)}
+          {hover !== null && buckets[hover] && <g><line x1={x(hover)} x2={x(hover)} y1="22" y2="178" className="logs-hover-line" /><circle cx={x(hover)} cy={y(buckets[hover].requests)} r="4" fill="#38b89a" /></g>}
+          <rect x="38" y="20" width="584" height="160" fill="transparent"><title>Drag to select an interval</title></rect>
+          {indices && <>
+            <rect x="38" y="20" width={edgeX(indices[0]) - 38} height="160" className="logs-selection-mask" />
+            <rect x={edgeX(indices[1] + 1)} y="20" width={622 - edgeX(indices[1] + 1)} height="160" className="logs-selection-mask" />
+            <rect x={edgeX(indices[0])} y="20" width={edgeX(indices[1] + 1) - edgeX(indices[0])} height="160" className="logs-selection-area" data-handle="move" />
+            {indices.map((index, i) => <rect key={i} x={edgeX(index + i) - 4} y="20" width="8" height="160" className="logs-selection-handle" data-handle={i ? 'end' : 'start'}
+              role="slider" tabIndex={0} aria-label={i ? 'Interval end' : 'Interval start'} aria-valuemin={0} aria-valuemax={buckets.length - 1} aria-valuenow={index}
+              aria-valuetext={formatDateTime(i ? interval.to : interval.from)} onKeyDown={(e) => {
+                if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+                e.preventDefault();
+                const next = [...indices]; next[i] = Math.max(i ? next[0] : 0, Math.min(i ? buckets.length - 1 : next[1], index + (e.key === 'ArrowLeft' ? -1 : 1)));
+                onSelectionChange(logSelection(summary, ...next));
+              }} />)}
+          </>}
           <text x="38" y="203" className="logs-axis-label">{time(buckets[0].minute, summary?.step)}</text>
           <text x="622" y="203" textAnchor="end" className="logs-axis-label">{time(buckets.at(-1).minute, summary?.step)}</text>
         </>}
       </svg>
       <div className="logs-chart-legend"><span><i className="legend-dot success" /> Requests</span><span><i className="legend-dot warning" /> Client errors {selected ? `· ${selected.clientErrors}` : ''}</span><span><i className="legend-dot errors" /> Server errors {selected ? `· ${selected.serverErrors}` : ''}</span></div>
     </Paper>
-    <Paper withBorder className="logs-surface logs-response-panel">
-      <div className="logs-panel-heading"><div><h2>Responses</h2><span className="logs-caption">{periodLabel}</span></div>
+    {showOutcomes && <Paper withBorder className="logs-surface logs-response-panel">
+      <div className="logs-panel-heading"><div><h2>Responses</h2><span className="logs-caption">{outcomePeriodLabel}</span></div>
         <Help label="About response outcomes">Successful includes redirects. Client errors are 4xx; server errors are 5xx. Rejected TLS handshakes before HTTP and unproxied traffic are not included.</Help>
       </div>
       <div className="logs-donut">
@@ -59,6 +114,6 @@ export default function LogCharts({ summary, periodLabel = 'Last hour' }) {
         <div className="logs-donut-label"><strong>{totals ? number(totals.requests) : '—'}</strong><span>responses</span></div>
       </div>
       <div className="logs-outcomes">{outcomes.map((o, i) => <div key={o.label}><span><i className={`legend-dot ${['success', 'warning', 'errors'][i]}`} />{o.label}</span><strong>{totals ? number(o.value) : '—'}</strong></div>)}</div>
-    </Paper>
+    </Paper>}
   </div>;
 }
