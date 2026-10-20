@@ -49,6 +49,11 @@ if (archive.status().count < 1000) for (let minute = 59; minute >= 1; minute--) 
   }
 }
 archive.flush();
+for (const sample of [
+  { action: 'IP ban issued', event: 'HTTP probing', source: '203.0.113.48', ruleUrl: 'https://app.crowdsec.net/hub/author/crowdsecurity/scenarios/http-probing' },
+  { action: 'Request blocked', event: 'OWASP CRS · RCE score 10 · total anomaly score 10', source: '203.0.113.49', ruleUrl: 'https://docs.crowdsec.net/docs/appsec/crs/intro/' },
+]) if (!archive.history({ kind: 'alert', source: sample.source }).events.length)
+  archive.append({ type: 'alert', time: new Date().toISOString(), service: 'catch-all', severity: 'warning', protocol: 'http', status: 403, method: 'GET', url: 'https://unknown.example.net/.env', ...sample });
 if (store.get('discord')?.webhookURL?.includes('demo_token_')) store.set('discord', { enabled: false, webhookURL: '' });
 if (!store.get('discord-cursors')) store.set('discord-cursors', { control: 0, edge: archive.latestId() });
 const monitor = new Monitor({ archive });

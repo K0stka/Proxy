@@ -7,7 +7,7 @@ export default function Modal({ title, children, onClose }) {
       onClose={onClose}
       title={title}
       centered
-      closeOnClickOutside={false}
+      closeOnClickOutside
       padding="xl"
       radius="lg"
     >

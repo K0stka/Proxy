@@ -143,7 +143,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                           'error': state.get('error'), 'updating': lock.locked(),
                           'active_bans': sum(d.get('type') == 'ban' for d in decisions),
                           'decisions': [{k: d.get(k) for k in ('id', 'value', 'scope', 'origin', 'scenario', 'duration', 'type')} for d in decisions[:5000]],
-                          'alerts': [{k: a.get(k) for k in ('id', 'scenario', 'created_at', 'source')} for a in alerts[:100]]})
+                          'alerts': [{k: a.get(k) for k in ('id', 'scenario', 'created_at', 'source', 'kind', 'remediation')} for a in alerts[:100]]})
         except Exception:
             self.respond({'error': 'CrowdSec is unavailable'}, 503)
 

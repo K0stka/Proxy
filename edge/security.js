@@ -4,6 +4,24 @@ import { unixRequest } from '../shared/http.js';
 import { Problem, parse } from '../shared/model.js';
 import { securityPolicySchema } from '../shared/security-policy.js';
 
+const crowdsecAppsecGuide = 'https://docs.crowdsec.net/docs/appsec/crs/intro/';
+function alertDetails(alert, decisions) {
+  const scenario = String(alert.scenario ?? 'CrowdSec detection').slice(0, 200);
+  const source = isIP(alert.source?.ip) ? alert.source.ip : null;
+  const banned = alert.remediation === true || decisions.some((d) => d.type === 'ban' && d.value === source);
+  const requestBlocked = alert.kind === 'waf' || /^anomaly score block:/i.test(scenario);
+  const action = banned ? 'IP ban issued' : requestBlocked ? 'Request blocked' : 'Detection only';
+  const score = scenario.match(/^anomaly score block:\s*(?:(rce|sqli|xss|lfi):\s*(\d+),\s*)?anomaly:\s*(\d+)/i);
+  const name = score
+    ? `OWASP CRS${score[1] ? ` · ${score[1].toUpperCase()} score ${score[2]}` : ''} · total anomaly score ${score[3]}`
+    : scenario.match(/^[a-z0-9_-]+\/([a-z0-9_-]+)$/i)?.[1].replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) ?? scenario;
+  const item = scenario.match(/^([a-z0-9_-]+)\/([a-z0-9_-]+)$/i);
+  const ruleUrl = item
+    ? `https://app.crowdsec.net/hub/author/${encodeURIComponent(item[1])}/${alert.kind === 'waf' ? 'appsec-rules' : 'scenarios'}/${encodeURIComponent(item[2])}`
+    : requestBlocked ? crowdsecAppsecGuide : null;
+  return { source, action, event: name, ruleUrl };
+}
+
 export class Security {
   constructor({ archive, monitor, policy, storage = null, request = fetch, socket = '/security-ipc/crowdsec.sock', enabled = false }) {
     Object.assign(this, { archive, monitor, policy, storage, request, socket, enabled });
@@ -75,8 +93,8 @@ export class Security {
       if (Number(a.id) <= this.lastAlert) continue;
       this.lastAlert = Number(a.id);
       this.storage?.set('crowdsec-alert-cursor', this.lastAlert);
-      this.monitor.add({ type: 'alert', service: 'catch-all', source: isIP(a.source?.ip) ? a.source.ip : null,
-        severity: 'warning', crowdsecAlertId: this.lastAlert, event: String(a.scenario ?? 'CrowdSec detection').slice(0, 200) });
+      this.monitor.add({ type: 'alert', service: 'catch-all', ...alertDetails(a, engine.decisions ?? []),
+        severity: 'warning', crowdsecAlertId: this.lastAlert });
     }
     const summary = this.summary(bounds);
     const bans = (engine.decisions ?? []).filter((d) => d.type === 'ban');

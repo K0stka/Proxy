@@ -7,6 +7,7 @@ import { isIP } from 'node:net';
 export const LOG_DAYS = 30, LOG_BYTES = 128 * 1024 * 1024;
 const filterColumns = {
   time: 'time', service: 'service', event: "json_extract(data,'$.event')",
+  action: "json_extract(data,'$.action')",
   source: "json_extract(data,'$.source')", url: "json_extract(data,'$.url')",
   method: "json_extract(data,'$.method')", status: "json_extract(data,'$.status')",
   severity: "json_extract(data,'$.severity')", generation: "json_extract(data,'$.generation')",
@@ -173,8 +174,8 @@ export class LogStore {
       for (const key of ['count', 'requests', 'alerts', 'success', 'clientErrors', 'serverErrors']) sum[key] += bucket[key] ?? 0;
       return sum;
     }, { count: 0, requests: 0, alerts: 0, success: 0, clientErrors: 0, serverErrors: 0 });
-    const choiceFields = ['event', 'suspicious', 'method', 'status', 'severity', 'role'];
-    const optionalFields = ['generation', 'role', 'details', 'severity', 'source', 'method', 'url', 'status'];
+    const choiceFields = ['event', 'action', 'suspicious', 'method', 'status', 'severity', 'role'];
+    const optionalFields = ['generation', 'role', 'details', 'severity', 'source', 'method', 'url', 'status', 'action'];
     const choices = this.db.prepare(`SELECT ${choiceFields.map((field) =>
       `json_group_array(DISTINCT COALESCE(CAST(${filterColumns[field]} AS TEXT),'')) AS ${field}`).concat(optionalFields.map((field) =>
       `MAX(COALESCE(CAST(${filterColumns[field]} AS TEXT),'')!='') AS has_${field}`)).join(',')} ${where}`).get(...parameters);

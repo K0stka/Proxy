@@ -15,10 +15,48 @@ function readPreview() {
   try { return JSON.parse(sessionStorage.getItem('proxy-security-preview') ?? '{}'); } catch { return {}; }
 }
 const modes = [{ value: 'block', label: 'Monitor & block' }, { value: 'monitor', label: 'Monitor only' }, { value: 'off', label: 'Off' }];
+const crowdsecAppsecGuide = 'https://docs.crowdsec.net/docs/appsec/crs/intro/';
+const anomalyGuide = 'https://coreruleset.org/docs/concepts/anomaly_scoring/';
+function explainDecision(decision) {
+  const rule = String(decision.rule ?? '');
+  const score = [rule, String(decision.reason ?? '')].map((value) => value.match(/^anomaly score block:\s*(?:(rce|sqli|xss|lfi):\s*(\d+),\s*)?anomaly:\s*(\d+)/i)).find(Boolean);
+  if (score) {
+    const category = score[1]?.toLowerCase();
+    const names = { rce: 'remote code execution (RCE)', sqli: 'SQL injection', xss: 'cross-site scripting (XSS)', lfi: 'local file inclusion' };
+    return {
+      threat: `OWASP CRS detected patterns associated with ${names[category] ?? 'a web attack'}.`,
+      rule: `${category ? `${category.toUpperCase()} score: ${score[2]} · ` : ''}Total anomaly score: ${score[3]}.`,
+      detail: 'CRS adds points when request rules match and blocks when the total reaches its threshold. A score indicates suspicious patterns; it does not prove that code ran.',
+      link: crowdsecAppsecGuide, linkLabel: 'CrowdSec guide to AppSec and CRS',
+      secondaryLink: anomalyGuide, secondaryLinkLabel: 'How OWASP CRS anomaly scoring works',
+    };
+  }
+  if (decision.engine === 'WAF' && rule && !/^(crowdsec(?: application security rule| match)|crowdsecurity\/appsec-native)$/i.test(rule)) return {
+    threat: decision.reason, rule,
+    detail: 'The request was stopped at the edge before reaching the service.',
+    link: crowdsecAppsecGuide, linkLabel: 'About CrowdSec AppSec and OWASP CRS',
+  };
+  if (decision.engine === 'WAF') return {
+    threat: 'CrowdSec’s web application firewall matched this request to an attack pattern.',
+    rule: 'The AppSec verdict does not include the individual matched rule name, so it is not available in this record.',
+    detail: 'The request was stopped at the edge before reaching the service.',
+    link: crowdsecAppsecGuide, linkLabel: 'About CrowdSec AppSec and OWASP CRS',
+  };
+  const scenario = rule.match(/^([a-z0-9_-]+)\/([a-z0-9_-]+)$/i);
+  if (scenario) {
+    const name = scenario[2].replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    return {
+      threat: `${name} detection`, rule,
+      link: `https://app.crowdsec.net/hub/author/${encodeURIComponent(scenario[1])}/scenarios/${encodeURIComponent(scenario[2])}`,
+      linkLabel: 'View this detection on CrowdSec Hub',
+    };
+  }
+  return { threat: decision.reason, rule: rule || decision.reason, link: crowdsecAppsecGuide, linkLabel: 'Browse CrowdSec rules and documentation' };
+}
 const reasons = [
-  ['Exploit attempt', 'Virtual patch · exposed configuration', '/.env', 'WAF', 'home.example.net'],
+  ['Application firewall match', 'CrowdSec application security rule', '/.env', 'WAF', 'home.example.net'],
   ['HTTP scanning', 'Repeated requests to missing resources', '/wp-admin', 'Behavior', 'Unmatched hosts'],
-  ['SQL injection', 'OWASP CRS · SQL injection pattern', '/search?q=1%27+OR+1=1', 'WAF', 'home.example.net'],
+  ['Remote code execution', 'anomaly score block: rce: 10, anomaly: 10,', '/?exec=whoami', 'WAF', 'home.example.net'],
   ['Known malicious IP', 'Community reputation decision', '/login', 'Reputation', 'media.example.net'],
   ['Path traversal', 'OWASP CRS · directory traversal', '/assets/../../etc/passwd', 'WAF', 'home.example.net'],
   ['HTTP probing', 'Repeated sensitive path requests', '/.git/config', 'Behavior', 'Unmatched hosts'],
@@ -175,6 +213,6 @@ export default function Security({ state, onLogout }) {
     </Paper>}
     {dialog?.kind === 'exception' && <Modal title="Allow address" onClose={() => setDialog(null)}><form onSubmit={addException}><Stack gap="lg"><TextInput autoFocus label="IP address" placeholder="192.0.2.18" value={address} onChange={(e) => setAddress(e.currentTarget.value)} error={formError} required /><Textarea label="Note" placeholder="Why is this address trusted?" value={note} onChange={(e) => setNote(e.currentTarget.value)} /><Alert color="yellow">This address will bypass all HTTP protection. Any current ban will be removed.</Alert><Group justify="flex-end"><Button className="secondary" onClick={() => setDialog(null)}>Cancel</Button><Button className="primary" type="submit">Allow address</Button></Group></Stack></form></Modal>}
     {dialog?.kind === 'remove' && <Modal title="Remove allowed address" onClose={() => setDialog(null)}><p><code>{dialog.exception.ip}</code> will be inspected and may be blocked by the protection policy.</p><Group justify="flex-end"><Button className="secondary" onClick={() => setDialog(null)}>Cancel</Button><Button className="primary" disabled={busy} onClick={() => perform(() => removeException(dialog.exception))}>Remove address</Button></Group></Modal>}
-    {dialog?.kind === 'detail' && <Modal title="Security decision" onClose={() => setDialog(null)}><Badge variant="light" color="orange">{dialog.decision.action === 'Released' ? 'Ban removed' : dialog.decision.action}</Badge><dl className="security-detail">{[['Source', dialog.decision.ip], ['Threat', dialog.decision.reason], ['Rule', dialog.decision.rule], ['Service', dialog.decision.host], ['Request', `GET ${dialog.decision.path}`], ['Enforcement', dialog.decision.action === 'Blocked' ? 'HTTP 403 · stopped at the edge' : 'Request allowed'], ['Blocked requests', dialog.decision.requests], ['Expires', expiry(dialog.decision)]].map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl><p>Removing a ban lets this address retry. New malicious requests can trigger another block.</p><Group justify="flex-end"><Button className="secondary" onClick={() => openException(dialog.decision.ip)}>Allow address</Button>{(preview ? dialog.decision.action === 'Blocked' : dialog.decision.banned) && <Button className="primary" disabled={busy} onClick={() => perform(() => release(dialog.decision))}>Remove ban</Button>}</Group></Modal>}
+    {dialog?.kind === 'detail' && (() => { const explanation = explainDecision(dialog.decision); return <Modal title="Security decision" onClose={() => setDialog(null)}><Badge variant="light" color="orange">{dialog.decision.action === 'Released' ? 'Ban removed' : dialog.decision.action}</Badge><dl className="security-detail">{[['Source', dialog.decision.ip], ['Threat', explanation.threat], ['Rule', explanation.rule], ['Service', dialog.decision.host], ['Request', `GET ${dialog.decision.path}`], ['Enforcement', dialog.decision.action === 'Blocked' ? 'HTTP 403 · stopped at the edge' : 'Request allowed'], ['Blocked requests', dialog.decision.requests], ['Expires', expiry(dialog.decision)]].map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>{explanation.detail && <p>{explanation.detail}</p>}<p><a href={explanation.link} target="_blank" rel="noreferrer">{explanation.linkLabel} <ArrowUpRight size={14} /></a>{explanation.secondaryLink && <> · <a href={explanation.secondaryLink} target="_blank" rel="noreferrer">{explanation.secondaryLinkLabel} <ArrowUpRight size={14} /></a></>}</p><p>Removing a ban lets this address retry. New malicious requests can trigger another block.</p><Group justify="flex-end"><Button className="secondary" onClick={() => openException(dialog.decision.ip)}>Allow address</Button>{(preview ? dialog.decision.action === 'Blocked' : dialog.decision.banned) && <Button className="primary" disabled={busy} onClick={() => perform(() => release(dialog.decision))}>Remove ban</Button>}</Group></Modal>; })()}
   </section>;
 }

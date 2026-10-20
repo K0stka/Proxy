@@ -2,12 +2,24 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Checkbox, Group, Paper, Popover, Select, Table, TextInput, Tooltip, Stack } from '@mantine/core';
 import { Activity, ShieldAlert, ListFilter, CircleCheck, Download, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft } from 'lucide-react';
 import { Button } from './controls.jsx';
+import Modal from './dialog.jsx';
 import { api } from './api.js';
 import LogCharts from './log-charts.jsx';
 import { logPeriod, logPeriods } from './log-period.js';
 import { formatDateTime } from './date-time.js';
 
-const choiceColumns = ['event', 'suspicious', 'method', 'status', 'severity', 'role'];
+const choiceColumns = ['event', 'action', 'suspicious', 'method', 'status', 'severity', 'role'];
+
+function alertDescription(event) {
+  return ({
+    'Repeated exploit-path probes': 'The proxy saw at least five requests from this source to common discovery paths, such as .env, .git, wp-login, or phpMyAdmin, for this service within 60 seconds. This suggests scanning; it does not show that access succeeded. This alert by itself does not block requests.',
+    'Traffic burst': 'The proxy saw an unusually high number of requests or sessions for this service within 60 seconds. A burst can be suspicious, but legitimate load can also trigger this alert. The alert itself does not block traffic.',
+    'Repeated server / upstream failures': 'At least 20 requests failed with server or upstream errors, and at least half of the requests in the monitoring window failed. This points to a service or upstream health issue; it does not indicate an attack by itself.',
+    'Repeated denied access': 'The proxy recorded at least 20 denied requests in the monitoring window. These may be unauthorized attempts or repeated requests blocked by an existing policy.',
+    'Catch-all scanning': 'At least 60 requests reached unmatched hostnames and returned not found responses in the monitoring window. This often indicates automated host or path discovery.',
+    'Repeated missing resources': 'At least 60 requests to this service returned not found, and at least 80% of the requests in the monitoring window were missing resources. This can indicate automated path discovery or broken links.'
+  })[event] ?? 'The proxy recorded this security event. Review the source, request, and action below to see what was observed and whether a blocking action was recorded.';
+}
 
 function ColumnFilter({ column, filter, options = [], onChange }) {
   const [opened, setOpened] = useState(false), [op, setOp] = useState('contains'), [value, setValue] = useState('');
@@ -49,7 +61,7 @@ export default function Monitoring({ state, onLogout, audit = false, view = null
     [period, setPeriod] = useState('today'), [services, setServices] = useState(null),
     [customInterval, setCustomInterval] = useState(null), [chartSummary, setChartSummary] = useState(null),
     [selectedKind, setKind] = useState(audit ? 'administration' : 'traffic'), [columns, setColumns] = useState({}), [options, setOptions] = useState({}), [fields, setFields] = useState([]),
-    [page, setPage] = useState(null), [previous, setPrevious] = useState([]);
+    [page, setPage] = useState(null), [previous, setPrevious] = useState([]), [selectedAlert, setSelectedAlert] = useState(null);
   const extraNames = useRef(new Map());
   const kind = view ?? selectedKind;
   const selection = services === null ? null : services.join(',');
@@ -96,6 +108,7 @@ export default function Monitoring({ state, onLogout, audit = false, view = null
     ...(selection === null ? {} : { services: selection }) });
   const hasFilters = services !== null || Object.keys(columns).length > 0;
   const tableColumns = [['time', 'Time'], ...(!audit ? [['service', 'Service']] : []), ...(audit || kind === 'alert' ? [['event', 'Event']] : []),
+    ...(!audit && kind === 'alert' ? [['action', 'Action']] : []),
     ...(audit ? [['generation', 'Generation'], ['role', 'Role'], ['details', 'Details'], ['severity', 'Severity']] : kind === 'traffic' ? [['suspicious', 'Classification']] : [['severity', 'Severity']]),
     ['source', 'Client IP'], ['method', 'Method'], ['url', 'Request URL'], ['status', 'Status']]
     .filter(([field]) => !audit || ['time', 'event'].includes(field) || fields.includes(field) || columns[field]);
@@ -134,15 +147,16 @@ export default function Monitoring({ state, onLogout, audit = false, view = null
           : <Button className="secondary logs-download" component="a" href={data?.edgeAvailable ? `/api/logs/download?${download}` : undefined} download
             aria-disabled={!data?.edgeAvailable} disabled={!data?.edgeAvailable}><Download size={15} />Download all</Button>}
       </div>
-      <Table.ScrollContainer minWidth={1000}><Table className={`logs-table${audit ? ' logs-audit-table' : ''}`} verticalSpacing="sm">
+      <Table.ScrollContainer minWidth={kind === 'alert' && !audit ? 1400 : 1000}><Table className={`logs-table${audit ? ' logs-audit-table' : ''}`} verticalSpacing="sm">
         <Table.Thead><Table.Tr>{tableColumns.map((column) => <Table.Th key={column[0]}><ColumnFilter column={column} options={options[column[0]]} filter={columns[column[0]]} onChange={(filter) => setColumns((old) => {
           const next = { ...old }; if (filter) next[column[0]] = filter; else delete next[column[0]]; return next;
         })} /></Table.Th>)}</Table.Tr></Table.Thead>
         <Table.Tbody>{data?.events.map((e) => <Table.Tr key={`${e.component}:${e.id}`}>
-          {tableColumns.map(([field]) => <Table.Td key={field} className={['time', 'event', 'url', 'details'].includes(field) ? `logs-${field}` : undefined}>
+          {tableColumns.map(([field]) => <Table.Td key={field} className={`logs-${field}`}>
             {field === 'time' ? formatDateTime(e.time)
               : field === 'service' ? names.get(e.service) ?? 'Previous route'
-              : field === 'event' ? <span className={`logs-event-label ${e.type === 'alert' || e.suspicious || e.event === 'Exploit-path probe' ? 'alert' : e.severity === 'warning' ? 'warning' : ''}`}>{e.type === 'alert' && <ShieldAlert size={13} />}{e.event}</span>
+              : field === 'event' ? <div className="logs-alert-event"><span className={`logs-event-label ${e.type === 'alert' || e.suspicious || e.event === 'Exploit-path probe' ? 'alert' : e.severity === 'warning' ? 'warning' : ''}`}>{e.type === 'alert' && <ShieldAlert size={13} />}{e.ruleUrl ? <a href={e.ruleUrl} target="_blank" rel="noreferrer">{e.event}</a> : !audit && kind === 'alert' ? <button type="button" className="logs-alert-event-trigger" onClick={() => setSelectedAlert(e)}>{e.event}</button> : e.event}</span></div>
+              : field === 'action' ? <span className={`logs-action-label ${e.action === 'IP ban issued' ? 'ban' : e.action === 'Request blocked' ? 'blocked' : ''}`}>{e.action || '—'}</span>
               : field === 'suspicious' ? (e.suspicious || e.event === 'Exploit-path probe' ? <span className="logs-event-label alert"><ShieldAlert size={13} />Suspicious</span> : 'Normal')
               : field === 'source' ? (e.source ? /[.:]/.test(e.source) ? <button type="button" className="logs-ip-filter" onClick={() => setColumns((old) => ({ ...old, source: { op: 'equals', value: e.source } }))}><code>{e.source}</code></button> : <code>{e.source}</code> : '—')
               : field === 'url' || field === 'generation' ? (e[field] ? <code>{e[field]}</code> : '—')
@@ -160,5 +174,16 @@ export default function Monitoring({ state, onLogout, audit = false, view = null
         </Group>
       </Group>
     </Paper>
+    {selectedAlert && <Modal title={selectedAlert.event || 'Alert details'} onClose={() => setSelectedAlert(null)}>
+      <p>{alertDescription(selectedAlert.event)}</p>
+      <dl className="logs-alert-detail">{[
+        ['Action', selectedAlert.action || 'Not recorded'],
+        ['Source', selectedAlert.source || 'Not available'],
+        ['Service', names.get(selectedAlert.service) ?? 'Previous route'],
+        ['Time', formatDateTime(selectedAlert.time)],
+        ['Request', selectedAlert.method && selectedAlert.url ? `${selectedAlert.method} ${selectedAlert.url}` : selectedAlert.url || 'Not available'],
+        ['HTTP status', selectedAlert.status ?? 'Not available'],
+      ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+    </Modal>}
   </section>;
 }
