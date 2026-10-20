@@ -108,7 +108,9 @@ test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statist
   for (let i = 0; i < 90; i++) {
     updated = await security.status();
     if (Date.parse(updated.updated) >= updateStarted && !updated.updating) break;
-    if (updated.error) break;
+    // A rule update reloads CrowdSec; its admin API can briefly disappear while
+    // the engine and AppSec listener restart. Keep polling through that window.
+    if (updated.error && updated.error !== 'CrowdSec is unavailable') break;
     await new Promise((r) => setTimeout(r, 1000));
   }
   assert(!updated.error, JSON.stringify(updated));
