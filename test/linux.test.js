@@ -557,7 +557,7 @@ test(
           assert.notEqual((await request(site.hostname, path)).status, 200, path);
         const missing = await request(site.hostname, '/missing');
         assert.equal(missing.status, 404);
-        assert.match(missing.body, /<base href="\/_proxy\/errors\/404\/">/);
+        assert.match(missing.body, /<link rel="icon" type="image\/svg\+xml" href="\/_proxy\/error-icon\.svg">/);
         assert.match(missing.body, /Oops! Page not found/);
         const timeout = await request('app.krychlic.com', '/slow');
         assert.equal(timeout.status, 504);
@@ -654,10 +654,10 @@ test(
       async () => {
         const response = await request('app.krychlic.com', '/api-error');
         assert.equal(response.status, 502);
-        assert(response.body.includes('Back soon.'));
+        assert(response.body.includes('Oops! Bad Gateway'));
         const internal = await request('app.krychlic.com', '/internal-error');
         assert.equal(internal.status, 500);
-        assert(internal.body.includes('Something went wrong.'));
+        assert(internal.body.includes('We are sorry, but an internal server error has occurred.'));
         assert(!internal.body.includes('Private backend error'));
         const missing = await request('app.krychlic.com', '/not-found');
         assert.equal(missing.status, 404);
@@ -792,9 +792,9 @@ test(
       await edgeRequest('/apply', { method: 'POST', body: next, timeout: 20000 });
       const response = await request('app.krychlic.com', '/slow');
       assert.equal(response.status, 504);
-      assert(response.body.includes('Back soon.'));
+      assert(response.body.includes('The server did not respond in time.'));
     });
-    await t.test('NGINX-generated failure keeps 502 status and custom static body', async () => {
+    await t.test('NGINX-generated failure keeps 502 status and shared embedded page', async () => {
       const next = {
         ...snapshot,
         routes: routes.map((r, i) => (i === 0 ? { ...r, targetPort: 18082 } : r)),
@@ -802,7 +802,7 @@ test(
       await edgeRequest('/apply', { method: 'POST', body: next, timeout: 20000 });
       const response = await request('app.krychlic.com');
       assert.equal(response.status, 502);
-      assert(response.body.includes('Back soon.'));
+      assert(response.body.includes('Oops! Bad Gateway'));
       assert(!response.body.includes('127.0.0.2'));
     });
     await t.test('saved routing resumes after edge process restart', async () => {
