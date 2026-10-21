@@ -43,7 +43,7 @@ test('inventory refresh retries Komodo API Stack busy responses', async () => {
     write: async () => {},
     execute: async () => {
       deployments++;
-      if (deployments === 1) throw { status: 500, error: 'Stack busy', trace: [] };
+      if (deployments === 1) throw { status: 500, result: { error: 'Stack busy', trace: [] } };
       return { id: 'deployment', status: 'InProgress' };
     },
   };

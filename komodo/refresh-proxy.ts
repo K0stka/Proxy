@@ -2,7 +2,7 @@
 let revision = "", exitCode = "missing", paused = false;
 let active: string[] = [], draining: string[] = [];
 const stackIsBusy = (error: any) => /(?:resource|stack)(?: is)? busy/i.test([
-  String(error), error?.message, error?.error, error?.response?.data?.error,
+  String(error), error?.message, error?.error, error?.result?.error, error?.response?.data?.error,
 ].filter(Boolean).join(" "));
 await komodo.execute_server_terminal({
   server: "K0stkaVPS", terminal: "proxy-status", command: "/usr/local/lib/proxy-maintenance.py status",
