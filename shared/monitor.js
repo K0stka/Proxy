@@ -33,6 +33,8 @@ export class Monitor {
     this.add({ type: 'audit', service: 'management', event: record.event,
       status: record.status, source: record.source, url: record.url, method: record.method,
       severity: record.status >= 400 ? 'warning' : 'info' });
+    if (record.status < 400 && ['auth.recovery', 'auth.device.completed'].includes(record.event))
+      this.add({ type: 'alert', service: 'management', event: record.event, severity: 'warning' });
     if (record.event.startsWith('auth.') && record.status >= 400) {
       if (!this.authWindow || this.now() - this.authWindow.started >= 60000)
         this.authWindow = { started: this.now(), count: 0 };

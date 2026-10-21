@@ -6,6 +6,10 @@ const edgeAlertsTimeout = 5000, digestInterval = 300000;
 const defaultRecipient = '710044411035254864';
 const snowflake = /^\d{17,20}$/;
 const text = (value, limit) => String(value).replace(/[\r\n\t]/g, ' ').replace(/([\\`*_~|<>\[\]])/g, '\\$1').slice(0, limit);
+const actionable = (event) => event.severity === 'error' || event.securityEngine === 'Availability' ||
+  ['auth.recovery', 'auth.device.completed', 'Repeated failed authentication operations',
+    'Repeated server / upstream failures'].includes(event.event);
+const alertNames = { 'auth.recovery': 'Recovery code used', 'auth.device.completed': 'New device added' };
 const priority = (group) => group.severity === 'error' ? 4 : group.securityEngine === 'Availability' ||
   /unavailable|update failed|recovered/i.test(group.event) ? 3 : group.service === 'management' ? 2 : group.action === 'Detection only' ? 1 : 0;
 const explanations = {
@@ -130,7 +134,7 @@ export class DiscordAlerts {
           const stamp = (value) => `<t:${Math.floor(Date.parse(value) / 1000)}:t>`;
           const link = ruleLink(group.ruleUrl);
           return { name: `${text(service, 130)} · ${text(group.severity, 15)} · ${group.count}×`,
-            value: [text(group.event, 200),
+            value: [text(alertNames[group.event] ?? group.event, 200),
               group.action ? `Recorded action: ${text(group.action, 40)}` : null,
               group.securityEngine === 'Availability'
                 ? `Protection unavailable · ${group.securityAction === 'Blocked' ? 'sample request denied by fallback' : 'sample request allowed without full inspection'}`
@@ -158,6 +162,7 @@ export class DiscordAlerts {
           this.store.set('discord-status', { ...this.statusFields(), error: null });
       } catch { edgeUnavailable = true; }
       for (const [component, events] of batches) for (const event of events) {
+        if (!actionable(event)) { queue.cursors[component] = event.id; continue; }
         const severity = event.severity ?? 'warning';
         const outcome = { action: event.action, securityAction: event.securityAction, securityEngine: event.securityEngine, securityReason: event.securityReason };
         let group = queue.groups.find((g) => g.service === event.service && g.event === event.event && g.severity === severity &&
