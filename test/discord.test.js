@@ -70,13 +70,13 @@ test('settings redact credentials, skip history and send a mention-free test DM 
 test('bursts are counted together and pending summaries survive recreation during the five-minute cooldown', async (t) => {
   const f = fixture(t);
   await enable(f);
-  f.edgeEvents.push(f.alert(1), f.alert(2));
+  f.edgeEvents.push(f.alert(1, 'auth.recovery', 'warning'), f.alert(2, 'auth.recovery', 'warning'));
   await f.discord.tick();
   assert.equal(f.messages().length, 1);
   assert.equal(f.messages()[0].content, 'Proxy · 2 alerts');
   assert.match(f.messages()[0].embeds[0].fields[0].name, /2×/);
   f.advance(10000);
-  f.edgeEvents.push(f.alert(3), { ...f.alert(4), source: '203.0.113.45' });
+  f.edgeEvents.push(f.alert(3, 'auth.recovery', 'warning'), { ...f.alert(4, 'auth.recovery', 'warning'), source: '203.0.113.45' });
   f.archive.append({ ...f.alert(0, 'Repeated failed authentication operations'), service: 'management', protocol: undefined, status: undefined, source: null });
   await f.discord.tick();
   assert.equal(f.messages().length, 1);
@@ -103,7 +103,7 @@ test('summaries and pending state stay bounded under many distinct alerts', asyn
   const f = fixture(t);
   await enable(f);
   await f.discord.test();
-  for (let i = 1; i <= 100; i++) f.edgeEvents.push(f.alert(i, `Reason ${i} ${'*'.repeat(500)}`, 'error'));
+  for (let i = 1; i <= 100; i++) f.edgeEvents.push({ ...f.alert(i, 'auth.recovery', 'warning'), service: `service-${i}` });
   await f.discord.tick();
   const queue = f.store.get('discord-queue');
   assert.equal(queue.groups.length, 20);
@@ -124,12 +124,12 @@ test('rate limits retain queued counts, report sanitized failures and honor retr
   let fail = true;
   const f = fixture(t, async () => fail ? new Response(botToken, { status: 429, headers: { 'retry-after': '120' } }) : new Response(null, { status: 204 }));
   await enable(f);
-  f.edgeEvents.push(f.alert(1, 'Critical event'));
+  f.edgeEvents.push(f.alert(1, 'auth.recovery', 'warning'));
   await assert.rejects(f.discord.tick(), /HTTP 429/);
   assert.equal(f.store.get('discord-queue').groups[0].count, 1);
   assert(!JSON.stringify(f.discord.status()).includes(botToken));
   f.advance(60000);
-  f.edgeEvents.push(f.alert(2, 'Critical event'));
+  f.edgeEvents.push(f.alert(2, 'auth.recovery', 'warning'));
   await f.discord.tick();
   assert.equal(f.messages().length, 1);
   assert.equal(f.store.get('discord-queue').groups[0].count, 2);
@@ -145,7 +145,7 @@ test('DM creation failures do not leak response bodies and retry pending alerts'
   await enable(f);
   const request = f.discord.request;
   f.discord.request = async () => new Response(botToken, { status: 403 });
-  f.edgeEvents.push(f.alert(1, 'Critical event'));
+  f.edgeEvents.push(f.alert(1, 'auth.recovery', 'warning'));
   await assert.rejects(f.discord.tick(), /HTTP 403/);
   assert(!JSON.stringify(f.discord.status()).includes(botToken));
   assert.equal(f.discord.channel, null);
@@ -171,7 +171,7 @@ test('settings edits cannot bypass cooldowns and destination changes discard old
   const f = fixture(t);
   await enable(f);
   await f.discord.test();
-  f.edgeEvents.push(f.alert(1, 'Critical event'));
+  f.edgeEvents.push(f.alert(1, 'auth.recovery', 'warning'));
   await f.discord.tick();
   const cooldown = f.discord.status().nextAttempt;
   await f.discord.save({ enabled: true, recipientId: '123456789012345678' });
@@ -183,11 +183,37 @@ test('settings edits cannot bypass cooldowns and destination changes discard old
   assert.equal(JSON.parse(f.calls.at(-2)[1].body).recipient_id, '123456789012345678');
 });
 
+test('only urgent account events and CrowdSec outages are sent to Discord', async (t) => {
+  const f = fixture(t);
+  await enable(f);
+  f.edgeEvents.push(
+    f.alert(1, 'Repeated server / upstream failures', 'error'),
+    f.alert(2, 'Repeated denied access', 'warning'),
+    { ...f.alert(3, 'Request / session completed', 'error'), securityEngine: 'Availability' },
+    f.alert(4, 'auth.recovery', 'warning'),
+    f.alert(5, 'auth.device.completed', 'warning'),
+    f.alert(6, 'Repeated failed authentication operations', 'warning'),
+    f.alert(7, 'CrowdSec is unavailable', 'warning'),
+    f.alert(8, 'CrowdSec recovered', 'info'),
+  );
+  await f.discord.tick();
+  const payload = f.messages()[0];
+  assert.equal(payload.content, 'Proxy · 4 alerts');
+  const events = payload.embeds[0].fields.map((field) => field.value);
+  assert(events.some((value) => value.includes('Recovery code used')));
+  assert(events.some((value) => value.includes('New device added')));
+  assert(events.some((value) => value.includes('Repeated failed authentication operations')));
+  assert(events.some((value) => value.includes('CrowdSec is unavailable')));
+  assert(!events.some((value) => value.includes('Repeated server / upstream failures')));
+  assert(!events.some((value) => value.includes('Repeated denied access')));
+  assert(!events.some((value) => value.includes('Protection unavailable')));
+});
+
 test('edge outages preserve cursors, clear stale warnings on recovery, and still deliver control alerts', async (t) => {
   const f = fixture(t);
   await enable(f);
   const edge = f.discord.edge;
-  f.edgeEvents.push(f.alert(1));
+  f.edgeEvents.push(f.alert(1, 'auth.recovery', 'warning'));
   f.discord.edge = async () => { throw new Error('Edge unavailable'); };
   await f.discord.tick();
   assert.equal(f.discord.status().error, 'Edge alerts unavailable; delivery will retry.');
@@ -231,7 +257,7 @@ test('current CrowdSec events retain distinct ban, request-block and detection-o
   assert.equal(f.messages().length, 0);
 });
 
-test('security availability alerts preserve the observed fallback and take priority over scanning floods', async (t) => {
+test('repeated per-request security availability warnings stay out of Discord', async (t) => {
   const f = fixture(t);
   await enable(f);
   await f.discord.test();
@@ -246,24 +272,20 @@ test('security availability alerts preserve the observed fallback and take prior
   }
   await f.discord.tick();
   const queue = f.store.get('discord-queue');
-  assert.equal(queue.groups.length, 2);
+  assert.equal(queue.groups.length, 0);
   assert.equal(queue.overflow, 0);
   f.advance(300000);
   await f.discord.tick();
-  const payload = f.messages()[1], fields = payload.embeds[0].fields;
-  assert.equal(payload.content, 'Proxy · 2 alerts');
-  assert(fields.slice(0, 2).every((field) => field.value.includes('Protection unavailable')));
-  assert(fields.some((field) => field.value.includes('sample request denied by fallback')));
-  assert(fields.some((field) => field.value.includes('sample request allowed without full inspection')));
+  assert.equal(f.messages().length, 1);
 });
 
 test('DM summaries escape event formatting, reject untrusted rule links and fit Discord limits', async (t) => {
   const f = fixture(t);
   await enable(f);
   f.discord.routes = () => [{ id: 'catch-all', name: '*'.repeat(200) }];
-  for (let i = 1; i <= 6; i++) f.edgeEvents.push({ ...f.alert(i, `${i} <@123456789012345678>\n${'*'.repeat(300)}`, 'error'),
+  for (let i = 1; i <= 6; i++) f.edgeEvents.push({ ...f.alert(i, 'auth.recovery', 'warning'),
     action: '*'.repeat(200), ruleUrl: 'https://evil.test/secret', securityAction: 'Blocked', securityEngine: 'WAF',
-    securityReason: '*'.repeat(200) });
+    securityReason: `${i} <@123456789012345678>\n${'*'.repeat(300)}` });
   await f.discord.tick();
   const payload = f.messages()[0], embed = payload.embeds[0];
   assert(!JSON.stringify(payload).includes('evil.test'));

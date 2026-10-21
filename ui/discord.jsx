@@ -41,7 +41,7 @@ export default function DiscordAlerts() {
   }
   return <form onSubmit={(e) => { e.preventDefault(); action('save'); }}>
     <Stack gap="lg">
-      <Group justify="space-between"><h2>Discord DMs</h2><Help label="About Discord notifications">DMs are sent for recovery code use, new device enrollment, repeated failed admin sign-ins, and CrowdSec outage or recovery. Repeated per-request security inspection warnings and other traffic alerts remain in Logs. Repeats are counted together, with at most one automatic DM every five minutes. Enabling starts with new alerts.</Help></Group>
+      <Group justify="space-between"><h2>Discord DMs</h2><Help label="About Discord notifications">DMs are sent for recovery code use, new device enrollment, repeated failed admin sign-ins and CrowdSec outages. Repeated per-request security inspection warnings, recovery notices and other traffic alerts remain in Logs. Repeats are counted together, with at most one automatic DM every five minutes. Enabling starts with new alerts.</Help></Group>
       <Switch label="Enable Discord DMs" checked={enabled} disabled={!status || busy} onChange={(e) => setEnabled(e.currentTarget.checked)} />
       <PasswordInput label={status?.configured ? 'Replace bot token' : 'Bot token'}
         description={status?.configured ? 'Saved · leave blank to keep' : 'Discord Developer Portal → your application → Bot → Token. Saved webhook URLs must be replaced with a bot token.'}
