@@ -6,9 +6,9 @@ const edgeAlertsTimeout = 5000, digestInterval = 300000;
 const defaultRecipient = '710044411035254864';
 const snowflake = /^\d{17,20}$/;
 const text = (value, limit) => String(value).replace(/[\r\n\t]/g, ' ').replace(/([\\`*_~|<>\[\]])/g, '\\$1').slice(0, limit);
-const actionable = (event) => event.severity === 'error' || event.securityEngine === 'Availability' ||
-  ['auth.recovery', 'auth.device.completed', 'Repeated failed authentication operations',
-    'Repeated server / upstream failures'].includes(event.event);
+const actionable = (event) => ['auth.recovery', 'auth.device.completed',
+  'Repeated failed authentication operations', 'CrowdSec is unavailable',
+  'CrowdSec recovered'].includes(event.event);
 const alertNames = { 'auth.recovery': 'Recovery code used', 'auth.device.completed': 'New device added' };
 const priority = (group) => group.severity === 'error' ? 4 : group.securityEngine === 'Availability' ||
   /unavailable|update failed|recovered/i.test(group.event) ? 3 : group.service === 'management' ? 2 : group.action === 'Detection only' ? 1 : 0;
