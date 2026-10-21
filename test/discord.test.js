@@ -21,8 +21,8 @@ function fixture(t, request = async () => new Response(null, { status: 204 })) {
   t.after(() => { archive.close(); store.close(); });
   return { store, archive, discord, edgeEvents, calls, advance: (ms) => { now += ms; },
     messages: () => calls.filter(([url]) => url.endsWith('/messages')).map(([, options]) => JSON.parse(options.body)),
-    alert: (id, reason = 'Catch-all scanning') => ({ id, type: 'alert', service: 'catch-all', event: reason,
-      time: new Date(now).toISOString(), source: '203.0.113.44', status: 404, protocol: 'http', severity: 'warning' }) };
+    alert: (id, reason = 'Catch-all scanning', severity = 'error') => ({ id, type: 'alert', service: 'catch-all', event: reason,
+      time: new Date(now).toISOString(), source: '203.0.113.44', status: 404, protocol: 'http', severity }) };
 }
 const enable = (f) => f.discord.save({ enabled: true, botToken, recipientId });
 
@@ -42,7 +42,7 @@ test('DM settings validate credentials and recipient; legacy webhooks stay disab
 
 test('settings redact credentials, skip history and send a mention-free test DM with bot authentication', async (t) => {
   const f = fixture(t);
-  f.edgeEvents.push(f.alert(1));
+  f.edgeEvents.push(f.alert(1, 'Catch-all scanning', 'warning'));
   f.archive.append(f.alert(0));
   const status = await enable(f);
   assert(!JSON.stringify(status).includes(botToken));
@@ -103,7 +103,7 @@ test('summaries and pending state stay bounded under many distinct alerts', asyn
   const f = fixture(t);
   await enable(f);
   await f.discord.test();
-  for (let i = 1; i <= 100; i++) f.edgeEvents.push(f.alert(i, `Reason ${i} ${'*'.repeat(500)}`));
+  for (let i = 1; i <= 100; i++) f.edgeEvents.push(f.alert(i, `Reason ${i} ${'*'.repeat(500)}`, 'error'));
   await f.discord.tick();
   const queue = f.store.get('discord-queue');
   assert.equal(queue.groups.length, 20);
@@ -124,12 +124,12 @@ test('rate limits retain queued counts, report sanitized failures and honor retr
   let fail = true;
   const f = fixture(t, async () => fail ? new Response(botToken, { status: 429, headers: { 'retry-after': '120' } }) : new Response(null, { status: 204 }));
   await enable(f);
-  f.edgeEvents.push(f.alert(1));
+  f.edgeEvents.push(f.alert(1, 'Critical event'));
   await assert.rejects(f.discord.tick(), /HTTP 429/);
   assert.equal(f.store.get('discord-queue').groups[0].count, 1);
   assert(!JSON.stringify(f.discord.status()).includes(botToken));
   f.advance(60000);
-  f.edgeEvents.push(f.alert(2));
+  f.edgeEvents.push(f.alert(2, 'Critical event'));
   await f.discord.tick();
   assert.equal(f.messages().length, 1);
   assert.equal(f.store.get('discord-queue').groups[0].count, 2);
@@ -145,7 +145,7 @@ test('DM creation failures do not leak response bodies and retry pending alerts'
   await enable(f);
   const request = f.discord.request;
   f.discord.request = async () => new Response(botToken, { status: 403 });
-  f.edgeEvents.push(f.alert(1));
+  f.edgeEvents.push(f.alert(1, 'Critical event'));
   await assert.rejects(f.discord.tick(), /HTTP 403/);
   assert(!JSON.stringify(f.discord.status()).includes(botToken));
   assert.equal(f.discord.channel, null);
@@ -171,7 +171,7 @@ test('settings edits cannot bypass cooldowns and destination changes discard old
   const f = fixture(t);
   await enable(f);
   await f.discord.test();
-  f.edgeEvents.push(f.alert(1));
+  f.edgeEvents.push(f.alert(1, 'Critical event'));
   await f.discord.tick();
   const cooldown = f.discord.status().nextAttempt;
   await f.discord.save({ enabled: true, recipientId: '123456789012345678' });
@@ -192,7 +192,7 @@ test('edge outages preserve cursors, clear stale warnings on recovery, and still
   await f.discord.tick();
   assert.equal(f.discord.status().error, 'Edge alerts unavailable; delivery will retry.');
   assert.deepEqual(f.store.get('discord-queue').cursors, { control: 0, edge: 0 });
-  f.archive.append({ ...f.alert(0, 'Management warning'), service: 'management' });
+  f.archive.append({ ...f.alert(0, 'Repeated failed authentication operations'), service: 'management' });
   await f.discord.tick();
   assert.equal(f.messages().length, 1);
   assert.equal(f.discord.status().error, 'Edge alerts unavailable; delivery will retry.');
@@ -208,15 +208,12 @@ test('edge outages preserve cursors, clear stale warnings on recovery, and still
   assert.equal(f.discord.status().error, status.error);
 });
 
-test('recovered health gets an informational summary without fabricated protocol or status', async (t) => {
+test('routine CrowdSec recovery stays quiet', async (t) => {
   const f = fixture(t);
   await enable(f);
   f.edgeEvents.push({ ...f.alert(1, 'CrowdSec recovered'), severity: 'info', service: 'management', protocol: undefined, status: undefined, source: null });
   await f.discord.tick();
-  const embed = f.messages()[0].embeds[0];
-  assert.equal(embed.color, 3066993);
-  assert.match(embed.fields[0].value, /CrowdSec recovered/);
-  assert(!embed.fields[0].value.includes('protocol'));
+  assert.equal(f.messages().length, 0);
 });
 
 test('current CrowdSec events retain distinct ban, request-block and detection-only outcomes with rule links', async (t) => {
@@ -231,24 +228,14 @@ test('current CrowdSec events retain distinct ban, request-block and detection-o
   ] });
   await security.status();
   await f.discord.tick();
-  const payload = f.messages()[0], fields = payload.embeds[0].fields;
-  assert.equal(payload.content, 'Proxy · 3 alerts');
-  assert.equal(fields.length, 3);
-  for (const action of ['IP ban issued', 'Request blocked', 'Detection only'])
-    assert(fields.some((field) => field.value.includes(`Recorded action: ${action}`)));
-  assert(fields.some((field) => field.value.includes('https://app.crowdsec.net/hub/author/crowdsecurity/scenarios/http-probing')));
-  const crs = fields.find((field) => field.value.includes('OWASP CRS'));
-  assert.match(crs.value, /RCE score 10/);
-  assert.match(crs.value, /not successful code execution/);
-  assert.match(crs.value, /https:\/\/docs.crowdsec.net/);
-  assert(!JSON.stringify(payload).includes('Latest protocol'));
+  assert.equal(f.messages().length, 0);
 });
 
 test('security availability alerts preserve the observed fallback and take priority over scanning floods', async (t) => {
   const f = fixture(t);
   await enable(f);
   await f.discord.test();
-  for (let i = 1; i <= 20; i++) f.edgeEvents.push(f.alert(i, `Scan ${i}`));
+  for (let i = 1; i <= 20; i++) f.edgeEvents.push(f.alert(i, `Scan ${i}`, 'warning'));
   await f.discord.tick();
   const monitor = new Monitor({ archive: f.archive });
   for (const securityAction of ['Blocked', 'Error']) {
@@ -259,12 +246,12 @@ test('security availability alerts preserve the observed fallback and take prior
   }
   await f.discord.tick();
   const queue = f.store.get('discord-queue');
-  assert.equal(queue.groups.length, 20);
-  assert.equal(queue.overflow, 2);
+  assert.equal(queue.groups.length, 2);
+  assert.equal(queue.overflow, 0);
   f.advance(300000);
   await f.discord.tick();
   const payload = f.messages()[1], fields = payload.embeds[0].fields;
-  assert.equal(payload.content, 'Proxy · 22 alerts');
+  assert.equal(payload.content, 'Proxy · 2 alerts');
   assert(fields.slice(0, 2).every((field) => field.value.includes('Protection unavailable')));
   assert(fields.some((field) => field.value.includes('sample request denied by fallback')));
   assert(fields.some((field) => field.value.includes('sample request allowed without full inspection')));
@@ -274,7 +261,7 @@ test('DM summaries escape event formatting, reject untrusted rule links and fit 
   const f = fixture(t);
   await enable(f);
   f.discord.routes = () => [{ id: 'catch-all', name: '*'.repeat(200) }];
-  for (let i = 1; i <= 6; i++) f.edgeEvents.push({ ...f.alert(i, `${i} <@123456789012345678>\n${'*'.repeat(300)}`),
+  for (let i = 1; i <= 6; i++) f.edgeEvents.push({ ...f.alert(i, `${i} <@123456789012345678>\n${'*'.repeat(300)}`, 'error'),
     action: '*'.repeat(200), ruleUrl: 'https://evil.test/secret', securityAction: 'Blocked', securityEngine: 'WAF',
     securityReason: '*'.repeat(200) });
   await f.discord.tick();
