@@ -28,3 +28,25 @@ test('inventory refresh retries a completed busy deployment, but propagates real
     else { await assert.rejects(execution, /inventory deployment failed/); assert.equal(deployments, 1); }
   }
 });
+
+test('inventory refresh retries Komodo API Stack busy responses', async () => {
+  let deployments = 0;
+  const komodo = {
+    execute_server_terminal: async (_request, callbacks) => {
+      callbacks.onLine('PROXY_DEPLOYED_REVISION=' + 'a'.repeat(40));
+      callbacks.onLine('PROXY_ACTIVE=["edge-aaaaaa-0","control-aaaaaa-0"]');
+      callbacks.onFinish(0);
+    },
+    read: async (type) => type === 'GetStack'
+      ? { config: { ignore_services: [] }, info: { deployed_services: [] } }
+      : { status: 'Complete', success: true },
+    write: async () => {},
+    execute: async () => {
+      deployments++;
+      if (deployments === 1) throw { status: 500, error: 'Stack busy', trace: [] };
+      return { id: 'deployment', status: 'InProgress' };
+    },
+  };
+  await run(komodo, { log() {} }, (callback) => callback());
+  assert.equal(deployments, 2);
+});

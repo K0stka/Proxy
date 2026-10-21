@@ -1,6 +1,9 @@
 // Read the runtime's source revision before refreshing Komodo's inventory.
 let revision = "", exitCode = "missing", paused = false;
 let active: string[] = [], draining: string[] = [];
+const stackIsBusy = (error: any) => /(?:resource|stack)(?: is)? busy/i.test([
+  String(error), error?.message, error?.error, error?.response?.data?.error,
+].filter(Boolean).join(" "));
 await komodo.execute_server_terminal({
   server: "K0stkaVPS", terminal: "proxy-status", command: "/usr/local/lib/proxy-maintenance.py status",
   init: { command: "bash" },
@@ -51,7 +54,7 @@ for (let attempt = 0; ; attempt++) {
     }
     break;
   } catch (error) {
-    if (attempt >= 19 || !String(error).includes("Resource is busy")) throw error;
+    if (attempt >= 19 || !stackIsBusy(error)) throw error;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 }
