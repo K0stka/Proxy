@@ -27,8 +27,11 @@ Requires Node 24+; this project was tested on Node 26.7. Linux containers requir
 ```sh
 npm ci --ignore-scripts
 npm run setup
+npm run hooks:install
 npm run dev
 ```
+
+`npm run hooks:install` enables a pre-push check that builds the same Linux validation image and Compose service images used by the VPS updater, then runs its container integration suite. The JavaScript tests, production build, and Python updater tests run as the unprivileged container user. The hook starts Docker Desktop when needed and stops it afterward if the hook started it; Docker stays running if it was already on.
 
 Open [localhost:5173](http://localhost:5173). Setup creates a local `.env` with `PROXY_ORIGIN=http://localhost:5173` and a random `PROXY_BOOTSTRAP_TOKEN`. Keep that token in your password manager: it is used for both initial enrollment and recovery, and does not rotate. Existing `.env` files are never overwritten. Local development data lives in `.local/control/proxy.db`.
 

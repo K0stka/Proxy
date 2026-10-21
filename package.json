@@ -16,7 +16,8 @@
     "test": "node --test test/*.test.js",
     "test:containers": "node scripts/test-containers.js",
     "test:crowdsec": "node scripts/test-crowdsec.js",
-    "check": "npm run test && npm run build"
+    "check": "npm run test && npm run build",
+    "hooks:install": "git config --local core.hooksPath .githooks"
   },
   "dependencies": {
     "@mantine/core": "9.7.3",

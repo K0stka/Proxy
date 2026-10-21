@@ -1,0 +1,50 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+started_desktop=0
+stop_started_desktop() {
+  if [ "$started_desktop" -eq 1 ]; then
+    echo "Stopping Docker Desktop started by the pre-push checks."
+    docker desktop stop --timeout 120 || true
+  fi
+}
+trap stop_started_desktop EXIT
+
+if ! docker info >/dev/null 2>&1; then
+  echo "Starting Docker Desktop for the pre-push checks."
+  docker desktop start --detach
+  started_desktop=1
+
+  ready=0
+  attempt=0
+  while [ "$attempt" -lt 90 ]; do
+    if docker info >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    attempt=$((attempt + 1))
+    sleep 2
+  done
+  if [ "$ready" -ne 1 ]; then
+    echo "Docker Desktop did not become ready within 3 minutes." >&2
+    exit 1
+  fi
+fi
+
+if [ "$(docker info --format '{{.OSType}}')" != linux ]; then
+  echo "The active Docker engine is not Linux; switch Docker Desktop to Linux containers and retry." >&2
+  exit 1
+fi
+
+docker build --pull \
+  --build-arg "PROXY_SECURITY_REFRESH=$(date -u +%F)" \
+  -f containers/check.Dockerfile \
+  -t proxy-security-check:pre-push .
+
+docker compose --progress quiet build --pull \
+  --build-arg "PROXY_SECURITY_REFRESH=$(date -u +%F)"
+
+PROXY_SKIP_BUILD=true npm run test:containers
