@@ -77,7 +77,7 @@ test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statist
   policy = { ...policy, security: { ...policy.security, routes: {} } };
   const waf = await request('/wp-content/uploads/shell.php', '198.51.100.99');
   assert.equal(waf.status, 403, 'maintained AppSec test rule must block');
-  assert.equal((await request('/search?q=1%27%20OR%201%3D1--', '198.51.100.98')).status, 403, 'CRS must inspect query strings');
+  assert.equal((await request('/search?q=%27%20UNION%20SELECT%201%2C%20%40%40VERSION%20--%20', '198.51.100.98')).status, 403, 'CRS must inspect query strings');
   let jsonAttack;
   for (let i = 0; i < 5; i++) {
     jsonAttack = await request('/search', '198.51.100.97', { method: 'POST', headers: { 'content-type': 'application/json' },
