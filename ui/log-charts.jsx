@@ -24,7 +24,7 @@ function ServicePie({ title, field, breakdown = [], names }) {
           offset = end;
           const point = (angle) => [60 + 56 * Math.cos(angle - Math.PI / 2), 60 + 56 * Math.sin(angle - Math.PI / 2)];
           const [x1, y1] = point(start), [x2, y2] = point(end);
-          return <path key={item.name} d={`M 60 60 L ${x1} ${y1} A 56 56 0 ${fraction > 0.5 ? 1 : 0} 1 ${x2} ${y2} Z`} fill={serviceColors[i % serviceColors.length}><title>{item.name}: {number(item.value)} ({(fraction * 100).toFixed(1)}%)</title></path>;
+          return <path key={item.name} d={`M 60 60 L ${x1} ${y1} A 56 56 0 ${fraction > 0.5 ? 1 : 0} 1 ${x2} ${y2} Z`} fill={serviceColors[i % serviceColors.length]}><title>{item.name}: {number(item.value)} ({(fraction * 100).toFixed(1)}%)</title></path>;
         })}
       </svg>
       <ul>{shown.map((item, i) => <li key={item.name}><span><i style={{ background: serviceColors[i % serviceColors.length] }} />{item.name}</span><strong>{(item.value / total * 100).toFixed(1)}%</strong></li>)}</ul>
