@@ -98,11 +98,12 @@ export class Security {
     }
     const summary = this.summary(bounds);
     const bans = (engine.decisions ?? []).filter((d) => d.type === 'ban');
+    const observedBans = new Set(summary.decisions.filter((d) => bans.some((ban) => ban.value === d.ip)).map((d) => d.ip)).size;
     const releases = new Map(this.archive.db.prepare(`SELECT json_extract(data,'$.source') AS ip, MAX(time) AS time
       FROM logs WHERE kind='audit' AND json_extract(data,'$.event')='security.ban.removed' GROUP BY ip`).all().map((r) => [r.ip, r.time]));
     return { ...summary, policy: this.policy().security, available: Boolean(engine.available), error: engine.error,
       updated: engine.updated ? new Date(engine.updated * 1000).toISOString() : null, updating: !!engine.updating,
-      activeBans: engine.active_bans ?? bans.length,
+      activeBans: engine.active_bans ?? bans.filter((d) => !['CAPI', 'lists'].includes(d.origin)).length, observedBans,
       decisions: summary.decisions.map((d) => {
         const ban = bans.find((ban) => ban.value === d.ip);
         const alert = d.engine === 'WAF' ? (engine.alerts ?? []).find((a) => a.source?.ip === d.ip) : null;
