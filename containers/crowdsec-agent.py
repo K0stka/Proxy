@@ -23,7 +23,8 @@ state_file = ROOT / 'proxy-state.json'
 try:
     state = json.loads(state_file.read_text())
 except FileNotFoundError:
-    state = {'updates': True, 'duration': '4h', 'updated': None, 'error': None}
+    state = {'updates': True, 'duration': '4h', 'appsecExceptions': {'umamiDelete': True, 'socketIo': True}, 'updated': None, 'error': None}
+state.setdefault('appsecExceptions', {'umamiDelete': True, 'socketIo': True})
 key_file = ROOT / 'proxy-bouncer.key'
 if not key_file.exists():
     key_file.write_text(secrets.token_hex(32))
@@ -45,16 +46,24 @@ whitelist:
   expression:
    - evt.Meta.log_type == "http_access-log" && evt.Meta.http_user_agent == "AutoTournament-Recorder/1.0" && evt.Meta.http_status matches "^2[0-9]{2}$"
 ''')
-(ROOT / 'appsec-configs' / 'proxy-crs.yaml').write_text('''name: proxy/crs
+def appsec_config():
+    rules = []
+    if state['appsecExceptions'].get('socketIo', True):
+        rules.append('''   - filter: 'req.Method == "POST" && req.URL.Path == "/socket.io/" && req.Header.Get("Content-Type") matches "(?i)^text/plain(;|$)"'
+     apply:
+      - RemoveInBandRuleByID(920420)''')
+    if state['appsecExceptions'].get('umamiDelete', True):
+        rules.append('''   - filter: 'req.Host == "logs.krychlic.com" && req.Method == "DELETE" && req.URL.Path matches "^/api/websites/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"'
+     apply:
+      - RemoveInBandRuleByID(911100)''')
+    block = '\n'.join(rules)
+    (ROOT / 'appsec-configs' / 'proxy-crs.yaml').write_text('''name: proxy/crs
 default_remediation: ban
 inband_rules:
  - crowdsecurity/crs
-inband:
-  pre_eval:
-   - filter: 'req.Method == "POST" && req.URL.Path == "/socket.io/" && req.Header.Get("Content-Type") matches "(?i)^text/plain(;|$)"'
-     apply:
-      - RemoveInBandRuleByID(920420)
-''')
+''' + ('inband:\n  pre_eval:\n' + block + '\n' if block else ''))
+
+appsec_config()
 (ROOT / 'acquis.yaml').write_text('source: syslog\nlisten_addr: 127.0.0.1\nlisten_port: 7423\nlabels:\n  type: nginx\n---\nsource: appsec\nlisten_addr: 127.0.0.1:7422\nappsec_configs:\n - crowdsecurity/appsec-default\n - proxy/crs\nlabels:\n  type: appsec\n')
 
 def save():
@@ -159,21 +168,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 ip = str(ipaddress.ip_address(body['ip']))
                 cli('decisions', 'delete', '--ip', ip)
             elif self.path == '/policy':
-                if body.get('duration') not in ('1h', '4h', '24h') or not isinstance(body.get('updates'), bool):
+                exceptions = body.get('appsecExceptions')
+                if (body.get('duration') not in ('1h', '4h', '24h') or not isinstance(body.get('updates'), bool)
+                    or not isinstance(exceptions, dict) or set(exceptions) != {'umamiDelete', 'socketIo'}
+                    or not all(isinstance(value, bool) for value in exceptions.values())):
                     return self.respond({'error': 'Invalid policy'}, 400)
                 if not lock.acquire(blocking=False):
                     return self.respond({'error': 'A rule update is in progress; retry shortly'}, 409)
                 try:
                     old = dict(state)
                     try:
-                        state.update(duration=body['duration'], updates=body['updates'])
-                        if old['duration'] != state['duration']:
+                        state.update(duration=body['duration'], updates=body['updates'], appsecExceptions=exceptions)
+                        if old['duration'] != state['duration'] or old.get('appsecExceptions') != state['appsecExceptions']:
+                            appsec_config()
                             profiles()
                             validate_engine()
                             reload_engine()
                         save()
                     except Exception:
                         state.update(old)
+                        appsec_config()
                         profiles()
                         raise
                 finally:

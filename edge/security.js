@@ -63,7 +63,7 @@ export class Security {
   async configure(value) {
     const policy = parse(securityPolicySchema, value);
     if (!this.enabled) throw new Problem(503, 'CrowdSec is not configured on this edge');
-    await this.admin('/policy', { duration: policy.duration, updates: policy.updates });
+    await this.admin('/policy', { duration: policy.duration, updates: policy.updates, appsecExceptions: policy.appsecExceptions });
     this.cache.clear();
     this.engineCache = null;
     return policy;
