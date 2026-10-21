@@ -9,6 +9,7 @@ services:
       - config:/etc/crowdsec
       - data:/var/lib/crowdsec/data
       - ipc:/security-ipc
+      - ${PROXY_TEST_SOURCE:-..}/test/crowdsec-recorder.py:/tmp/crowdsec-recorder.test.py:ro
     healthcheck:
       test:
         - CMD-SHELL

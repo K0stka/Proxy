@@ -7,6 +7,7 @@ import { LogStore } from '../shared/log-store.js';
 
 test('IP enforcement filters origins, supports IPv6 exceptions, honors overrides and reports unavailable decisions', async () => {
   let p = structuredClone(defaultSecurityPolicy), fail = false;
+  assert.deepEqual(p.appsecExceptions, { socketIo: true, cs2AdminConfigPut: true });
   const engine = new Security({ enabled: true, policy: () => ({ security: p }), request: async () => {
     if (fail) throw Error();
     return new Response(JSON.stringify([{ type: 'ban', origin: 'CAPI', scenario: 'reputation' }]));

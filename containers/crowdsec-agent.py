@@ -24,7 +24,11 @@ try:
     state = json.loads(state_file.read_text())
 except FileNotFoundError:
     state = {'updates': True, 'duration': '4h', 'appsecExceptions': {'socketIo': True}, 'updated': None, 'error': None}
-state['appsecExceptions'] = {'socketIo': state.get('appsecExceptions', {}).get('socketIo', True)}
+exceptions = state.get('appsecExceptions', {})
+state['appsecExceptions'] = {
+    'socketIo': exceptions.get('socketIo', True),
+    'cs2AdminConfigPut': exceptions.get('cs2AdminConfigPut', True),
+}
 key_file = ROOT / 'proxy-bouncer.key'
 if not key_file.exists():
     key_file.write_text(secrets.token_hex(32))
@@ -37,14 +41,14 @@ os.chown(conf, 0, 10000)
 conf.chmod(0o640)
 (ROOT / 'config.yaml.local').write_text('api:\n  server:\n    listen_uri: 127.0.0.1:8088\ncommon:\n  log_media: stdout\n')
 (ROOT / 'appsec-configs').mkdir(exist_ok=True)
-# Successful recorder traffic is legitimate automation, despite the hub's UA regex.
+# The recorder's exact WebSocket endpoint is legitimate even when its upstream returns 502.
 (ROOT / 'parsers' / 's02-enrich').mkdir(parents=True, exist_ok=True)
 (ROOT / 'parsers' / 's02-enrich' / 'proxy-recorder.yaml').write_text('''name: proxy/recorder
-description: Allow successful recorder requests
+description: Allow known AutoTournament recorder traffic
 whitelist:
-  reason: Successful AutoTournament recorder request
+  reason: Known AutoTournament recorder traffic
   expression:
-   - evt.Meta.log_type == "http_access-log" && evt.Meta.http_user_agent == "AutoTournament-Recorder/1.0" && evt.Meta.http_status matches "^2[0-9]{2}$"
+   - evt.Meta.log_type == "http_access-log" && evt.Meta.http_user_agent == "AutoTournament-Recorder/1.0" && (evt.Meta.http_status matches "^2[0-9]{2}$" || (evt.Meta.http_path == "/api/game/cs2/recorder/link" && evt.Meta.http_status matches "^(101|502)$"))
 ''')
 def appsec_config():
     rules = []
@@ -52,6 +56,10 @@ def appsec_config():
         rules.append('''   - filter: 'req.Method == "POST" && req.URL.Path == "/socket.io/" && req.Header.Get("Content-Type") matches "(?i)^text/plain(;|$)"'
      apply:
       - RemoveInBandRuleByID(920420)''')
+    if state['appsecExceptions'].get('cs2AdminConfigPut', True):
+        rules.append('''   - filter: 'req.Host == "cs2.krychlic.com" && req.Method == "PUT" && req.URL.Path == "/api/skins/admin/config"'
+     apply:
+      - RemoveInBandRuleByID(911100)''')
     block = '\n'.join(rules)
     (ROOT / 'appsec-configs' / 'proxy-crs.yaml').write_text('''name: proxy/crs
 default_remediation: ban
@@ -166,7 +174,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif self.path == '/policy':
                 exceptions = body.get('appsecExceptions')
                 if (body.get('duration') not in ('1h', '4h', '24h') or not isinstance(body.get('updates'), bool)
-                    or not isinstance(exceptions, dict) or set(exceptions) != {'socketIo'}
+                    or not isinstance(exceptions, dict) or set(exceptions) != {'socketIo', 'cs2AdminConfigPut'}
                     or not all(isinstance(value, bool) for value in exceptions.values())):
                     return self.respond({'error': 'Invalid policy'}, 400)
                 if not lock.acquire(blocking=False):

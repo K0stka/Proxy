@@ -4,11 +4,15 @@ import unittest
 
 
 class RecorderException(unittest.TestCase):
-    def test_only_successful_recorder_requests_are_whitelisted(self):
+    def test_known_recorder_endpoint_and_successful_requests_are_whitelisted(self):
         for path, status, agent, allowed in (
             ('/api/game/cs2/recorder/claim', 204, 'AutoTournament-Recorder/1.0', True),
             ('/api/game/cs2/recorder/claim', 401, 'AutoTournament-Recorder/1.0', False),
             ('/api/demos/example/download/0', 200, 'AutoTournament-Recorder/1.0', True),
+            ('/api/game/cs2/recorder/link', 101, 'AutoTournament-Recorder/1.0', True),
+            ('/api/game/cs2/recorder/link', 502, 'AutoTournament-Recorder/1.0', True),
+            ('/api/game/cs2/other', 502, 'AutoTournament-Recorder/1.0', False),
+            ('/api/game/cs2/recorder/link', 502, 'sqlmap/1.0', False),
             ('/api/game/cs2/recorder/claim', 204, 'sqlmap/1.0', False),
         ):
             with self.subTest(path=path, status=status, agent=agent):
@@ -20,7 +24,7 @@ class RecorderException(unittest.TestCase):
                 )
                 output = result.stdout + result.stderr
                 self.assertIn('parser success', output)
-                self.assertEqual('ignored by whitelist (Successful AutoTournament recorder request)' in output, allowed, output)
+                self.assertEqual('ignored by whitelist (Known AutoTournament recorder traffic)' in output, allowed, output)
 
 
 if __name__ == '__main__':

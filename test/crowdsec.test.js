@@ -50,6 +50,12 @@ test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statist
   assert.equal((await request('/socket.io/?EIO=4&transport=polling', '198.51.100.96', {
     method: 'POST', headers: { 'content-type': 'text/plain;charset=UTF-8' }, body: '40',
   })).status, 404, 'Socket.IO polling must pass the WAF and reach the application');
+  assert.equal((await request('/api/skins/admin/config', '198.51.100.95', {
+    method: 'PUT', headers: { host: 'cs2.krychlic.com', 'content-type': 'application/json' }, body: '{}',
+  })).status, 404, 'CS2 config PUT must bypass only the false-positive method rule');
+  assert.equal((await request('/api/skins/admin/other', '198.51.100.94', {
+    method: 'PUT', headers: { host: 'cs2.krychlic.com', 'content-type': 'application/json' }, body: '{}',
+  })).status, 403, 'CS2 method exception must stay limited to the exact config path');
   policy = { ...policy, security: { ...policy.security, mode: 'monitor' } };
   assert.equal((await request('/', '198.51.100.24')).status, 404, 'monitor-only does not enforce an IP ban');
   policy = { ...policy, security: { ...policy.security, mode: 'block', exceptions: [{ ip: '198.51.100.24', note: '' }] } };
