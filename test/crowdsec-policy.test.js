@@ -35,7 +35,7 @@ test('security counts actual inspected traffic, does not count alert duplicates 
   const time = new Date().toISOString();
   for (const [action, source] of [['Blocked', 'WAF'], ['Detected', 'WAF'], ['Allowed', ''], ['Blocked', 'Behavior'], ['Blocked', 'Availability']])
     monitor.ingest(JSON.stringify({ protocol: 'http', service: 'catch-all', address: '198.51.100.7', status: '403', bytes: '10', signal: 'none',
-      url: 'https://example.net/path', method: 'GET', securityInspected: true, securityAction: action, securityEngine: source, securityReason: 'Test' }));
+      url: 'https://example.net/path', method: 'POST', securityInspected: true, securityAction: action, securityEngine: source, securityReason: 'Test' }));
   const result = engine.summary({ from: new Date(Date.now() - 60000).toISOString(), to: new Date(Date.now() + 60000).toISOString() });
   assert.equal(result.counts.inspected, 5);
   assert.equal(result.counts.blocked, 3);
@@ -43,6 +43,7 @@ test('security counts actual inspected traffic, does not count alert duplicates 
   assert.equal(result.counts.sources.WAF, 1);
   assert.equal(result.buckets.reduce((a, b) => a + b, 0), 3);
   assert.equal(result.decisions.reduce((sum, d) => sum + d.requests, 0), 3);
+  assert.equal(result.decisions[0].method, 'POST');
   assert.equal(engine.summary({ from: '2000-01-01T00:00:00.000Z', to: '2000-01-02T00:00:00.000Z' }).counts.inspected, 0);
 });
 

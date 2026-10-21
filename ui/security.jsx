@@ -63,7 +63,8 @@ const reasons = [
   ['HTTP probing', 'Repeated sensitive path requests', '/.git/config', 'Behavior', 'Unmatched hosts'],
 ];
 const seedDecisions = reasons.map(([reason, rule, path, engine, host], i) => ({ id: i + 1, reason, rule, path, engine, host,
-  ip: `198.51.100.${24 + i * 17}`, requests: [482, 317, 186, 123, 72, 0][i], age: [2, 8, 14, 26, 41, 56][i], action: i === 5 ? 'Detected' : 'Blocked' }));
+  ip: `198.51.100.${24 + i * 17}`, requests: [482, 317, 186, 123, 72, 0][i], age: [2, 8, 14, 26, 41, 56][i],
+  action: i === 5 ? 'Detected' : 'Blocked', banned: i === 3 }));
 
 function Metric({ label, value, detail, icon: Icon }) {
   return <Paper withBorder className="logs-metric"><div className="logs-metric-label">{label}<Icon size={17} /></div><strong>{value}</strong><span>{detail}</span></Paper>;
@@ -123,9 +124,9 @@ export default function Security({ state, onLogout }) {
     else await persist({ ...saved, exceptions: saved.exceptions.filter((e) => e.ip !== item.ip) });
     setDialog(null); report('Allowed address removed');
   }
-  function expiry(d) { return preview ? d.action === 'Blocked' ? 'In 3 hours' : '—' : d.expires || '—'; }
+  function expiry(d) { return preview ? d.banned ? 'In 3 hours' : '—' : d.expires || '—'; }
   const dirty = JSON.stringify(saved) !== JSON.stringify(policy);
-  const active = decisions.filter((d) => d.action === 'Blocked');
+  const active = decisions.filter((d) => d.banned);
   const visible = decisions.filter((d) => `${d.ip} ${d.reason} ${d.host}`.toLowerCase().includes(query.toLowerCase()));
   const bounds = logPeriod(period);
   const factor = (Date.parse(bounds.to) - Date.parse(bounds.from)) / 86400000 * 8;
@@ -191,7 +192,7 @@ export default function Security({ state, onLogout }) {
         <Group justify="space-between"><TextInput leftSection={<Search size={15} />} aria-label="Search decisions" placeholder="Search IP, threat, or service" value={query} onChange={(e) => setQuery(e.currentTarget.value)} /></Group>
         <Table.ScrollContainer minWidth={850}><Table className="logs-table" verticalSpacing="md"><Table.Thead><Table.Tr>{['Source', 'Threat / service', 'Source of decision', 'Action', 'Blocked requests', 'Expires', ''].map((label, i) => <Table.Th key={i}>{label}</Table.Th>)}</Table.Tr></Table.Thead><Table.Tbody>{visible.map((d) => <Table.Tr key={d.id}>
           <Table.Td><button className="logs-ip-filter" onClick={() => setDialog({ kind: 'detail', decision: d })}><code>{d.ip}</code></button><div className="logs-caption">{preview ? `${d.age} min ago` : formatDateTime(d.time)}</div></Table.Td>
-          <Table.Td><strong>{d.reason}</strong><div className="logs-caption">{d.host}</div></Table.Td><Table.Td>{d.engine}</Table.Td><Table.Td><Badge color={d.action === 'Blocked' ? 'orange' : d.action === 'Allowed' ? 'teal' : 'gray'} variant="light">{d.action === 'Released' ? 'Ban removed' : d.action}</Badge></Table.Td><Table.Td>{d.requests}</Table.Td><Table.Td>{expiry(d)}</Table.Td><Table.Td><Button className="secondary small" onClick={() => setDialog({ kind: 'detail', decision: d })}>Details</Button></Table.Td>
+          <Table.Td><strong>{d.reason}</strong><div className="logs-caption">{d.host}</div></Table.Td><Table.Td>{d.engine}</Table.Td><Table.Td><Badge color={d.banned ? 'red' : d.action === 'Blocked' ? 'orange' : d.action === 'Allowed' ? 'teal' : 'gray'} variant="light">{d.banned ? 'IP ban active' : d.action === 'Blocked' ? 'Request blocked' : d.action === 'Detected' ? 'Detection only' : d.action === 'Released' ? 'Ban removed' : d.action}</Badge></Table.Td><Table.Td>{d.requests}</Table.Td><Table.Td>{expiry(d)}</Table.Td><Table.Td><Button className="secondary small" onClick={() => setDialog({ kind: 'detail', decision: d })}>Details</Button></Table.Td>
         </Table.Tr>)}{!visible.length && <Table.Tr><Table.Td colSpan={7}>No decisions match your search.</Table.Td></Table.Tr>}</Table.Tbody></Table></Table.ScrollContainer>
       </Paper>
       <Paper withBorder className="logs-surface security-updates"><div><h3>{!preview && data.error ? 'Rules need attention' : !preview && !data.updated ? 'Rules installed' : 'Rules are up to date'}</h3><p>Last successful update {preview ? formatDateTime(updated) : data.updated ? formatDateTime(data.updated) : 'Not yet checked'} · {saved.updates ? 'Automatic updates daily' : 'Automatic updates paused'}</p></div><Button className="secondary" disabled={busy || (!preview && data.updating)} onClick={() => perform(async () => { if (preview) setUpdated(Date.now()); else { await api('/security/update', { method: 'POST' }); await load(); } report('Rule update requested'); })}><RefreshCw size={15} />Check for updates</Button></Paper>
@@ -216,6 +217,27 @@ export default function Security({ state, onLogout }) {
     </Paper>}
     {dialog?.kind === 'exception' && <Modal title="Allow address" onClose={() => setDialog(null)}><form onSubmit={addException}><Stack gap="lg"><TextInput autoFocus label="IP address" placeholder="192.0.2.18" value={address} onChange={(e) => setAddress(e.currentTarget.value)} error={formError} required /><Textarea label="Note" placeholder="Why is this address trusted?" value={note} onChange={(e) => setNote(e.currentTarget.value)} /><Alert color="yellow">This address will bypass all HTTP protection. Any current ban will be removed.</Alert><Group justify="flex-end"><Button className="secondary" onClick={() => setDialog(null)}>Cancel</Button><Button className="primary" type="submit">Allow address</Button></Group></Stack></form></Modal>}
     {dialog?.kind === 'remove' && <Modal title="Remove allowed address" onClose={() => setDialog(null)}><p><code>{dialog.exception.ip}</code> will be inspected and may be blocked by the protection policy.</p><Group justify="flex-end"><Button className="secondary" onClick={() => setDialog(null)}>Cancel</Button><Button className="primary" disabled={busy} onClick={() => perform(() => removeException(dialog.exception))}>Remove address</Button></Group></Modal>}
-    {dialog?.kind === 'detail' && (() => { const explanation = explainDecision(dialog.decision); return <Modal title="Security decision" onClose={() => setDialog(null)}><Badge variant="light" color="orange">{dialog.decision.action === 'Released' ? 'Ban removed' : dialog.decision.action}</Badge><dl className="security-detail">{[['Source', dialog.decision.ip], ['Threat', explanation.threat], ['Rule', explanation.rule], ['Service', dialog.decision.host], ['Request', `GET ${dialog.decision.path}`], ['Enforcement', dialog.decision.action === 'Blocked' ? 'HTTP 403 · stopped at the edge' : 'Request allowed'], ['Blocked requests', dialog.decision.requests], ['Expires', expiry(dialog.decision)]].map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>{explanation.detail && <p>{explanation.detail}</p>}<p><a href={explanation.link} target="_blank" rel="noreferrer">{explanation.linkLabel} <ArrowUpRight size={14} /></a>{explanation.secondaryLink && <> · <a href={explanation.secondaryLink} target="_blank" rel="noreferrer">{explanation.secondaryLinkLabel} <ArrowUpRight size={14} /></a></>}</p><p>Removing a ban lets this address retry. New malicious requests can trigger another block.</p><Group justify="flex-end"><Button className="secondary" onClick={() => openException(dialog.decision.ip)}>Allow address</Button>{(preview ? dialog.decision.action === 'Blocked' : dialog.decision.banned) && <Button className="primary" disabled={busy} onClick={() => perform(() => release(dialog.decision))}>Remove ban</Button>}</Group></Modal>; })()}
+    {dialog?.kind === 'detail' && (() => {
+      const decision = dialog.decision, explanation = explainDecision(decision);
+      return <Modal title="Security decision" onClose={() => setDialog(null)}>
+        <Badge variant="light" color={decision.banned ? 'red' : decision.action === 'Blocked' ? 'orange' : 'gray'}>
+          {decision.banned ? 'IP ban active' : decision.action === 'Blocked' ? 'Request blocked' : decision.action === 'Released' ? 'Ban removed' : decision.action}
+        </Badge>
+        <dl className="security-detail">{[
+          ['Source', decision.ip], ['Threat', explanation.threat], ['Rule', explanation.rule], ['Service', decision.host],
+          ['Request', `${decision.method || 'Request'} ${decision.path}`],
+          ['Enforcement', decision.banned ? 'Active IP ban · requests stopped at the edge' : decision.action === 'Blocked' ? 'This request received HTTP 403 at the edge' : 'Request allowed'],
+          ['Blocked requests', decision.requests], ['Expires', expiry(decision)],
+        ].map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
+        {explanation.detail && <p>{explanation.detail}</p>}
+        <p><a href={explanation.link} target="_blank" rel="noreferrer">{explanation.linkLabel} <ArrowUpRight size={14} /></a>
+          {explanation.secondaryLink && <> · <a href={explanation.secondaryLink} target="_blank" rel="noreferrer">{explanation.secondaryLinkLabel} <ArrowUpRight size={14} /></a></>}
+        </p>
+        {decision.banned && <p>Removing a ban lets this address retry. New malicious requests can trigger another block.</p>}
+        <Group justify="flex-end"><Button className="secondary" onClick={() => openException(decision.ip)}>Allow address</Button>
+          {decision.banned && <Button className="primary" disabled={busy} onClick={() => perform(() => release(decision))}>Remove ban</Button>}
+        </Group>
+      </Modal>;
+    })()}
   </section>;
 }

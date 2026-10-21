@@ -134,6 +134,7 @@ export class Security {
         const d = JSON.parse(row.data); let host = d.service;
         try { host = new URL(d.url).hostname; } catch {}
         return { id: `${d.source}:${d.securityEngine}:${d.securityReason}`, ip: d.source, action: d.securityAction, engine: d.securityEngine,
+          method: d.method,
           reason: d.securityReason || 'CrowdSec match', rule: d.securityReason || 'CrowdSec match',
           host, path: d.url ?? '', requests: row.requests, time: row.time };
       });
