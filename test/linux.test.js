@@ -650,7 +650,7 @@ test(
       },
     );
     await t.test(
-      'application 500 and gateway errors use shared pages; application 404 bodies are preserved',
+      'application and gateway errors use the shared page',
       async () => {
         const response = await request('app.krychlic.com', '/api-error');
         assert.equal(response.status, 502);
@@ -661,7 +661,8 @@ test(
         assert(!internal.body.includes('Private backend error'));
         const missing = await request('app.krychlic.com', '/not-found');
         assert.equal(missing.status, 404);
-        assert.equal(missing.body, '{"error":"missing resource"}');
+        assert(missing.body.includes('Oops! Page not found'));
+        assert(!missing.body.includes('missing resource'));
       },
     );
     await t.test(
