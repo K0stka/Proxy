@@ -5,15 +5,15 @@ import unittest
 
 class RecorderException(unittest.TestCase):
     def test_known_recorder_endpoint_and_successful_requests_are_whitelisted(self):
-        for path, status, agent, allowed in (
-            ('/api/game/cs2/recorder/claim', 204, 'AutoTournament-Recorder/1.0', True),
-            ('/api/game/cs2/recorder/claim', 401, 'AutoTournament-Recorder/1.0', False),
-            ('/api/demos/example/download/0', 200, 'AutoTournament-Recorder/1.0', True),
-            ('/api/game/cs2/recorder/link', 101, 'AutoTournament-Recorder/1.0', True),
-            ('/api/game/cs2/recorder/link', 502, 'AutoTournament-Recorder/1.0', True),
-            ('/api/game/cs2/other', 502, 'AutoTournament-Recorder/1.0', False),
-            ('/api/game/cs2/recorder/link', 502, 'sqlmap/1.0', False),
-            ('/api/game/cs2/recorder/claim', 204, 'sqlmap/1.0', False),
+        for path, status, agent, allowed, reason in (
+            ('/api/game/cs2/recorder/claim', 204, 'AutoTournament-Recorder/1.0', True, 'Known AutoTournament recorder traffic'),
+            ('/api/game/cs2/recorder/claim', 401, 'AutoTournament-Recorder/1.0', False, ''),
+            ('/api/demos/example/download/0', 200, 'AutoTournament-Recorder/1.0', True, 'Known AutoTournament recorder traffic'),
+            ('/unrelated/path', 101, 'sqlmap/1.0', True, 'Successful WebSocket upgrade'),
+            ('/api/game/cs2/recorder/link', 502, 'AutoTournament-Recorder/1.0', True, 'Known AutoTournament recorder traffic'),
+            ('/api/game/cs2/other', 502, 'AutoTournament-Recorder/1.0', False, ''),
+            ('/api/game/cs2/recorder/link', 502, 'sqlmap/1.0', False, ''),
+            ('/api/game/cs2/recorder/claim', 204, 'sqlmap/1.0', False, ''),
         ):
             with self.subTest(path=path, status=status, agent=agent):
                 line = (f'185.5.69.56 - - [20/Oct/2026:19:17:13 +0000] '
@@ -24,7 +24,9 @@ class RecorderException(unittest.TestCase):
                 )
                 output = result.stdout + result.stderr
                 self.assertIn('parser success', output)
-                self.assertEqual('ignored by whitelist (Known AutoTournament recorder traffic)' in output, allowed, output)
+                self.assertEqual('ignored by whitelist' in output, allowed, output)
+                if allowed:
+                    self.assertIn(f'ignored by whitelist ({reason})', output, output)
 
 
 if __name__ == '__main__':
