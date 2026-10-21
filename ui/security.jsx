@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Group, Paper, Select, Skeleton, Stack, Switch, Table, TextInput, Textarea } from '@mantine/core';
-import { ShieldCheck, ShieldOff, ShieldAlert, Activity, RefreshCw, Plus, Trash2, ArrowUpRight, Search } from 'lucide-react';
+import { ShieldCheck, ShieldOff, ShieldAlert, Activity, RefreshCw, Plus, Trash2, ArrowUpRight } from 'lucide-react';
 import { Button } from './controls.jsx';
 import Modal from './dialog.jsx';
 import Help from './help.jsx';
 import { useToast } from './toasts.jsx';
 import { formatDateTime } from './date-time.js';
 import { logPeriod, logPeriods } from './log-period.js';
-import Monitoring from './monitoring.jsx';
+import Monitoring, { ColumnFilter } from './monitoring.jsx';
+import { decisionAction, decisionFilterValue, filterDecisions } from '../shared/security-filters.js';
 import { api } from './api.js';
 import { subscribeUpdates } from './events.js';
 
@@ -75,7 +76,7 @@ export default function Security({ state, onLogout }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const initialized = useRef(false);
   const report = useToast();
-  const [tab, setTab] = useState('overview'), [period, setPeriod] = useState('today'), [filterTarget, setFilterTarget] = useState(null), [query, setQuery] = useState(''),
+  const [tab, setTab] = useState('overview'), [period, setPeriod] = useState('today'), [filterTarget, setFilterTarget] = useState(null), [decisionFilters, setDecisionFilters] = useState({}),
     [saved, setSaved] = useState(() => readPreview().saved ?? initialPolicy), [policy, setPolicy] = useState(() => readPreview().saved ?? initialPolicy),
     [decisions, setDecisions] = useState(() => readPreview().decisions ?? seedDecisions), [exceptions, setExceptions] = useState(() => readPreview().exceptions ?? [{ id: 1, ip: '192.0.2.18', note: 'Office connection', scope: 'All HTTP services' }]),
     [dialog, setDialog] = useState(null), [address, setAddress] = useState(''), [note, setNote] = useState(''), [formError, setFormError] = useState(''),
@@ -127,7 +128,8 @@ export default function Security({ state, onLogout }) {
   function expiry(d) { return preview ? d.banned ? 'In 3 hours' : '—' : d.expires || '—'; }
   const dirty = JSON.stringify(saved) !== JSON.stringify(policy);
   const active = decisions.filter((d) => d.banned);
-  const visible = decisions.filter((d) => `${d.ip} ${d.reason} ${d.host}`.toLowerCase().includes(query.toLowerCase()));
+  const visible = filterDecisions(decisions, decisionFilters, preview);
+  const decisionColumns = [['source', 'Source'], ['threat', 'Threat / service'], ['engine', 'Source of decision'], ['action', 'Action'], ['requests', 'Blocked requests'], ['expires', 'Expires']];
   const bounds = logPeriod(period);
   const factor = (Date.parse(bounds.to) - Date.parse(bounds.from)) / 86400000 * 8;
   const blockedBySource = preview ? [780, 305, 133].map((count) => Math.round(count * factor)) : ['WAF', 'Behavior', 'Reputation', 'Availability'].map((key) => data?.counts.sources[key] ?? 0);
@@ -188,12 +190,14 @@ export default function Security({ state, onLogout }) {
         </Paper>
         <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>What we stopped</h2><Help label="Detection sources">WAF inspects requests. Behavior identifies repeated abuse. Reputation uses known malicious IP decisions.</Help></div><div className="security-breakdown">{[['WAF rules', 64], ['Behavioral detection', 25], ['IP reputation', 11], ...(!preview && data.counts.sources.Availability ? [['Engine unavailable', 0]] : [])].map(([label, percent], index) => <div key={label}><div><span>{label}</span><strong>{blockedBySource[index].toLocaleString()}</strong></div><div className="security-bar"><span style={{ width: `${preview ? percent : blocked ? blockedBySource[index] / blocked * 100 : 0}%` }} /></div></div>)}</div></Paper>
       </div>
-      <Paper withBorder className="logs-surface logs-events"><div className="logs-panel-heading"><h2>Recent decisions</h2><Badge color="gray" variant="light">{decisions.length} addresses</Badge></div>
-        <Group justify="space-between"><TextInput leftSection={<Search size={15} />} aria-label="Search decisions" placeholder="Search IP, threat, or service" value={query} onChange={(e) => setQuery(e.currentTarget.value)} /></Group>
-        <Table.ScrollContainer minWidth={850}><Table className="logs-table" verticalSpacing="md"><Table.Thead><Table.Tr>{['Source', 'Threat / service', 'Source of decision', 'Action', 'Blocked requests', 'Expires', ''].map((label, i) => <Table.Th key={i}>{label}</Table.Th>)}</Table.Tr></Table.Thead><Table.Tbody>{visible.map((d) => <Table.Tr key={d.id}>
+      <Paper withBorder className="logs-surface logs-events"><div className="logs-panel-heading"><h2>Recent decisions</h2><Badge color="gray" variant="light">{visible.length} of {decisions.length} addresses</Badge>
+          {Object.keys(decisionFilters).length > 0 && <Button className="secondary logs-clear-filters" color="red" onClick={() => setDecisionFilters({})}>Clear filters</Button>}</div>
+        <Table.ScrollContainer minWidth={850}><Table className="logs-table" verticalSpacing="md"><Table.Thead><Table.Tr>{decisionColumns.map((column) => <Table.Th key={column[0]}><ColumnFilter column={column} options={[...new Set(decisions.map((d) => decisionFilterValue(d, column[0], preview)).filter(Boolean))]} filter={decisionFilters[column[0]]} onChange={(filter) => setDecisionFilters((old) => {
+          const next = { ...old }; if (filter) next[column[0]] = filter; else delete next[column[0]]; return next;
+        })} /></Table.Th>)}<Table.Th /></Table.Tr></Table.Thead><Table.Tbody>{visible.map((d) => <Table.Tr key={d.id}>
           <Table.Td><button className="logs-ip-filter" onClick={() => setDialog({ kind: 'detail', decision: d })}><code>{d.ip}</code></button><div className="logs-caption">{preview ? `${d.age} min ago` : formatDateTime(d.time)}</div></Table.Td>
-          <Table.Td><strong>{d.reason}</strong><div className="logs-caption">{d.host}</div></Table.Td><Table.Td>{d.engine}</Table.Td><Table.Td><Badge color={d.banned ? 'red' : d.action === 'Blocked' ? 'orange' : d.action === 'Allowed' ? 'teal' : 'gray'} variant="light">{d.banned ? 'IP ban active' : d.action === 'Blocked' ? 'Request blocked' : d.action === 'Detected' ? 'Detection only' : d.action === 'Released' ? 'Ban removed' : d.action}</Badge></Table.Td><Table.Td>{d.requests}</Table.Td><Table.Td>{expiry(d)}</Table.Td><Table.Td><Button className="secondary small" onClick={() => setDialog({ kind: 'detail', decision: d })}>Details</Button></Table.Td>
-        </Table.Tr>)}{!visible.length && <Table.Tr><Table.Td colSpan={7}>No decisions match your search.</Table.Td></Table.Tr>}</Table.Tbody></Table></Table.ScrollContainer>
+          <Table.Td><strong>{d.reason}</strong><div className="logs-caption">{d.host}</div></Table.Td><Table.Td>{d.engine}</Table.Td><Table.Td><Badge color={d.banned ? 'red' : d.action === 'Blocked' ? 'orange' : d.action === 'Allowed' ? 'teal' : 'gray'} variant="light">{decisionAction(d)}</Badge></Table.Td><Table.Td>{d.requests}</Table.Td><Table.Td>{expiry(d)}</Table.Td><Table.Td><Button className="secondary small" onClick={() => setDialog({ kind: 'detail', decision: d })}>Details</Button></Table.Td>
+        </Table.Tr>)}{!visible.length && <Table.Tr><Table.Td colSpan={7}>No decisions match these filters.</Table.Td></Table.Tr>}</Table.Tbody></Table></Table.ScrollContainer>
       </Paper>
       <Paper withBorder className="logs-surface security-updates"><div><h3>{!preview && data.error ? 'Rules need attention' : !preview && !data.updated ? 'Rules installed' : 'Rules are up to date'}</h3><p>Last successful update {preview ? formatDateTime(updated) : data.updated ? formatDateTime(data.updated) : 'Not yet checked'} · {saved.updates ? 'Automatic updates daily' : 'Automatic updates paused'}</p></div><Button className="secondary" disabled={busy || (!preview && data.updating)} onClick={() => perform(async () => { if (preview) setUpdated(Date.now()); else { await api('/security/update', { method: 'POST' }); await load(); } report('Rule update requested'); })}><RefreshCw size={15} />Check for updates</Button></Paper>
     </>}

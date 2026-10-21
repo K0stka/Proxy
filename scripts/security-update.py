@@ -38,6 +38,21 @@ def compose(directory):
     return args
 
 
+def cleanup_docker_artifacts():
+    for command in (
+        ['docker', 'buildx', 'prune', '--force', '--max-used-space', '4GB'],
+        ['docker', 'image', 'prune', '--force'],
+    ):
+        try:
+            result = subprocess.run(command, text=True, capture_output=True, timeout=300)
+            if result.returncode:
+                print('Docker cleanup warning: ' + (result.stderr.strip() or 'command failed'), flush=True)
+            elif result.stdout.strip():
+                print('Docker cleanup: ' + result.stdout.strip().splitlines()[-1], flush=True)
+        except Exception as error:
+            print('Docker cleanup warning: ' + type(error).__name__, flush=True)
+
+
 def containers():
     state_file = Path('/var/lib/proxy-handoff/state.json')
     generations = json.loads(state_file.read_text()) if state_file.exists() else {}
@@ -307,6 +322,8 @@ def main():
         # Candidate .env is never kept with the retained rollback metadata.
         if candidate.exists():
             shutil.rmtree(candidate)
+        # Failed validations also create build cache and dangling intermediate images.
+        cleanup_docker_artifacts()
     (args.state / 'last-success.json').write_text(json.dumps({
         'time': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
         'revision': revision,
@@ -316,7 +333,6 @@ def main():
     for old in sorted(args.state.glob('run-*'), key=lambda p: p.stat().st_mtime, reverse=True)[7:]:
         if old.is_dir() and not old.is_symlink() and old.parent.resolve() == args.state.resolve():
             shutil.rmtree(old)
-    run(['docker', 'image', 'prune', '-f', '--filter', 'label=org.krychlic.proxy.managed=true'])
     print('Proxy security update passed tests and health verification', flush=True)
     print('PROXY_DEPLOYED_REVISION=' + revision, flush=True)
 

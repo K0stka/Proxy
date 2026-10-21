@@ -10,7 +10,7 @@ import { logPeriod, logPeriods } from './log-period.js';
 import { formatDateTime } from './date-time.js';
 import { subscribeUpdates } from './events.js';
 
-const choiceColumns = ['event', 'action', 'suspicious', 'method', 'status', 'severity', 'role'];
+const choiceColumns = ['event', 'action', 'suspicious', 'method', 'status', 'severity', 'role', 'engine'];
 
 function alertDescription(event) {
   return ({
@@ -23,7 +23,7 @@ function alertDescription(event) {
   })[event] ?? 'The proxy recorded this security event. Review the source, request, and action below to see what was observed and whether a blocking action was recorded.';
 }
 
-function ColumnFilter({ column, filter, options = [], onChange }) {
+export function ColumnFilter({ column, filter, options = [], onChange }) {
   const [opened, setOpened] = useState(false), [op, setOp] = useState('contains'), [value, setValue] = useState('');
   const [field, label] = column;
   if (['time', 'service'].includes(field)) return label;

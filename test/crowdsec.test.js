@@ -50,11 +50,23 @@ test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statist
   assert.equal((await request('/socket.io/?EIO=4&transport=polling', '198.51.100.96', {
     method: 'POST', headers: { 'content-type': 'text/plain;charset=UTF-8' }, body: '40',
   })).status, 404, 'Socket.IO polling must pass the WAF and reach the application');
-  assert.equal((await request('/api/skins/admin/config', '198.51.100.95', {
-    method: 'PUT', headers: { host: 'cs2.krychlic.com', 'content-type': 'application/json' }, body: '{}',
+  const requestWithHost = (host, path, ip, options = {}) => new Promise((resolve, reject) => {
+    const req = http.request({ hostname: '127.0.0.1', port: 18080, path,
+      method: options.method ?? 'GET', agent: false,
+      headers: { 'X-Test-IP': ip, ...options.headers, host },
+    }, (res) => {
+      res.resume();
+      res.on('end', () => resolve({ status: res.statusCode }));
+    });
+    req.on('error', reject);
+    req.end(options.body);
+  });
+  assert.equal((await requestWithHost('cs2.krychlic.com', '/api/skins/admin/config', '198.51.100.95', {
+    method: 'PUT', headers: { accept: 'application/json', 'content-type': 'application/json',
+      'user-agent': 'ProxyIntegrationTest/1.0' }, body: '{}',
   })).status, 404, 'CS2 config PUT must bypass only the false-positive method rule');
-  assert.equal((await request('/api/skins/admin/other', '198.51.100.94', {
-    method: 'PUT', headers: { host: 'cs2.krychlic.com', 'content-type': 'application/json' }, body: '{}',
+  assert.equal((await requestWithHost('cs2.krychlic.com', '/api/skins/admin/other', '198.51.100.94', {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: '{}',
   })).status, 403, 'CS2 method exception must stay limited to the exact config path');
   policy = { ...policy, security: { ...policy.security, mode: 'monitor' } };
   assert.equal((await request('/', '198.51.100.24')).status, 404, 'monitor-only does not enforce an IP ban');

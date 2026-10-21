@@ -8,7 +8,6 @@ RUN apk upgrade --no-cache && apk add --no-cache openssl setpriv \
     && chmod 2750 /tls /cert-status && chmod 2770 /cert-requests
 COPY certificates/worker.py /app/worker.py
 COPY --chmod=755 containers/start.sh /usr/local/bin/proxy-start
-RUN chmod -R a+rX /app
 USER 0:10000
 ENTRYPOINT ["proxy-start", "certificates"]
 CMD ["python", "/app/worker.py"]
