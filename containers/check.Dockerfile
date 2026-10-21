@@ -5,7 +5,7 @@ ENV DOCKER_BUILDKIT=1
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
-COPY . .
+COPY --chmod=u=rwX,go=rX . .
 RUN mkdir -p /app/dist /app/node_modules/.vite-temp \
     && chown node:node /app/dist /app/node_modules/.vite-temp
 # Dependency code runs without permission to modify the later Docker orchestrator.
