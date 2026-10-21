@@ -12,6 +12,25 @@ spec.loader.exec_module(updater)
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_incomplete_candidate_archive_fails_before_docker_build(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            (root / 'index.html').touch()
+            with self.assertRaisesRegex(RuntimeError, 'Candidate source archive is incomplete.*ui/main.jsx'):
+                updater.validate_candidate_source(root)
+
+    def test_complete_candidate_archive_contains_ui_and_tests(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            (root / 'index.html').touch()
+            (root / 'ui').mkdir()
+            (root / 'ui/main.jsx').touch()
+            (root / 'containers').mkdir()
+            (root / 'containers/check.Dockerfile').touch()
+            (root / 'test').mkdir()
+            (root / 'test/example.test.js').touch()
+            updater.validate_candidate_source(root)
+
     def test_candidate_archive_directories_are_traversable_under_private_umask(self):
         archive = io.BytesIO()
         with tarfile.open(fileobj=archive, mode='w:gz') as source:

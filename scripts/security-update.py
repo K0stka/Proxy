@@ -47,6 +47,20 @@ def extract_candidate(archive, destination):
         os.umask(previous_umask)
 
 
+def validate_candidate_source(destination):
+    """Fail before building if the source archive is incomplete or has no tests."""
+    required = ('index.html', 'ui/main.jsx', 'containers/check.Dockerfile')
+    missing = [name for name in required if not (destination / name).is_file()]
+    tests = list((destination / 'test').glob('*.test.js')) if (destination / 'test').is_dir() else []
+    if missing or not tests:
+        details = []
+        if missing:
+            details.append('missing ' + ', '.join(missing))
+        if not tests:
+            details.append('no JavaScript test files found')
+        raise RuntimeError('Candidate source archive is incomplete: ' + '; '.join(details))
+
+
 def cleanup_docker_artifacts():
     for command in (
         ['docker', 'buildx', 'prune', '--force', '--max-used-space', '4GB'],
@@ -277,6 +291,7 @@ def main():
         subprocess.check_call(['git', 'archive', revision], cwd=repo, stdout=archive)
         archive.seek(0)
         extract_candidate(archive, candidate)
+    validate_candidate_source(candidate)
     shutil.copyfile(repo / '.env', candidate / '.env')
     try:
         # No build/pull operation may change a running container before these tests pass.
