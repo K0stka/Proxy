@@ -50,13 +50,6 @@ whitelist:
   expression:
    - evt.Meta.log_type == "http_access-log" && evt.Meta.http_user_agent == "AutoTournament-Recorder/1.0" && (evt.Meta.http_status matches "^2[0-9]{2}$" || (evt.Meta.http_path == "/api/game/cs2/recorder/link" && evt.Meta.http_status matches "^(101|502)$"))
 ''')
-(ROOT / 'parsers' / 's02-enrich' / 'proxy-websocket.yaml').write_text('''name: proxy/websocket
-description: Ignore successful WebSocket upgrades in behavioral scenarios
-whitelist:
-  reason: Successful WebSocket upgrade
-  expression:
-   - evt.Meta.log_type == "http_access-log" && evt.Meta.http_status == "101"
-''')
 def appsec_config():
     rules = []
     if state['appsecExceptions'].get('socketIo', True):
