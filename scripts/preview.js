@@ -5,7 +5,7 @@ import { createApp } from '../server/app.js';
 import { Store } from '../server/store.js';
 import { LogStore, logQuery } from '../shared/log-store.js';
 import { Monitor } from '../shared/monitor.js';
-import { defaultPages, effectivePolicy, defaultSettings, routeSchema, snapshotHash, policyHash, settingsFromPolicy } from '../shared/model.js';
+import { effectivePolicy, defaultSettings, routeSchema, snapshotHash, policyHash, settingsFromPolicy } from '../shared/model.js';
 
 if (process.env.PROXY_CONTROL_GENERATION || process.env.PROXY_EDGE_MANAGED)
   throw new Error('The mock preview cannot run in a managed deployment.');
@@ -28,7 +28,7 @@ const routes = [
   { name: 'Game server', kind: 'udp', ports: '25565', targetPort: 25565 },
 ].map((r, i) => routeSchema.parse({ id: `11111111-1111-4111-8111-${String(i + 1).padStart(12, '0')}`, targetHost: '100.101.102.103', ingressIP: '203.0.113.10', published: true, ...r }));
 store.set('settings', settingsFromPolicy(policy));
-store.set('snapshot', { routes, pages: defaultPages, sites: [] });
+store.set('snapshot', { routes, sites: [] });
 const archive = new LogStore(join(directory, 'edge-trace-logs.db'));
 if (archive.status().count < 100) for (let i = 0; i < 380; i++) {
   const suspicious = i % 31 === 0;

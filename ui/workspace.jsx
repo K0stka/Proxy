@@ -31,7 +31,7 @@ import {
   visibleServicePorts,
   serviceProxies,
 } from './routes.js';
-import { RouteWizard, ErrorPagesWizard } from './wizards.jsx';
+import { RouteWizard } from './wizards.jsx';
 import Settings from './settings.jsx';
 import Modal from './dialog.jsx';
 import Folders, { FolderWizard } from './folders.jsx';
@@ -187,15 +187,6 @@ export default function Workspace({ onLogout }) {
           await saved(message);
           await loadFolders();
         }}
-      />
-    );
-  if (wizard?.kind === 'pages')
-    flow = (
-      <ErrorPagesWizard
-        code={wizard.code ?? 404}
-        state={state}
-        onClose={() => setWizard(null)}
-        onSaved={saved}
       />
     );
   if (wizard?.kind === 'domains')
@@ -680,7 +671,6 @@ export default function Workspace({ onLogout }) {
                 refresh={refresh}
                 report={report}
                 onLogout={onLogout}
-                onEditPage={(code) => setWizard({ kind: 'pages', code })}
               />
             )}
           </main>

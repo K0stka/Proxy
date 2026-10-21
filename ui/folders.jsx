@@ -101,7 +101,7 @@ export function FolderWizard({ initial, onClose, onSaved }) {
               <dd>{check?.count}</dd>
             </div>
           </dl>
-          <p className="review-note">Updates every route and error page using this folder.</p>
+          <p className="review-note">Updates every route using this folder.</p>
         </>
       )}
     </Wizard>

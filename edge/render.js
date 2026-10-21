@@ -1,4 +1,3 @@
-import { errorPageTypes } from '../shared/pages.js';
 import { isIP } from 'node:net';
 import { portRanges, samePorts } from '../shared/ports.js';
 import { coveredDomain, validateSnapshot, Problem, snapshotHash } from '../shared/model.js';
@@ -10,8 +9,16 @@ const escapeHTML = (value) =>
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
   );
-export function errorPage(code, title, text) {
-  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${code} · ${escapeHTML(title)}</title><style>html{font:16px/1.6 system-ui;color-scheme:light dark;background:light-dark(#f5f8f6,#111a15);color:light-dark(#1a3023,#e2ece5)}body{margin:0;min-height:100svh;display:grid;place-items:center}main{max-width:34rem;padding:3rem}small{letter-spacing:.15em;opacity:.6}h1{font-size:clamp(2rem,7vw,3.5rem);line-height:1.15;font-weight:550;letter-spacing:-.05em}p{opacity:.7}</style><main><small>${code}</small><h1>${escapeHTML(title)}</h1><p>${escapeHTML(text)}</p></main></html>`;
+const errorCopy = {
+  404: ['Oops! Page not found', "The page you're looking for seems to have wandered off into the digital void. It might have been moved, deleted, or perhaps it never existed at all."],
+  500: ['Internal server error', 'We are sorry, but an internal server error has occurred. Please try again later.'],
+  502: ['Oops! Bad Gateway', 'The server is currently undergoing maintenance. Please try again later.'],
+  504: ['Request timed out', 'The server did not respond in time. Please try again later.'],
+};
+const errorIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#101824"/><text x="32" y="48" text-anchor="middle" font-family="Arial,sans-serif" font-size="48" font-weight="700" fill="#f8fafc">!</text></svg>';
+export function errorPage(code) {
+  const [title, text] = errorCopy[code];
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><link rel="icon" type="image/svg+xml" href="/_proxy/error-icon.svg"><title>Error ${code}: ${title}</title><style>*{box-sizing:border-box}html,body{height:100%;margin:0;font:16px/1.6 system-ui,-apple-system,sans-serif;color:#f8fafc;background:linear-gradient(135deg,#040810,#0a101c);display:grid;place-items:center}body:before,body:after{content:"";position:fixed;width:60vw;height:60vw;border-radius:50%;filter:blur(90px);opacity:.16;pointer-events:none}body:before{background:#7873f5;top:-35vw;left:-20vw}body:after{background:#3bb2b8;bottom:-40vw;right:-25vw}main{position:relative;margin:2rem;padding:3.5rem 3rem;max-width:30rem;text-align:center;border:1px solid #ffffff18;border-radius:20px;background:#ffffff08;backdrop-filter:blur(30px)}small{letter-spacing:.15em;opacity:.65}h1{font-size:clamp(1.6rem,5vw,2.2rem);line-height:1.2;font-weight:600;margin:1rem 0}p{color:#cbd5e1;margin:0}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}</style></head><body><main><small>${code}</small><h1>${escapeHTML(title)}</h1><p>${escapeHTML(text)}</p></main></body></html>`;
 }
 const certLines = (domain) =>
   `ssl_certificate /tls/live/${domain}/fullchain.pem;\nssl_certificate_key /tls/live/${domain}/privkey.pem;\nssl_protocols TLSv1.2 TLSv1.3;\nssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;\nssl_session_tickets off;`;
@@ -21,13 +28,13 @@ const quote = (value) => `"${value.replace(/[\\"$]/g, (c) => `\\${c}`)}"`;
 function assetLocation(uri, file, { internal = false, access = '' } = {}) {
   return `location = ${quote(uri)} { ${internal ? 'internal; types {} default_type text/html; charset utf-8; allow all;' : ''} ${access} alias ${quote(file)}; disable_symlinks on; add_header X-Content-Type-Options nosniff always; limit_except GET { deny all; } }`;
 }
-const errorLocations = (dir, errors, include404 = true) =>
-  [404, 500, 502]
+const errorLocations = (dir) =>
+  [404, 500, 502, 504]
     .map((code) => {
-      const prefix = `/_proxy/errors/${code}/`;
       const documentUri = `/_proxy/error-documents/${code}`;
-      return `${code === 404 && !include404 ? '' : `error_page ${code === 502 ? '502 504' : code} ${documentUri};`}\n${assetLocation(documentUri, `${dir}/${code}.html`, { internal: true })}\n${(errors[code]?.exposed ?? []).map((path) => assetLocation(prefix + path, `/sites/${errors[code].directory}/${path}`, { access: 'allow all;' })).join('\n')}`;
+      return `error_page ${code} ${documentUri};\n${assetLocation(documentUri, `${dir}/error-${code}.html`, { internal: true })}`;
     })
+    .concat(assetLocation('/_proxy/error-icon.svg', `${dir}/error-icon.svg`, { access: 'allow all;' }))
     .join('\n');
 
 const containsPath = (base, path) => base === '/' || path === base || path.startsWith(base + '/');
@@ -58,7 +65,7 @@ function staticLocations(manifest, route, overrides) {
 export function render(
   policy,
   raw,
-  { revision, directory, readyDomains = [], wildcardDomains = readyDomains, staticSites = {}, errorSites = {}, bindIP, monitorPort, securityEnabled = false },
+  { revision, directory, readyDomains = [], wildcardDomains = readyDomains, staticSites = {}, bindIP, monitorPort, securityEnabled = false },
 ) {
   const snapshot = validateSnapshot(policy, raw),
     routes = snapshot.routes.filter((r) => r.published),
@@ -72,7 +79,7 @@ export function render(
   );
   for (const ip of policy.ingressIPs) {
     http.push(
-      `server { ${listen(ip, 80, 'default_server')} server_name _; ${errorLocations(directory, errorSites)} location / { return 404; } }`,
+      `server { ${listen(ip, 80, 'default_server')} server_name _; ${errorLocations(directory)} location / { return 404; } }`,
     );
     http.push(
       `server { ${listen(ip, 443, 'ssl default_server')} server_name _; ssl_reject_handshake on; }`,
@@ -80,7 +87,7 @@ export function render(
     for (const domain of policy.domains.filter((d) => ready.has(d.name))) {
       const pattern = domain.name.replace(/\./g, '\\.');
       http.push(
-        `server { ${listen(ip, 443, 'ssl')} server_name ~^${domain.subdomains && wildcard.has(domain.name) ? '(?:[a-z0-9-]+\\.)?' : ''}${pattern}$; ${certLines(domain.name)} if ($ssl_server_name != $host) { return 421; } ${errorLocations(directory, errorSites)} location / { return 404; } }`,
+        `server { ${listen(ip, 443, 'ssl')} server_name ~^${domain.subdomains && wildcard.has(domain.name) ? '(?:[a-z0-9-]+\\.)?' : ''}${pattern}$; ${certLines(domain.name)} if ($ssl_server_name != $host) { return 421; } ${errorLocations(directory)} location / { return 404; } }`,
       );
     }
   }
@@ -200,7 +207,7 @@ return 504 '{"error":"Management request timed out. Check the operation result b
 ${policy.ingressIPs.map((ip) => listen(ip, 443, 'ssl')).join(' ')} server_name ${r.hostname}; ${certLines(domain)}
 if ($ssl_server_name != $host) { return 421; }
 ${acl(r)}
-${errorLocations(directory, errorSites, r.kind !== 'http')}
+${errorLocations(directory)}
 client_max_body_size ${r.uploadMB}m;
 ${redirectRules}
 ${staticRules}
@@ -293,9 +300,10 @@ ${stream.join('\n')}
 `;
   return {
     config,
-    pages: Object.fromEntries(errorPageTypes.map(([code, key]) => [
-      `${code}.html`, errorSites[code]?.html ?? errorPage(code, snapshot.pages[key + 'Title'], snapshot.pages[key + 'Text']),
-    ])),
+    pages: {
+      ...Object.fromEntries([404, 500, 502, 504].map((code) => [`error-${code}.html`, errorPage(code)])),
+      'error-icon.svg': errorIcon,
+    },
     hash: activeHash(snapshot),
   };
 }

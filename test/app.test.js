@@ -9,7 +9,6 @@ import { hash, randomToken } from '../server/auth.js';
 import { policy, route } from './fixtures.js';
 import {
   Problem,
-  defaultPages,
   settingsFromPolicy,
   defaultSettings,
   effectivePolicy,
@@ -97,14 +96,6 @@ async function fixture(t, { empty = false } = {}) {
           count: exposed.length,
           files: exposed.map((path) => ({ path, allowed: true })),
         };
-      }
-      if (path === '/pages/validate') {
-        for (const [key, documentKey] of [['notFoundSite', 'notFoundDocument'], ['internalErrorSite', 'internalErrorDocument'], ['badGatewaySite', 'badGatewayDocument']]) {
-          const site = options.body[key];
-          if (site && !['index.html', 'app.js'].filter(fileFilter(site)).includes(options.body[documentKey]))
-            throw new Problem(400, 'Error page document must be exposed by its folder rules');
-        }
-        return { ok: true };
       }
       if (fail) throw new Problem(502, 'Candidate rejected');
       applies.push(options.body);
@@ -568,7 +559,7 @@ test('first run has no example domains, targets or services and accepts UI setup
   assert.deepEqual(f.store.get('settings'), settings);
 });
 
-test('wizard validation checks the current step without writes and error pages save independently', async (t) => {
+test('wizard validation checks the current step without writes', async (t) => {
   const f = await fixture(t), before = f.store.snapshot();
   const validate = (body) => f.request('/api/validate', { method: 'POST', body });
   assert.equal((await validate({ kind: 'route', step: 0, value: { name: ' ', kind: 'http' } })).status, 400);
@@ -579,36 +570,6 @@ test('wizard validation checks the current step without writes and error pages s
   assert.equal((await validate({ kind: 'folder', value: { directory: '/leading/', include: [], exclude: [] } })).status, 400);
   assert.deepEqual(f.store.snapshot(), before);
   assert.equal(f.applies.length, 0);
-  const gateway = { site: { directory: 'errors/gateway', include: [], exclude: [] }, document: 'index.html' };
-  assert.equal((await f.request('/api/pages/502', { method: 'PUT', body: gateway })).status, 200);
-  const notFound = { site: { directory: 'errors/not-found', include: [], exclude: [] }, document: 'missing.html' };
-  assert.equal((await validate({ kind: 'page', code: 404, value: notFound })).status, 400);
-  assert.deepEqual(f.store.snapshot().pages.badGatewaySite, gateway.site);
-  notFound.document = 'index.html';
-  assert.equal((await validate({ kind: 'page', code: 404, value: notFound })).status, 200);
-  assert.equal((await f.request('/api/pages/404', { method: 'PUT', body: notFound })).status, 200);
-  assert.deepEqual(f.store.snapshot().pages.badGatewaySite, gateway.site);
-  assert.deepEqual(f.store.snapshot().pages.notFoundSite, notFound.site);
-});
-
-test('500 page validation, saving and shared-folder updates stay independent of other error pages', async (t) => {
-  const f = await fixture(t), before = f.store.snapshot().pages;
-  const spec = { directory: 'errors/internal', include: [], exclude: [] };
-  const invalid = { site: spec, document: 'missing.html' };
-  assert.equal((await f.request('/api/validate', { method: 'POST', body: { kind: 'page', code: 500, value: invalid } })).status, 400);
-  assert.equal((await f.request('/api/pages/500', { method: 'PUT', body: invalid })).status, 400);
-  assert.deepEqual(f.store.snapshot().pages, before);
-  const selection = { site: spec, document: 'index.html' };
-  assert.equal((await f.request('/api/pages/500', { method: 'PUT', body: selection, authenticated: false })).status, 401);
-  assert.equal((await f.request('/api/pages/500', { method: 'PUT', body: selection })).status, 200);
-  assert.deepEqual(f.store.snapshot().pages, { ...before, internalErrorSite: spec });
-  assert.equal((await f.request('/api/sites/config', { method: 'PUT', body: spec })).status, 200);
-  assert.equal((await f.request('/api/sites/config', { method: 'DELETE', body: { directory: spec.directory } })).status, 409);
-  const moved = { ...spec, directory: 'errors/server' };
-  assert.equal((await f.request('/api/sites/config', { method: 'PUT', body: { ...moved, previousDirectory: spec.directory } })).status, 200);
-  assert.deepEqual(f.store.snapshot().pages.internalErrorSite, moved);
-  assert.equal((await f.request('/api/pages/500', { method: 'PUT', body: { site: null, document: 'index.html' } })).status, 200);
-  assert.equal(f.store.snapshot().pages.internalErrorSite, null);
 });
 
 test('domain CRUD, global preferences and admin origins preserve private access and certificate boundaries', async (t) => {
@@ -765,7 +726,7 @@ test('persistent SQLite state survives reopen without deleting old audit records
   const directory = await mkdtemp(join(tmpdir(), 'proxy-store-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   let store = new Store(join(directory, 'state.db'));
-  store.set('snapshot', { routes: [route()], pages: defaultPages });
+  store.set('snapshot', { routes: [route()] });
   store.set('settings', {
     ...settingsFromPolicy(policy()),
     komodo: { url: 'http://100.101.102.103:9120', servers: [{ id: 'home' }] },
@@ -1076,15 +1037,6 @@ test('Files rules persist per folder, update every use atomically and survive fa
       200,
     );
   }
-  assert.equal(
-    (
-      await f.request('/api/pages', {
-        method: 'PUT',
-        body: { ...defaultPages, badGatewaySite: { directory: 'public' } },
-      })
-    ).status,
-    200,
-  );
   const spec = { directory: 'public', include: [], exclude: ['app.js'] };
   assert.equal(
     (await f.request('/api/sites/config', { method: 'PUT', body: spec, authenticated: false }))
@@ -1111,7 +1063,6 @@ test('Files rules persist per folder, update every use atomically and survive fa
   );
   assert.equal((await f.request('/api/sites/config', { method: 'PUT', body: spec })).status, 200);
   for (const route of f.store.snapshot().routes) assert.deepEqual(route.staticSite, spec);
-  assert.deepEqual(f.store.snapshot().pages.badGatewaySite, spec);
   const prior = f.store.snapshot();
   f.setFail(true);
   assert.equal(
@@ -1154,15 +1105,7 @@ test('folder definitions are explicit, permit no index or exposed files, and mov
       body: route({ kind: 'static', staticSite: spec }),
     })
   ).json();
-  assert.equal(
-    (
-      await f.request('/api/pages', {
-        method: 'PUT',
-        body: { ...defaultPages, notFoundSite: spec, notFoundDocument: 'notice.html' },
-      })
-    ).status,
-    200,
-  );
+  assert.equal((await f.request(`/api/routes/${created.id}/publish`, { method: 'POST' })).status, 200);
   assert.equal(
     (await f.request('/api/sites/config', { method: 'DELETE', body: { directory: 'assets' } }))
       .status,
@@ -1197,8 +1140,6 @@ test('folder definitions are explicit, permit no index or exposed files, and mov
     f.store.snapshot().routes.find((route) => route.id === created.id).staticSite,
     moved,
   );
-  assert.deepEqual(f.store.snapshot().pages.notFoundSite, moved);
-  assert.equal(f.store.snapshot().pages.notFoundDocument, 'notice.html');
   assert.deepEqual(f.store.snapshot().sites, [moved]);
   assert.equal(
     (

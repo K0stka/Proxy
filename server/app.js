@@ -1,4 +1,3 @@
-import { errorPageTypes } from '../shared/pages.js';
 import { samePorts } from '../shared/ports.js';
 import http from 'node:http';
 import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
@@ -16,7 +15,6 @@ import {
   Problem,
   parse,
   routeSchema,
-  pagesSchema,
   validateSnapshot,
   snapshotHash,
   staticSiteSchema,
@@ -30,8 +28,6 @@ import {
   redirectURL,
   safeTarget,
   safeAddress,
-  defaultPages,
-  errorPageSchema,
 } from '../shared/model.js';
 import { bodyJSON, json, unixRequest } from '../shared/http.js';
 
@@ -83,7 +79,7 @@ export function createApp({
   function configuredFolders() {
     const snapshot = store.snapshot();
     const folders = new Map(snapshot.sites.map((site) => [site.directory, site]));
-    for (const site of [...snapshot.routes.map((route) => route.staticSite), ...errorPageTypes.map(([, key]) => snapshot.pages[key + 'Site'])])
+    for (const site of snapshot.routes.map((route) => route.staticSite))
       if (site && !folders.has(site.directory)) folders.set(site.directory, site);
     return [...folders.values()];
   }
@@ -103,22 +99,9 @@ export function createApp({
     return validateSnapshot(policy, {
       ...old,
       routes: old.routes.map((route) => ({ ...route, staticSite: update(route.staticSite) })),
-      pages: { ...old.pages, ...Object.fromEntries(errorPageTypes.map(([, key]) => [key + 'Site', update(old.pages[key + 'Site'])])) },
       sites: [...old.sites.filter((site) => site.directory !== previous), spec],
     });
   }
-  function pageSnapshot(code, value) {
-    const spec = parse(errorPageSchema, value), old = store.snapshot();
-    const [, key] = errorPageTypes.find(([value]) => value === code);
-    const siteKey = key + 'Site', documentKey = key + 'Document';
-    const next = validateSnapshot(policy, { ...old, pages: {
-      ...old.pages, [siteKey]: spec.site, [documentKey]: spec.document,
-    } });
-    return { next, selection: { ...defaultPages,
-      [siteKey]: next.pages[siteKey], [documentKey]: next.pages[documentKey],
-    } };
-  }
-  const checkPages = (pages) => edge('/pages/validate', { method: 'POST', body: pages });
   async function apply(next, nextPolicy = policy) {
     next = validateSnapshot(nextPolicy, next);
     const old = store.snapshot(),
@@ -403,14 +386,6 @@ export function createApp({
             const previous = input.previousDirectory === undefined ? spec.directory : parse(siteDirectory, input.previousDirectory);
             const next = folderSnapshot(spec, previous);
             await edge('/sites/inspect', { method: 'POST', body: spec });
-            const affected = { ...defaultPages };
-            for (const [key, documentKey] of errorPageTypes.map(([, key]) => [key + 'Site', key + 'Document']))
-              if (next.pages[key]?.directory === spec.directory) {
-                affected[key] = next.pages[key]; affected[documentKey] = next.pages[documentKey];
-              }
-            if (errorPageTypes.some(([, key]) => affected[key + 'Site'])) await checkPages(affected);
-          } else if (input?.kind === 'page' && errorPageTypes.some(([code]) => code === input.code)) {
-            await checkPages(pageSnapshot(input.code, value).selection);
           } else if (input?.kind === 'route' && [0, 1, 2].includes(input.step)) {
             const base = parse(routeFields.pick({ name: true, kind: true }).strip(), value);
             if (input.step === 1) {
@@ -433,16 +408,6 @@ export function createApp({
             }
           } else throw new Problem(400, 'Unknown validation step');
           json(res, { ok: true });
-          return;
-        }
-        const singlePage = path.match(/^\/api\/pages\/(404|500|502)$/);
-        if (singlePage && req.method === 'PUT') {
-          const input = await bodyJSON(req);
-          json(res, await serial(async () => {
-            const { next, selection } = pageSnapshot(Number(singlePage[1]), input);
-            await checkPages(selection);
-            return apply(next);
-          }));
           return;
         }
         const domainMatch = path.match(/^\/api\/domains(?:\/([^/]+))?$/);
@@ -508,13 +473,8 @@ export function createApp({
           const directory = parse(siteDirectory, (await bodyJSON(req))?.directory);
           await serial(() => {
             const old = store.snapshot();
-            if (
-              old.routes.some((route) => route.staticSite?.directory === directory) ||
-              errorPageTypes.map(([, key]) => old.pages[key + 'Site']).some(
-                (site) => site?.directory === directory,
-              )
-            )
-              throw new Problem(409, 'Folder is still used by a route or error page');
+            if (old.routes.some((route) => route.staticSite?.directory === directory))
+              throw new Problem(409, 'Folder is still used by a route');
             if (!old.sites.some((site) => site.directory === directory))
               throw new Problem(404, 'Folder not found');
             store.set('snapshot', {
@@ -611,11 +571,6 @@ export function createApp({
             throw new Problem(405, 'Method not allowed');
           });
           json(res, result);
-          return;
-        }
-        if (path === '/api/pages' && req.method === 'PUT') {
-          const pages = parse(pagesSchema, await bodyJSON(req));
-          json(res, await serial(() => apply({ ...store.snapshot(), pages })));
           return;
         }
         if (path === '/api/reconcile' && req.method === 'POST') {

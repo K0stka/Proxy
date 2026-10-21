@@ -23,8 +23,8 @@ state_file = ROOT / 'proxy-state.json'
 try:
     state = json.loads(state_file.read_text())
 except FileNotFoundError:
-    state = {'updates': True, 'duration': '4h', 'appsecExceptions': {'umamiDelete': True, 'socketIo': True}, 'updated': None, 'error': None}
-state.setdefault('appsecExceptions', {'umamiDelete': True, 'socketIo': True})
+    state = {'updates': True, 'duration': '4h', 'appsecExceptions': {'socketIo': True}, 'updated': None, 'error': None}
+state['appsecExceptions'] = {'socketIo': state.get('appsecExceptions', {}).get('socketIo', True)}
 key_file = ROOT / 'proxy-bouncer.key'
 if not key_file.exists():
     key_file.write_text(secrets.token_hex(32))
@@ -52,10 +52,6 @@ def appsec_config():
         rules.append('''   - filter: 'req.Method == "POST" && req.URL.Path == "/socket.io/" && req.Header.Get("Content-Type") matches "(?i)^text/plain(;|$)"'
      apply:
       - RemoveInBandRuleByID(920420)''')
-    if state['appsecExceptions'].get('umamiDelete', True):
-        rules.append('''   - filter: 'req.Host == "logs.krychlic.com" && req.Method == "DELETE" && req.URL.Path matches "^/api/websites/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"'
-     apply:
-      - RemoveInBandRuleByID(911100)''')
     block = '\n'.join(rules)
     (ROOT / 'appsec-configs' / 'proxy-crs.yaml').write_text('''name: proxy/crs
 default_remediation: ban
@@ -170,7 +166,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif self.path == '/policy':
                 exceptions = body.get('appsecExceptions')
                 if (body.get('duration') not in ('1h', '4h', '24h') or not isinstance(body.get('updates'), bool)
-                    or not isinstance(exceptions, dict) or set(exceptions) != {'umamiDelete', 'socketIo'}
+                    or not isinstance(exceptions, dict) or set(exceptions) != {'socketIo'}
                     or not all(isinstance(value, bool) for value in exceptions.values())):
                     return self.respond({'error': 'Invalid policy'}, 400)
                 if not lock.acquire(blocking=False):

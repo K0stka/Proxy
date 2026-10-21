@@ -88,10 +88,6 @@ test('browser history and refresh preserve pages, wizard steps and unsaved field
   nav.setWizard({ kind: 'domains', initial: { name: 'example.net', subdomains: false } });
   assert.equal(tab.location.pathname, '/domains/edit/example.net');
   assert.equal(createNavigation(tab.reload()).getSnapshot().wizard.initial.subdomains, false);
-  nav.setPage('Folders');
-  nav.setWizard({ kind: 'pages', code: 502 });
-  assert.equal(tab.location.pathname, '/settings/pages/502');
-  assert.equal(createNavigation(tab.reload()).getSnapshot().wizard.code, 502);
 });
 
 test('renamed folder links retain drafts saved under the old page name', () => {
@@ -130,19 +126,12 @@ test('old Files links resolve to Folders and Settings without losing wizard stat
   for (const [path, expectedPage, expectedPath] of [
     ['/files', 'Folders', '/folders'],
     ['/files/folder?step=1', 'Folders', '/folders/folder'],
-    ['/files/pages/502?step=1', 'Settings', '/settings/pages/502'],
-    ['/settings/pages/500?step=1', 'Settings', '/settings/pages/500'],
   ]) {
     const tab = browser([{ hash: path, state: null }]);
     const nav = createNavigation(tab);
     assert.equal(nav.getSnapshot().page, expectedPage);
     assert.equal(tab.location.pathname, expectedPath);
     if (path.includes('?')) assert.equal(nav.getSnapshot().step, 1);
-    if (path.includes('/pages/')) {
-      assert.equal(nav.getSnapshot().wizard.code, Number(path.split('/').at(-1).split('?')[0]));
-      nav.setWizard(null);
-      assert.equal(tab.location.pathname, '/settings');
-    }
   }
 });
 

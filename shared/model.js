@@ -72,10 +72,6 @@ export const defaultExcludedFiles = [
   '**/*.map',
   '**/*~',
 ];
-export const siteDocument = filePattern.refine(
-  (value) => !/[?*]/.test(value),
-  'Choose a relative document path without wildcards',
-);
 export const staticSiteSchema = z
   .object({
     directory: siteDirectory,
@@ -144,7 +140,7 @@ export const policyHash = (policy) =>
 export const redirectPath = z.string().max(512)
   .regex(/^\/[A-Za-z0-9._~/-]*$/, 'Use an absolute path without queries, fragments or encoded characters')
   .refine((value) => !value.includes('//') && !value.split('/').some((part) => ['.', '..'].includes(part)), 'Use a path without empty or relative segments')
-  .refine((value) => value !== '/_proxy' && !value.startsWith('/_proxy/'), 'This path is reserved for proxy error pages')
+  .refine((value) => value !== '/_proxy' && !value.startsWith('/_proxy/'), 'This path is reserved for proxy internals')
   .transform((value) => value === '/' ? value : value.replace(/\/$/, ''));
 export const redirectURL = z.string().trim().max(2048)
   .refine((value) => {
@@ -198,47 +194,11 @@ export const routeFields = z
   })
   .strict();
 export const routeSchema = routeFields.transform(({ interceptErrors, ...route }) => route);
-export const errorPageSchema = z.object({
-  site: staticSiteSchema.nullable(),
-  document: siteDocument,
-}).strict();
-export const pagesSchema = z
-  .object({
-    notFoundTitle: z.string().trim().min(1).max(100),
-    notFoundText: z.string().max(240),
-    badGatewayTitle: z.string().trim().min(1).max(100),
-    badGatewayText: z.string().max(240),
-    internalErrorTitle: z.string().trim().min(1).max(100).default('Something went wrong.'),
-    internalErrorText: z.string().max(240).default('An unexpected error occurred. Please try again shortly.'),
-    notFoundDocument: siteDocument.default('index.html'),
-    badGatewayDocument: siteDocument.default('index.html'),
-    notFoundSite: staticSiteSchema.nullable().default(null),
-    badGatewaySite: staticSiteSchema.nullable().default(null),
-    internalErrorDocument: siteDocument.default('index.html'),
-    internalErrorSite: staticSiteSchema.nullable().default(null),
-    // Accept older saved configurations, but discard the removed page setting.
-    gatewayTimeoutSite: z.unknown().optional(),
-  })
-  .strict()
-  .transform(({ gatewayTimeoutSite, ...pages }) => pages);
-export const defaultPages = {
-  notFoundTitle: 'Nothing here.',
-  notFoundText: 'This address has no website connected to it.',
-  badGatewayTitle: 'Back soon.',
-  badGatewayText: 'This service is temporarily unavailable. Please try again shortly.',
-  notFoundDocument: 'index.html',
-  badGatewayDocument: 'index.html',
-  notFoundSite: null,
-  badGatewaySite: null,
-  internalErrorTitle: 'Something went wrong.',
-  internalErrorText: 'An unexpected error occurred. Please try again shortly.',
-  internalErrorDocument: 'index.html',
-  internalErrorSite: null,
-};
 export const snapshotSchema = z
   .object({
     routes: z.array(routeSchema).max(500),
-    pages: pagesSchema,
+    // Accept and discard page settings from older saved snapshots.
+    pages: z.unknown().optional(),
     sites: z.array(staticSiteSchema).max(500).default([]),
   })
   .strict()
@@ -254,18 +214,12 @@ export const snapshotSchema = z
       ...route,
       staticSite: resolveSite(route.staticSite),
     }));
-    const pages = {
-      ...snapshot.pages,
-      notFoundSite: resolveSite(snapshot.pages.notFoundSite),
-      badGatewaySite: resolveSite(snapshot.pages.badGatewaySite),
-      internalErrorSite: resolveSite(snapshot.pages.internalErrorSite),
-    };
-    return { routes, pages, sites: [...profiles.values()] };
+    return { routes, sites: [...profiles.values()] };
   });
 export const snapshotHash = (snapshot) =>
   createHash('sha256')
     .update(
-      JSON.stringify({ routes: snapshot.routes.filter((r) => r.published), pages: snapshot.pages }),
+      JSON.stringify({ routes: snapshot.routes.filter((r) => r.published) }),
     )
     .digest('hex');
 export function parse(schema, value) {

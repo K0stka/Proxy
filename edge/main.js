@@ -20,14 +20,12 @@ import { promisify } from 'node:util';
 import {
   validateSnapshot,
   safeTarget,
-  defaultPages,
   Problem,
   defaultSettings,
   effectivePolicy,
   settingsFromPolicy,
   policyHash,
   parse,
-  pagesSchema,
 } from '../shared/model.js';
 import { bodyJSON, json } from '../shared/http.js';
 import { render } from './render.js';
@@ -81,7 +79,7 @@ if (security.enabled) {
 }
 let child,
   applied = null,
-  snapshot = { routes: [], pages: defaultPages },
+  snapshot = { routes: [] },
   tail = Promise.resolve(),
   certFingerprint = '',
   activeContent = null,
@@ -179,7 +177,6 @@ async function apply(raw, { initial = false, refreshContent = true, persist = tr
     readyDomains: certs.ready,
     wildcardDomains: certs.wildcard,
     staticSites: content.sites,
-    errorSites: content.errors,
     bindIP: process.env.PROXY_EDGE_BIND_IP,
     monitorPort: traffic.port,
     securityEnabled: security.enabled,
@@ -280,7 +277,7 @@ if (saved) {
     snapshot = validateSnapshot(policy, saved.snapshot);
   } catch {
     recovery = true;
-    snapshot = { routes: [], pages: defaultPages };
+    snapshot = { routes: [] };
     policy = effectivePolicy(deployment, defaultSettings);
   }
 }
@@ -372,12 +369,6 @@ const server = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {
           .filter(Boolean)
           .map((item) => item.address),
       });
-      return;
-    }
-    if (req.url === '/pages/validate' && req.method === 'POST') {
-      const pages = parse(pagesSchema, await bodyJSON(req));
-      await prepareSites({ routes: [], pages });
-      json(res, { ok: true });
       return;
     }
     if (req.url === '/sites/inspect' && req.method === 'POST') {

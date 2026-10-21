@@ -8,10 +8,10 @@ import dgram from 'node:dgram';
 import { spawn, execFileSync } from 'node:child_process';
 import { readFile, writeFile, mkdir, mkdtemp, symlink, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { defaultPages, settingsFromPolicy } from '../shared/model.js';
+import { settingsFromPolicy } from '../shared/model.js';
 import { unixRequest } from '../shared/http.js';
 import { route, policyEnv } from './fixtures.js';
-import { inspectSite, readSiteDocument } from '../edge/sites.js';
+import { inspectSite } from '../edge/sites.js';
 
 test(
   'Linux NGINX: real HTTPS, unknown hosts, error pages, WebSocket, TCP, UDP range, failed reload and restart',
@@ -307,13 +307,13 @@ test(
         tlsDomain: 'krychlic.com',
       }),
     ];
-    const snapshot = { routes, pages: defaultPages };
+    const snapshot = { routes };
     await t.test('redirect directory overrides work without a root, beside HTTP/static roots, and enforce CIDRs', async () => {
       const redirect = route({ kind: 'redirect', hostname: 'app.krychlic.com', path: '/something',
         ingressIP: '127.0.0.1', targetHost: '', redirectURL: 'https://example.net/landing?fixed=1', redirectStatus: 302, published: true });
       const apply = async (rules) => {
         try {
-          return await edgeRequest('/apply', { method: 'POST', body: { routes: rules, pages: defaultPages }, timeout: 20000 });
+          return await edgeRequest('/apply', { method: 'POST', body: { routes: rules }, timeout: 20000 });
         } catch (error) {
           console.error(logs.slice(-8000));
           throw error;
@@ -362,7 +362,7 @@ test(
       await writeFile('/sites/mounted/style.css', 'body { color: red; }');
       await writeFile('/sites/mounted/docs/index.html', 'Mounted docs');
       const site = route({ kind: 'static', hostname: 'app.krychlic.com', path: '/something', ingressIP: '127.0.0.1', staticSite: { directory: 'mounted' }, published: true });
-      const apply = (rules) => edgeRequest('/apply', { method: 'POST', body: { routes: rules, pages: defaultPages }, timeout: 20000 });
+      const apply = (rules) => edgeRequest('/apply', { method: 'POST', body: { routes: rules }, timeout: 20000 });
       const check = async () => {
         assert.equal((await request(site.hostname, '/something')).headers.location, 'https://app.krychlic.com/something/');
         const index = await request(site.hostname, '/something/');
@@ -413,7 +413,7 @@ test(
         await edgeRequest('/apply', { method: 'POST', body: { routes: [
           route({ kind: 'tcp', ingressIP: '127.0.0.1', ports: '52400, 52402-52403', targetHost: '127.0.0.2', published: true }),
           route({ kind: 'udp', ingressIP: '127.0.0.1', ports: '52000, 52002', targetHost: '127.0.0.2', published: true }),
-        ], pages: defaultPages }, timeout: 20000 });
+        ] }, timeout: 20000 });
         for (const port of [52400, 52402, 52403]) {
           const result = await new Promise((resolve, reject) => {
             const socket = net.connect(port, '127.0.0.1', () => socket.write('ping'));
@@ -448,15 +448,8 @@ test(
       async () => {
         await mkdir('/sites/assets-only');
         await mkdir('/sites/empty');
-        await mkdir('/sites/error-docs/nested', { recursive: true });
         await writeFile('/sites/assets-only/logo.svg', '<svg/>');
         await writeFile('/sites/assets-only/private.txt', 'private');
-        await writeFile(
-          '/sites/error-docs/nested/notice.htm',
-          '<head></head><h1>Explicit document</h1>',
-        );
-        await writeFile('/sites/error-docs/nested/style.css', 'body{color:blue}');
-        await writeFile('/sites/error-docs/index.html', 'Unused index');
         assert.equal((await inspectSite({ directory: 'empty' })).count, 0);
         const site = route({
           kind: 'static',
@@ -465,46 +458,24 @@ test(
           ingressIP: '127.0.0.1',
           staticSite: { directory: 'assets-only', include: ['*.svg'], exclude: [] },
         });
-        const next = {
-          routes: [...routes, site],
-          pages: {
-            ...defaultPages,
-            notFoundSite: { directory: 'error-docs' },
-            badGatewaySite: { directory: 'error-docs' },
-            notFoundDocument: 'nested/notice.htm',
-            badGatewayDocument: 'nested/notice.htm',
-          },
-        };
+        const next = { routes: [...routes, site] };
         await edgeRequest('/apply', { method: 'POST', body: next, timeout: 20000 });
         assert.equal((await request(site.hostname, '/logo.svg')).body, '<svg/>');
         for (const path of ['/', '/private.txt']) {
           const result = await request(site.hostname, path);
           assert.equal(result.status, 404);
-          assert.match(result.body, /Explicit document/);
+          assert.match(result.body, /Oops! Page not found/);
         }
         const gateway = await request('app.krychlic.com', '/api-error');
         assert.equal(gateway.status, 502);
-        assert.match(gateway.body, /Explicit document/);
-        assert.match(gateway.body, /_proxy\/errors\/502\/nested\//);
-        assert.equal(
-          (await request(site.hostname, '/_proxy/errors/502/nested/style.css')).body,
-          'body{color:blue}',
-        );
-        await assert.rejects(
-          edgeRequest('/apply', {
-            method: 'POST',
-            body: { ...next, pages: { ...next.pages, badGatewayDocument: 'missing.html' } },
-            timeout: 20000,
-          }),
-          /document/,
-        );
+        assert.match(gateway.body, /Oops! Bad Gateway/);
+        assert.match(gateway.body, /_proxy\/error-icon\.svg/);
         assert.equal((await request(site.hostname, '/logo.svg')).status, 200);
         await edgeRequest('/apply', { method: 'POST', body: snapshot, timeout: 20000 });
       },
     );
     await mkdir('/sites/public/docs', { recursive: true });
     await mkdir('/sites/public/.git', { recursive: true });
-    await mkdir('/sites/errors', { recursive: true });
     for (const [name, body] of Object.entries({
       'index.html': '<h1>Static home</h1>',
       'app.js': 'console.log(1)',
@@ -519,21 +490,11 @@ test(
     }))
       await writeFile(`/sites/public/${name}`, body);
     await symlink('/etc/passwd', '/sites/public/link.txt');
-    await writeFile(
-      '/sites/errors/index.html',
-      '<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body>Custom bundle<script src="app.js"></script></body></html>',
-    );
-    await writeFile('/sites/errors/style.css', 'body{color:red}');
-    await writeFile('/sites/errors/app.js', 'console.log("error bundle")');
     await t.test('folder reads reject symlinked parents and index files', async () => {
       await symlink('/sites/public', '/sites/linked');
       await assert.rejects(inspectSite({ directory: 'linked' }), /symlink/);
       await mkdir('/sites/linked-index');
       await symlink('/etc/passwd', '/sites/linked-index/index.html');
-      await assert.rejects(
-        readSiteDocument({ directory: 'linked-index' }, 'index.html'),
-        /unreadable/,
-      );
       assert.deepEqual((await inspectSite({ directory: 'linked-index' })).exposed, []);
     });
     await t.test(
@@ -549,11 +510,6 @@ test(
         const next = {
           routes: [...routes, site],
           sites: [{ directory: 'public', include: [], exclude: ['private.txt'] }],
-          pages: {
-            ...defaultPages,
-            notFoundSite: { directory: 'errors', include: [], exclude: [] },
-            badGatewaySite: { directory: 'errors', include: [], exclude: [] },
-          },
         };
         next.routes[0] = { ...next.routes[0], timeout: 5 };
         await edgeRequest('/apply', { method: 'POST', body: next, timeout: 20000 });
@@ -602,15 +558,10 @@ test(
         const missing = await request(site.hostname, '/missing');
         assert.equal(missing.status, 404);
         assert.match(missing.body, /<base href="\/_proxy\/errors\/404\/">/);
-        assert.match(missing.body, /Custom bundle/);
-        assert.equal(
-          (await request(site.hostname, '/_proxy/errors/404/style.css')).body,
-          'body{color:red}',
-        );
+        assert.match(missing.body, /Oops! Page not found/);
         const timeout = await request('app.krychlic.com', '/slow');
         assert.equal(timeout.status, 504);
-        assert.match(timeout.body, /Custom bundle/);
-        assert.match(timeout.body, /<base href="\/_proxy\/errors\/502\/">/);
+        assert.match(timeout.body, /Request timed out/);
         const bad = {
           ...next,
           routes: next.routes.map((r, i) => (i === 0 ? { ...r, targetPort: 18082 } : r)),
@@ -619,8 +570,7 @@ test(
         assert.equal((await request(site.hostname, '/new.txt')).body, 'new');
         const response = await request('app.krychlic.com');
         assert.equal(response.status, 502);
-        assert.match(response.body, /Custom bundle/);
-        assert.equal((await request('app.krychlic.com', '/_proxy/errors/502/app.js')).status, 200);
+        assert.match(response.body, /Oops! Bad Gateway/);
         const restricted = {
           ...next,
           routes: next.routes.map((r) =>

@@ -1,8 +1,7 @@
 # Security maintenance
 
-The public management hostname serves only trusted application content. Its error
-responses never load the configurable website error bundles. Ordinary websites
-keep their custom error pages. Public authentication POSTs are limited by NGINX
+The public management hostname serves only trusted application content. Ordinary
+websites use the proxy's embedded error pages. Public authentication POSTs are limited by NGINX
 using the actual TCP client address; forwarded headers cannot choose this key.
 The controller adds a separate global ceiling of 1,000 authentication requests
 per minute per management origin. Private Tailscale access retains that ceiling.

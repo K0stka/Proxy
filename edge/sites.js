@@ -1,7 +1,6 @@
-import { errorPageTypes } from '../shared/pages.js';
 import { open } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { Problem, parse, staticSiteSchema, siteDocument } from '../shared/model.js';
+import { Problem, parse, staticSiteSchema } from '../shared/model.js';
 
 export const MAX_SITE_FILES = 5000;
 const ROOT = '/sites';
@@ -121,59 +120,13 @@ export async function inspectSite(raw) {
   const exposed = files.filter((f) => f.allowed).map((f) => f.path);
   return { directory: spec.directory, files, exposed, count: exposed.length };
 }
-export async function readSiteDocument(spec, document) {
-  const parsed = parse(staticSiteSchema, spec);
-  document = parse(siteDocument, document);
-  let handle;
-  try {
-    handle = await openPath(`${parsed.directory}/${document}`, false);
-    const info = await handle.stat();
-    if (!info.isFile() || info.size > 1_000_000) throw Error();
-    const buffer = Buffer.alloc(1_000_001);
-    let size = 0;
-    while (size < buffer.length) {
-      const { bytesRead } = await handle.read(buffer, size, buffer.length - size, null);
-      if (!bytesRead) break;
-      size += bytesRead;
-    }
-    if (size > 1_000_000) throw Error();
-    return buffer.subarray(0, size).toString('utf8');
-  } catch {
-    throw new Problem(400, 'Error page document is unreadable or too large');
-  } finally {
-    await handle?.close();
-  }
-}
-export function errorDocument(html, code, document = 'index.html') {
-  const parent = document.includes('/') ? document.slice(0, document.lastIndexOf('/') + 1) : '';
-  const base = `<base href="/_proxy/errors/${code}/${parent.split('/').map(encodeURIComponent).join('/')}">`;
-  // First base wins, including over any base already present in the selected bundle.
-  if (/<head\b[^>]*>/i.test(html)) return html.replace(/<head\b[^>]*>/i, (match) => match + base);
-  if (/<!doctype[^>]*>/i.test(html))
-    return html.replace(/<!doctype[^>]*>/i, (match) => match + base);
-  return base + html;
-}
 export async function prepareSites(snapshot) {
-  const sites = {},
-    errors = {};
+  const sites = {};
   let count = 0;
   for (const route of snapshot.routes.filter((r) => r.published && r.kind === 'static')) {
     sites[route.id] = await inspectSite(route.staticSite);
     count += sites[route.id].count;
   }
-  for (const [code, key, documentKey] of errorPageTypes.map(([code, key]) => [code, key + 'Site', key + 'Document'])) {
-    if (!snapshot.pages[key]) continue;
-    const manifest = await inspectSite(snapshot.pages[key]);
-    const document = snapshot.pages[documentKey];
-    if (!manifest.exposed.includes(document))
-      throw new Problem(400, 'Error page document must be exposed by its folder rules');
-    count += manifest.count;
-    errors[code] = {
-      ...manifest,
-      document,
-      html: errorDocument(await readSiteDocument(snapshot.pages[key], document), code, document),
-    };
-  }
   if (count > 10000) throw new Problem(400, 'Too many exposed files across sites');
-  return { sites, errors };
+  return { sites };
 }

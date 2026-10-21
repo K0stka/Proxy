@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { defaultPages, parse, snapshotSchema, settingsFromPolicy } from './model.js';
+import { parse, snapshotSchema, settingsFromPolicy } from './model.js';
 
 export class Store {
   constructor(file) {
@@ -27,7 +27,7 @@ export class Store {
       .run(key, JSON.stringify(value));
   }
   snapshot() {
-    return parse(snapshotSchema, this.get('snapshot', { routes: [], pages: defaultPages }));
+    return parse(snapshotSchema, this.get('snapshot', { routes: [] }));
   }
   transaction(fn) {
     this.db.exec('BEGIN IMMEDIATE');

@@ -1,4 +1,3 @@
-import { errorPageTypes } from '../shared/pages.js';
 import { compareNames } from './order.js';
 import { portRanges, formatPorts, samePorts } from '../shared/ports.js';
 export const isWebsite = (route) => ['http', 'static', 'redirect'].includes(route.kind);
@@ -114,9 +113,6 @@ export function folderRules(state, directory) {
   return (
     state.sites.find((site) => site.directory === directory) ??
     state.routes.find((route) => route.staticSite?.directory === directory)?.staticSite ??
-    errorPageTypes.map(([, key]) => state.pages[key + 'Site']).find(
-      (site) => site?.directory === directory,
-    ) ??
     blankSite(directory)
   );
 }

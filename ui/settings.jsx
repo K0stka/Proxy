@@ -1,4 +1,3 @@
-import { errorPageTypes } from '../shared/pages.js';
 import { Button, NumberField, Disclosure } from './controls.jsx';
 import { TextInput, Switch, Stack, Group, Text, Anchor, Alert } from '@mantine/core';
 import React, { useState, useEffect } from 'react';
@@ -11,7 +10,7 @@ import DiscordAlerts from './discord.jsx';
 import { formatDateTime as when } from './date-time.js';
 import { defaultLogFilters } from '../shared/log-filters.js';
 import { subscribeUpdates } from './events.js';
-export default function Settings({ state, refresh, report, onLogout, onEditPage }) {
+export default function Settings({ state, refresh, report, onLogout }) {
   const { settingsSection } = useNavigation();
   const [preferences, setPreferences] = useState(state.settings);
   const [renaming, setRenaming] = useState(null),
@@ -218,25 +217,6 @@ export default function Settings({ state, refresh, report, onLogout, onEditPage 
             </Group>
           </Stack>
         </form>
-      </section>
-      <section id="error-pages" className="settings-section" aria-labelledby="error-pages-heading">
-        <h2 id="error-pages-heading">Error pages</h2>
-        <div className="error-page-list">
-          {errorPageTypes.map(([code, key, label]) => (
-            <article className="error-page-row" key={code}>
-              <span className="error-page-code">{code}</span>
-              <div className="error-page-info">
-                <h3>{label}</h3>
-                <code>{state.pages[key + 'Site']
-                  ? `/sites/${state.pages[key + 'Site'].directory}/${state.pages[key + 'Document']}`
-                  : 'Built-in page'}</code>
-              </div>
-              <Button className="icon-button" aria-label={`Edit ${code} page`} onClick={() => onEditPage(code)}>
-                <Pencil size={17} />
-              </Button>
-            </article>
-          ))}
-        </div>
       </section>
       <section id="notifications" className="settings-section" aria-label="Discord notifications">
         <DiscordAlerts />

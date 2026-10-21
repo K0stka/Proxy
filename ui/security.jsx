@@ -11,7 +11,7 @@ import Monitoring from './monitoring.jsx';
 import { api } from './api.js';
 import { subscribeUpdates } from './events.js';
 
-const initialPolicy = { mode: 'block', waf: true, behavior: true, reputation: true, updates: true, duration: '4h', failure: 'allow', routes: {}, appsecExceptions: { umamiDelete: true, socketIo: true } };
+const initialPolicy = { mode: 'block', waf: true, behavior: true, reputation: true, updates: true, duration: '4h', failure: 'allow', routes: {}, appsecExceptions: { socketIo: true } };
 function readPreview() {
   try { return JSON.parse(sessionStorage.getItem('proxy-security-preview') ?? '{}'); } catch { return {}; }
 }
@@ -208,7 +208,7 @@ export default function Security({ state, onLogout }) {
       </Stack></Paper><Paper withBorder className="logs-surface"><Stack gap="xl"><div><h2>Detection & updates</h2><p>Use maintained CrowdSec rules and reputation data.</p></div>
         {[['waf', 'Web application firewall', 'Inspect paths, query strings, headers, and supported request bodies for exploits.'], ['behavior', 'Behavioral detection', 'Detect scanning, repeated failures, and abusive request patterns.'], ['reputation', 'Community IP reputation', 'Apply CrowdSec decisions for known malicious IP addresses.'], ['updates', 'Automatic rule updates', 'Check daily, apply new rules, and alert if an update fails.']].map(([key, label, description]) => <Switch key={key} label={label} description={description} checked={policy[key]} onChange={(e) => change(key, e.currentTarget.checked)} />)}
         <div><h3>WAF compatibility exceptions</h3><p>Allow these application methods for their specific endpoints. Other WAF checks still apply.</p>
-          {[['umamiDelete', 'Umami website deletion', 'Allow DELETE on logs.krychlic.com/api/websites/<website UUID>.'], ['socketIo', 'Socket.IO plain text requests', 'Skip CRS rule 920420 for plain text POSTs to /socket.io/.']].map(([key, label, description]) => <Switch key={key} label={label} description={description} checked={policy.appsecExceptions?.[key] ?? true} onChange={(e) => change('appsecExceptions', { ...policy.appsecExceptions, [key]: e.currentTarget.checked })} />)}
+          {[['socketIo', 'Socket.IO plain text requests', 'Skip CRS rule 920420 for plain text POSTs to /socket.io/.']].map(([key, label, description]) => <Switch key={key} label={label} description={description} checked={policy.appsecExceptions?.[key] ?? true} onChange={(e) => change('appsecExceptions', { ...policy.appsecExceptions, [key]: e.currentTarget.checked })} />)}
         </div>
       </Stack></Paper></div>
       <Paper withBorder className="logs-surface security-route-policy"><div className="logs-panel-heading"><h2>Service overrides</h2><Help label="About service overrides">Use monitor only while tuning a service. Off bypasses inspection and blocking for that service.</Help></div><p>Temporarily relax a service without changing protection everywhere else.</p>

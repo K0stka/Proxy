@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { validatePolicy, defaultPages } from '../shared/model.js';
+import { validatePolicy } from '../shared/model.js';
 
 export function policy() {
   return validatePolicy(
@@ -37,7 +37,7 @@ export function route(changes = {}) {
     ...changes,
   };
 }
-export const snapshot = (routes) => ({ routes, pages: { ...defaultPages } });
+export const snapshot = (routes) => ({ routes });
 
 export function policyEnv(p) {
   return { PROXY_ORIGIN: p.origin, PROXY_INGRESS_IPS: p.ingressIPs.join(',') };

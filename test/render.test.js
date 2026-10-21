@@ -50,7 +50,8 @@ test('HTTPS sanitizes headers, verifies TLS and always uses shared gateway error
     'proxy_set_header Upgrade $http_upgrade;',
     'proxy_buffering off;',
     'proxy_intercept_errors on;',
-    'error_page 502 504 /_proxy/error-documents/502;',
+    'error_page 502 /_proxy/error-documents/502;',
+    'error_page 504 /_proxy/error-documents/504;',
   ])
     assert(output.includes(directive));
   assert(!output.includes('$proxy_add_x_forwarded_for'));
@@ -73,15 +74,20 @@ test('unknown TLS rejects; covered catchall is a regex so apex routes retain exa
 
 test('shared error documents have an explicit HTML content type despite extensionless internal URLs', () => {
   const output = render(policy(), snapshot([]), options).config;
-  for (const code of [404, 500, 502]) {
+  for (const code of [404, 500, 502, 504]) {
     assert.ok(output.includes(`location = "/_proxy/error-documents/${code}" { internal; types {} default_type text/html; charset utf-8;`));
   }
 });
-test('page text is escaped and draft changes do not change applied-state hash', () => {
-  const page = errorPage(502, '<script>alert(1)</script>', '<img src=x onerror=alert(1)>');
-  assert(!page.includes('<script>'));
-  assert(!page.includes('<img'));
-  assert(page.includes('&lt;script&gt;'));
+test('embedded error pages have status-specific copy and a local favicon', () => {
+  for (const [code, title] of [[404, 'Oops! Page not found'], [500, 'Internal server error'], [502, 'Oops! Bad Gateway'], [504, 'Request timed out']]) {
+    const page = errorPage(code);
+    assert(page.includes(title));
+    assert(page.includes('/_proxy/error-icon.svg'));
+    assert(!page.includes('umami') && !page.includes('fonts.googleapis.com'));
+  }
+  const output = render(policy(), snapshot([]), options);
+  assert.match(output.config, /location = "\/_proxy\/error-icon\.svg"/);
+  assert.ok(output.pages['error-icon.svg'].includes('<svg'));
   const s = snapshot([]);
   assert.equal(activeHash(s), activeHash({ ...s, routes: [route()] }));
   assert.notEqual(activeHash(s), activeHash(snapshot([route({ published: true })])));

@@ -30,7 +30,7 @@ test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statist
   await unlink('/tmp/proxy-security.sock').catch(() => {});
   await new Promise((r) => server.listen('/tmp/proxy-security.sock', r));
   await chmod('/tmp/proxy-security.sock', 0o600);
-  let config = render(policy, { routes: [], sites: [], pages: (await import('../shared/model.js')).defaultPages }, {
+  let config = render(policy, { routes: [], sites: [] }, {
     revision: 'crowdsec-test', directory, monitorPort: traffic.port, securityEnabled: true,
   }).config.replaceAll('127.0.0.1:80', '127.0.0.1:18080').replaceAll('127.0.0.1:443', '127.0.0.1:18443');
   // Trusted-proxy rewriting is restricted to this test listener; production never trusts these headers.
