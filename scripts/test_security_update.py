@@ -2,6 +2,8 @@ import importlib.util
 from pathlib import Path
 import unittest
 import tempfile
+import io
+import tarfile
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('security_update', Path(__file__).with_name('security-update.py'))
@@ -10,6 +12,27 @@ spec.loader.exec_module(updater)
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_candidate_archive_directories_are_traversable_under_private_umask(self):
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode='w:gz') as source:
+            for name, kind, mode, data in [('ui', tarfile.DIRTYPE, 0o755, None),
+                                           ('ui/main.jsx', tarfile.REGTYPE, 0o644, b'export {}')]:
+                item = tarfile.TarInfo(name)
+                item.type, item.mode = kind, mode
+                if data is not None:
+                    item.size = len(data)
+                    source.addfile(item, io.BytesIO(data))
+                else:
+                    source.addfile(item)
+        archive.seek(0)
+        with tempfile.TemporaryDirectory() as directory:
+            previous = updater.os.umask(0o077)
+            try:
+                updater.extract_candidate(archive, Path(directory))
+            finally:
+                updater.os.umask(previous)
+            self.assertEqual((Path(directory) / 'ui').stat().st_mode & 0o777, 0o755)
+
     def test_crowdsec_upgrade_adds_only_the_private_readonly_socket_volume(self):
         templates = {'edge': {'mounts': [{'Source': '/state', 'Destination': '/runtime', 'RW': True}]}}
         fresh = {'services': {'edge': {'environment': {'PROXY_CROWDSEC_ENABLED': 'true'}}},

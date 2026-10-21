@@ -41,7 +41,9 @@ if p.action == "Blocked" then return ngx.exit(403) end
 local managementAPI = ngx.var.monitor_service == "management"
   and string.sub(ngx.var.uri or "", 1, 5) == "/api/"
   and string.sub(ngx.var.uri or "", 1, 10) ~= "/api/auth/"
-if p.waf and not managementAPI then
+-- CrowdSec AppSec always returns deny remediation and can create an IP ban;
+-- only run it in blocking mode so monitor-only overrides cannot trigger bans.
+if p.waf and p.mode == "block" and not managementAPI then
   local cs = require "crowdsec"
   if not cs.proxy_initialized then cs.proxy_initialized = cs.init('/security-ipc/bouncer.conf', 'proxy-crowdsec/1') end
   local called, ok, remediation, status, extra, err = pcall(cs.AppSecCheck, ngx.var.remote_addr)

@@ -38,6 +38,15 @@ def compose(directory):
     return args
 
 
+def extract_candidate(archive, destination):
+    previous_umask = os.umask(0o022)
+    try:
+        with tarfile.open(fileobj=archive) as source:
+            source.extractall(destination, filter='data')
+    finally:
+        os.umask(previous_umask)
+
+
 def cleanup_docker_artifacts():
     for command in (
         ['docker', 'buildx', 'prune', '--force', '--max-used-space', '4GB'],
@@ -267,8 +276,7 @@ def main():
     with tempfile.TemporaryFile() as archive:
         subprocess.check_call(['git', 'archive', revision], cwd=repo, stdout=archive)
         archive.seek(0)
-        with tarfile.open(fileobj=archive) as source:
-            source.extractall(candidate, filter='data')
+        extract_candidate(archive, candidate)
     shutil.copyfile(repo / '.env', candidate / '.env')
     try:
         # No build/pull operation may change a running container before these tests pass.
