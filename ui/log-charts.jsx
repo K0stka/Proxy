@@ -7,7 +7,31 @@ import { logSelection, logSelectionIndices } from './log-period.js';
 import { formatDateTime } from './date-time.js';
 const time = (minute) => formatDateTime(minute * 60000);
 const number = (value) => value.toLocaleString();
-export default function LogCharts({ summary, outcomeSummary = summary, periodLabel = 'Today', outcomePeriodLabel = periodLabel,
+const serviceColors = ['#38b89a', '#e7af55', '#8c7be5', '#53a7d8', '#e7799b', '#91b85b', '#dd8753', '#77849b'];
+function ServicePie({ title, field, breakdown = [], names }) {
+  const rows = breakdown.map((item) => ({ name: names.get(item.service) ?? `Previous route · ${item.service.slice(0, 8)}`, value: item[field] ?? 0 }))
+    .filter((item) => item.value > 0).sort((a, b) => b.value - a.value);
+  const shown = rows.slice(0, 7), other = rows.slice(7).reduce((sum, item) => sum + item.value, 0);
+  if (other) shown.push({ name: 'Other services', value: other });
+  const total = shown.reduce((sum, item) => sum + item.value, 0);
+  let offset = 0;
+  return <Paper withBorder className="logs-surface logs-service-pie">
+    <div className="logs-panel-heading"><h3>{title}</h3><span className="logs-caption">{number(total)} responses</span></div>
+    {!total ? <p className="logs-caption">No responses in this period.</p> : <div className="logs-service-pie-content">
+      <svg viewBox="0 0 120 120" role="img" aria-label={`${title} by service: ${shown.map((item) => `${item.name} ${item.value}`).join(', ')}`}>
+        {shown.length === 1 ? <circle cx="60" cy="60" r="56" fill={serviceColors[0]} /> : shown.map((item, i) => {
+          const fraction = item.value / total, start = offset, end = start + fraction * Math.PI * 2;
+          offset = end;
+          const point = (angle) => [60 + 56 * Math.cos(angle - Math.PI / 2), 60 + 56 * Math.sin(angle - Math.PI / 2)];
+          const [x1, y1] = point(start), [x2, y2] = point(end);
+          return <path key={item.name} d={`M 60 60 L ${x1} ${y1} A 56 56 0 ${fraction > 0.5 ? 1 : 0} 1 ${x2} ${y2} Z`} fill={serviceColors[i % serviceColors.length}><title>{item.name}: {number(item.value)} ({(fraction * 100).toFixed(1)}%)</title></path>;
+        })}
+      </svg>
+      <ul>{shown.map((item, i) => <li key={item.name}><span><i style={{ background: serviceColors[i % serviceColors.length] }} />{item.name}</span><strong>{(item.value / total * 100).toFixed(1)}%</strong></li>)}</ul>
+    </div>}
+  </Paper>;
+}
+export default function LogCharts({ summary, outcomeSummary = summary, serviceNames = new Map(), periodLabel = 'Today', outcomePeriodLabel = periodLabel,
   selection = null, onSelectionChange, onClearSelection }) {
   const id = useId(), [hover, setHover] = useState(null), [draft, setDraft] = useState(null), drag = useRef(null);
   const buckets = summary?.buckets ?? [], chartTotals = summary?.totals, totals = outcomeSummary?.totals;
@@ -45,7 +69,7 @@ export default function LogCharts({ summary, outcomeSummary = summary, periodLab
     { label: 'Server errors', value: totals?.serverErrors ?? 0, color: '#ea7171' },
   ];
   let offset = 0;
-  return <div className="logs-chart-grid">
+  return <><div className="logs-chart-grid">
     <Paper withBorder className="logs-surface">
       <div className="logs-panel-heading"><div><h2>Traffic</h2><span className="logs-caption">{periodLabel} · selected services</span></div>
         <div className="logs-chart-actions">{selection && <Button className="text-button small" onClick={onClearSelection}>Clear interval</Button>}
@@ -115,5 +139,9 @@ export default function LogCharts({ summary, outcomeSummary = summary, periodLab
       </div>
       <div className="logs-outcomes">{outcomes.map((o, i) => <div key={o.label}><span><i className={`legend-dot ${['success', 'warning', 'errors'][i]}`} />{o.label}</span><strong>{totals ? number(o.value) : '—'}</strong></div>)}</div>
     </Paper>
-  </div>;
+  </div><div className="logs-service-pies" aria-label="Response types by service">
+    <ServicePie title="Successful · by service" field="success" breakdown={outcomeSummary?.serviceBreakdown} names={serviceNames} />
+    <ServicePie title="Client errors · by service" field="clientErrors" breakdown={outcomeSummary?.serviceBreakdown} names={serviceNames} />
+    <ServicePie title="Server errors · by service" field="serverErrors" breakdown={outcomeSummary?.serviceBreakdown} names={serviceNames} />
+  </div></>;
 }

@@ -174,7 +174,7 @@ export default function Security({ state, onLogout }) {
       <div className="logs-metrics">
         <Metric label="Blocked requests" value={blocked.toLocaleString()} detail={`${(inspected ? blocked / inspected * 100 : 0).toFixed(1)}% of inspected HTTP requests`} icon={ShieldCheck} />
         <Metric label="Detected threats" value={(preview ? Math.round(1386 * factor) : data.counts.detected).toLocaleString()} detail="Includes blocked and monitor-only matches" icon={ShieldAlert} />
-        <Metric label="Active IP bans" value={preview ? active.length : data.activeBans} detail="Current bans" icon={ShieldOff} />
+        <Metric label="Active local IP bans" value={preview ? active.length : data.activeBans} detail="Locally issued; excludes reputation feeds" icon={ShieldOff} />
         <Metric label="Inspected requests" value={inspected.toLocaleString()} detail="HTTP traffic across protected services" icon={Activity} />
       </div>
       <div className="logs-chart-grid">

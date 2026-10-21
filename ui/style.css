@@ -1889,6 +1889,16 @@ textarea):focus-visible {
 .logs-outcomes { display: grid; gap: 9px; }
 .logs-outcomes > div { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
 .logs-outcomes strong { font-weight: 500; font-variant-numeric: tabular-nums; }
+.logs-service-pies { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.logs-service-pie { min-width: 0; }
+.logs-service-pie-content { display: grid; grid-template-columns: 130px minmax(0, 1fr); align-items: center; gap: 14px; }
+.logs-service-pie-content svg { width: 100%; height: auto; }
+.logs-service-pie-content ul { list-style: none; display: grid; gap: 8px; margin: 0; padding: 0; min-width: 0; }
+.logs-service-pie-content li, .logs-service-pie-content li > span { display: flex; align-items: center; min-width: 0; gap: 7px; }
+.logs-service-pie-content li { justify-content: space-between; font-size: 11px; }
+.logs-service-pie-content li > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.logs-service-pie-content li i { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
+.logs-service-pie-content li strong { font-weight: 500; font-variant-numeric: tabular-nums; }
 .logs-events { display: grid; gap: 18px; }
 .logs-events > .logs-panel-heading { margin-bottom: 0; }
 .logs-table { font-size: 12px; }
@@ -1917,6 +1927,7 @@ textarea):focus-visible {
 @media (max-width: 1000px) {
   .logs-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .logs-chart-grid { grid-template-columns: minmax(0, 1fr); }
+  .logs-service-pies { grid-template-columns: minmax(0, 1fr); }
   .logs-donut { margin-bottom: 0; }
 }
 @media (max-width: 760px) {

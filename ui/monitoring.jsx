@@ -141,7 +141,7 @@ export default function Monitoring({ state, onLogout, audit = false, view = null
     {!audit && kind === 'traffic' && <div className="logs-metrics">{metrics.map(({ label, value, detail, icon: Icon }) => <Paper key={label} withBorder className="logs-metric">
       <div className="logs-metric-label">{label}<Icon size={17} /></div><strong>{value}</strong><span>{detail}</span>
     </Paper>)}</div>}
-    {!audit && kind === 'traffic' && <LogCharts summary={customInterval ? chartSummary : summary} outcomeSummary={summary}
+    {!audit && kind === 'traffic' && <LogCharts summary={customInterval ? chartSummary : summary} outcomeSummary={summary} serviceNames={names}
       periodLabel={presetLabel} outcomePeriodLabel={periodLabel} selection={customInterval} onSelectionChange={setCustomInterval}
       onClearSelection={() => setCustomInterval(null)} />}
     <Paper withBorder className="logs-surface logs-events">

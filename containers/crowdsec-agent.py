@@ -150,7 +150,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # Return operational metadata only, not request headers, bodies, or engine credentials.
             self.respond({'available': child.poll() is None, 'updated': state.get('updated'),
                           'error': state.get('error'), 'updating': lock.locked(),
-                          'active_bans': sum(d.get('type') == 'ban' for d in decisions),
+                          'active_bans': sum(d.get('type') == 'ban' and d.get('origin') not in ('CAPI', 'lists') for d in decisions),
                           'decisions': [{k: d.get(k) for k in ('id', 'value', 'scope', 'origin', 'scenario', 'duration', 'type')} for d in decisions[:5000]],
                           'alerts': [{k: a.get(k) for k in ('id', 'scenario', 'created_at', 'source', 'kind', 'remediation')} for a in alerts[:100]]})
         except Exception:

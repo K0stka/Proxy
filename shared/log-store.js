@@ -175,6 +175,11 @@ export class LogStore {
       for (const key of ['count', 'requests', 'alerts', 'success', 'clientErrors', 'serverErrors']) sum[key] += bucket[key] ?? 0;
       return sum;
     }, { count: 0, requests: 0, alerts: 0, success: 0, clientErrors: 0, serverErrors: 0 });
+    const serviceBreakdown = this.db.prepare(`SELECT service,
+      SUM(CAST(json_extract(data,'$.status') AS INTEGER)<400) AS success,
+      SUM(CAST(json_extract(data,'$.status') AS INTEGER) BETWEEN 400 AND 499) AS clientErrors,
+      SUM(CAST(json_extract(data,'$.status') AS INTEGER)>=500) AS serverErrors
+      ${where} AND kind='traffic'${filter.sql} GROUP BY service`).all(...parameters, ...filter.values);
     const choiceFields = ['event', 'action', 'suspicious', 'method', 'status', 'severity', 'role'];
     const optionalFields = ['generation', 'role', 'details', 'severity', 'source', 'method', 'url', 'status', 'action'];
     const choices = this.db.prepare(`SELECT ${choiceFields.map((field) =>
@@ -182,7 +187,7 @@ export class LogStore {
       `MAX(COALESCE(CAST(${filterColumns[field]} AS TEXT),'')!='') AS has_${field}`)).join(',')} ${where}`).get(...parameters);
     const options = Object.fromEntries(choiceFields.map((field) => [field, JSON.parse(choices[field]).sort()]));
     const fields = optionalFields.filter((field) => choices[`has_${field}`]);
-    const value = { buckets, totals, from, to, step, options, fields };
+    const value = { buckets, totals, serviceBreakdown, from, to, step, options, fields };
     this.summaryCache = { at: this.now(), key, value };
     return value;
   }
