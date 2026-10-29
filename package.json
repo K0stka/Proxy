@@ -20,8 +20,8 @@
     "hooks:install": "git config --local core.hooksPath .githooks"
   },
   "dependencies": {
-    "@mantine/core": "9.7.3",
-    "@mantine/hooks": "9.7.3",
+    "@mantine/core": "9.7.4",
+    "@mantine/hooks": "9.7.4",
     "@simplewebauthn/browser": "14.0.0",
     "@simplewebauthn/server": "14.0.3",
     "lucide-react": "0.577.0",
