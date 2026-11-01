@@ -18,7 +18,37 @@ const errorCopy = {
 const errorIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#101824"/><text x="32" y="48" text-anchor="middle" font-family="Arial,sans-serif" font-size="48" font-weight="700" fill="#f8fafc">!</text></svg>';
 export function errorPage(code) {
   const [title, text] = errorCopy[code];
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><link rel="icon" type="image/svg+xml" href="/_proxy/error-icon.svg"><title>Error ${code}: ${title}</title><style>*{box-sizing:border-box}html,body{height:100%;margin:0;font:16px/1.6 system-ui,-apple-system,sans-serif;color:#f8fafc;background:linear-gradient(135deg,#040810,#0a101c);display:grid;place-items:center}body:before,body:after{content:"";position:fixed;width:60vw;height:60vw;border-radius:50%;filter:blur(90px);opacity:.16;pointer-events:none}body:before{background:#7873f5;top:-35vw;left:-20vw}body:after{background:#3bb2b8;bottom:-40vw;right:-25vw}main{position:relative;margin:2rem;padding:3.5rem 3rem;max-width:30rem;text-align:center;border:1px solid #ffffff18;border-radius:20px;background:#ffffff08;backdrop-filter:blur(30px)}small{letter-spacing:.15em;opacity:.65}h1{font-size:clamp(1.6rem,5vw,2.2rem);line-height:1.2;font-weight:600;margin:1rem 0}p{color:#cbd5e1;margin:0}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}</style></head><body><main><small>${code}</small><h1>${escapeHTML(title)}</h1><p>${escapeHTML(text)}</p></main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><link rel="icon" type="image/svg+xml" href="/_proxy/error-icon.svg"><title>Error ${code}: ${escapeHTML(title)}</title><style>
+*{box-sizing:border-box}html,body{margin:0}body{display:grid;place-items:center;min-height:100vh;min-height:100dvh;overflow-x:hidden;padding:4rem 1.5rem;font:16px/1.6 Inter,system-ui,-apple-system,sans-serif;color:#f8fafc;background:linear-gradient(135deg,#040810 0%,#060a14 25%,#080e18 50%,#090f1a 75%,#0a101c 100%)}.glows{position:fixed;inset:0;overflow:hidden;pointer-events:none}.glow{position:absolute;border-radius:50%;filter:blur(35px);opacity:var(--opacity);width:var(--size);height:var(--size);top:var(--top);left:var(--left);background:var(--color)}.glow:nth-child(1){--size:75rem;--top:-40rem;--left:-30rem;--opacity:.18;--color:radial-gradient(circle,#ff6ec4,#7873f5 42%,transparent 75%)}.glow:nth-child(2){--size:70rem;--top:10%;--left:55%;--opacity:.15;--color:radial-gradient(circle,#42e695,#3bb2b8 42%,transparent 75%)}.glow:nth-child(3){--size:55rem;--top:-25rem;--left:65%;--opacity:.12;--color:radial-gradient(circle,#f7971e,#ffd200 42%,transparent 75%)}.glow:nth-child(4){--size:42rem;--top:55%;--left:-15rem;--opacity:.17;--color:radial-gradient(circle,#43cea2,#185a9d 42%,transparent 75%)}.glow:nth-child(5){--size:45rem;--top:35%;--left:30%;--opacity:.12;--color:radial-gradient(circle,#ff512f,#dd2476 42%,transparent 75%)}main{position:relative;width:min(100%,30rem);padding:3.5rem 3rem;text-align:center;border:1px solid #ffffff14;border-radius:20px;background:#ffffff08;backdrop-filter:blur(40px) saturate(180%)}h1{margin:0 0 1.5rem;font-size:clamp(3.5rem,12vw,6rem);font-weight:800;letter-spacing:-.02em;line-height:1;text-shadow:0 2px 8px #0005}h2{margin:0 0 1.25rem;font-size:clamp(1.5rem,4.5vw,2rem);font-weight:600;letter-spacing:-.01em;line-height:1.2}p{margin:0;color:#cbd5e1;font-size:clamp(1rem,3vw,1.125rem)}footer{position:fixed;bottom:0;left:0;width:100%;padding:1.5rem;text-align:center;background:linear-gradient(0deg,#040810b3,transparent)}footer a{display:inline-flex;align-items:center;gap:.6rem;padding:.5rem 1rem;border-radius:8px;color:#cbd5e1;font-size:.875rem;font-weight:500;text-decoration:none;transition:color .2s ease,background .2s ease,transform .2s ease}footer a:hover,footer a:focus-visible{color:#f8fafc;background:#ffffff0d;outline:2px solid #e2e8f0;outline-offset:2px;transform:translateY(-1px)}footer svg{width:1.1em;height:1.1em;fill:currentColor;transition:transform .2s ease}footer a:hover svg,footer a:focus-visible svg{transform:scale(1.1)}@media(max-width:480px){main{padding:2.75rem 1.75rem}}@media(prefers-reduced-transparency:reduce){main{background:#101824}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style></head><body><div class="glows" aria-hidden="true"><div class="glow"></div><div class="glow"></div><div class="glow"></div><div class="glow"></div><div class="glow"></div></div><main><h1>${code}</h1><h2>${escapeHTML(title)}</h2><p>${escapeHTML(text)}</p></main><footer><a href="https://github.com/K0stka" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2.17c-3.22.7-3.9-1.37-3.9-1.37-.53-1.35-1.29-1.71-1.29-1.71-1.06-.72.08-.71.08-.71 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.73 1.27 3.4.97.1-.75.4-1.27.74-1.56-2.57-.29-5.27-1.29-5.27-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.16 1.18A11 11 0 0 1 12 6.3c.98 0 1.96.13 2.88.39 2.2-1.49 3.16-1.18 3.16-1.18.62 1.59.23 2.76.11 3.05.73.8 1.18 1.83 1.18 3.08 0 4.4-2.7 5.38-5.28 5.67.41.36.77 1.07.77 2.15v2.89c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>Website by K0stka</a></footer><script>
+const glows = document.querySelectorAll('.glow');
+const motion = matchMedia('(prefers-reduced-motion: reduce)');
+let pointerX = .5, pointerY = .5, frame;
+addEventListener('pointermove', (event) => {
+  pointerX = event.clientX / innerWidth;
+  pointerY = event.clientY / innerHeight;
+}, { passive: true });
+function animate(time) {
+  glows.forEach((glow, index) => {
+    const phase = time * .00035 * (1 + index * .15) + index;
+    const x = Math.sin(phase) * (12 + index * 3) + (pointerX - .5) * (index % 2 ? -24 : 24);
+    const y = Math.cos(phase * .8) * (12 + index * 3) + (pointerY - .5) * (index % 2 ? 24 : -24);
+    glow.style.transform = \`translate3d(\${x}px,\${y}px,0)\`;
+  });
+  frame = requestAnimationFrame(animate);
+}
+function syncMotion() {
+  cancelAnimationFrame(frame);
+  if (document.hidden || motion.matches) {
+    glows.forEach((glow) => { glow.style.transform = ''; });
+  } else {
+    frame = requestAnimationFrame(animate);
+  }
+}
+document.addEventListener('visibilitychange', syncMotion);
+motion.addEventListener('change', syncMotion);
+syncMotion();
+</script></body></html>`;
 }
 const certLines = (domain) =>
   `ssl_certificate /tls/live/${domain}/fullchain.pem;\nssl_certificate_key /tls/live/${domain}/privkey.pem;\nssl_protocols TLSv1.2 TLSv1.3;\nssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;\nssl_session_tickets off;`;

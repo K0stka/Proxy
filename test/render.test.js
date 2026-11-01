@@ -83,6 +83,9 @@ test('embedded error pages have status-specific copy and a local favicon', () =>
     const page = errorPage(code);
     assert(page.includes(title));
     assert(page.includes('/_proxy/error-icon.svg'));
+    assert(page.includes('Website by K0stka') && page.includes('<svg viewBox="0 0 24 24"'));
+    assert(page.includes('prefers-reduced-motion') && page.includes('pointermove'));
+    new Function(page.match(/<script>([\s\S]*?)<\/script>/)[1]);
     assert(!page.includes('umami') && !page.includes('fonts.googleapis.com'));
   }
   const output = render(policy(), snapshot([]), options);
