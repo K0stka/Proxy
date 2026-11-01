@@ -70,7 +70,7 @@ test('renderer exposes checked site files and embeds the shared error pages', ()
   assert.match(output.config, /location \/ \{ return 404;/);
   assert.match(output.config, /error_page 404 \/_proxy\/error-documents\/404;/);
   assert.match(output.config, /location = "\/_proxy\/error-icon\.svg"/);
-  assert.match(output.pages['error-404.html'], /Oops! Page not found/);
+  assert.match(output.pages['error-404.html'], /Page not found/);
   assert.throws(
     () =>
       render(policy(), snapshot([site]), {

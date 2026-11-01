@@ -79,13 +79,24 @@ test('shared error documents have an explicit HTML content type despite extensio
   }
 });
 test('embedded error pages have status-specific copy and a local favicon', () => {
-  for (const [code, title] of [[404, 'Oops! Page not found'], [500, 'Internal server error'], [502, 'Oops! Bad Gateway'], [504, 'Request timed out']]) {
+  for (const [code, title] of [[404, 'Page not found'], [500, 'Internal server error'], [502, 'Bad Gateway'], [504, 'Request timed out']]) {
     const page = errorPage(code);
     assert(page.includes(title));
     assert(page.includes('/_proxy/error-icon.svg'));
     assert(page.includes('Website by K0stka') && page.includes('<svg viewBox="0 0 24 24"'));
-    assert(page.includes('prefers-reduced-motion') && page.includes('pointermove'));
-    new Function(page.match(/<script>([\s\S]*?)<\/script>/)[1]);
+    assert(page.includes('prefers-reduced-motion') && page.includes('class="waves"'));
+    assert(page.includes('waveA') && page.includes('waveB') && page.includes('waveC'));
+    assert(page.includes('class="waves"') && !page.includes('transform-box:fill-box'));
+    const script = page.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    assert(script?.includes('Math.random()'));
+    const blobs = Array.from({ length: 5 }, () => ({ style: {} }));
+    new Function('matchMedia', 'document', 'getComputedStyle', 'Math', script)(
+      () => ({ matches: false }),
+      { querySelectorAll: () => blobs },
+      () => ({ animationDuration: '10s' }),
+      { random: () => 0.5 },
+    );
+    assert(blobs.every(({ style }) => style.animationDuration === '10.00s' && style.animationDelay === '-5.00s'));
     assert(!page.includes('umami') && !page.includes('fonts.googleapis.com'));
   }
   const output = render(policy(), snapshot([]), options);

@@ -464,11 +464,11 @@ test(
         for (const path of ['/', '/private.txt']) {
           const result = await request(site.hostname, path);
           assert.equal(result.status, 404);
-          assert.match(result.body, /Oops! Page not found/);
+          assert.match(result.body, /Page not found/);
         }
         const gateway = await request('app.krychlic.com', '/api-error');
         assert.equal(gateway.status, 502);
-        assert.match(gateway.body, /Oops! Bad Gateway/);
+        assert.match(gateway.body, /Bad Gateway/);
         assert.match(gateway.body, /_proxy\/error-icon\.svg/);
         assert.equal((await request(site.hostname, '/logo.svg')).status, 200);
         await edgeRequest('/apply', { method: 'POST', body: snapshot, timeout: 20000 });
@@ -558,7 +558,7 @@ test(
         const missing = await request(site.hostname, '/missing');
         assert.equal(missing.status, 404);
         assert.match(missing.body, /<link rel="icon" type="image\/svg\+xml" href="\/_proxy\/error-icon\.svg">/);
-        assert.match(missing.body, /Oops! Page not found/);
+        assert.match(missing.body, /Page not found/);
         const timeout = await request('app.krychlic.com', '/slow');
         assert.equal(timeout.status, 504);
         assert.match(timeout.body, /Request timed out/);
@@ -570,7 +570,7 @@ test(
         assert.equal((await request(site.hostname, '/new.txt')).body, 'new');
         const response = await request('app.krychlic.com');
         assert.equal(response.status, 502);
-        assert.match(response.body, /Oops! Bad Gateway/);
+        assert.match(response.body, /Bad Gateway/);
         const restricted = {
           ...next,
           routes: next.routes.map((r) =>
@@ -654,14 +654,14 @@ test(
       async () => {
         const response = await request('app.krychlic.com', '/api-error');
         assert.equal(response.status, 502);
-        assert(response.body.includes('Oops! Bad Gateway'));
+        assert(response.body.includes('Bad Gateway'));
         const internal = await request('app.krychlic.com', '/internal-error');
         assert.equal(internal.status, 500);
         assert(internal.body.includes('We are sorry, but an internal server error has occurred.'));
         assert(!internal.body.includes('Private backend error'));
         const missing = await request('app.krychlic.com', '/not-found');
         assert.equal(missing.status, 404);
-        assert(missing.body.includes('Oops! Page not found'));
+        assert(missing.body.includes('Page not found'));
         assert(!missing.body.includes('missing resource'));
       },
     );
@@ -803,7 +803,7 @@ test(
       await edgeRequest('/apply', { method: 'POST', body: next, timeout: 20000 });
       const response = await request('app.krychlic.com');
       assert.equal(response.status, 502);
-      assert(response.body.includes('Oops! Bad Gateway'));
+      assert(response.body.includes('Bad Gateway'));
       assert(!response.body.includes('127.0.0.2'));
     });
     await t.test('saved routing resumes after edge process restart', async () => {
