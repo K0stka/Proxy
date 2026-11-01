@@ -41,8 +41,10 @@ test('security counts actual inspected traffic, does not count alert duplicates 
   assert.equal(result.counts.inspected, 5);
   assert.equal(result.counts.blocked, 3);
   assert.equal(result.counts.detected, 3);
+  assert.equal(result.counts.detectedOnly, 1);
   assert.equal(result.counts.sources.WAF, 1);
-  assert.equal(result.buckets.reduce((a, b) => a + b, 0), 3);
+  assert.equal(result.buckets.reduce((a, b) => a + b.blocked, 0), 3);
+  assert.equal(result.buckets.reduce((a, b) => a + b.detected, 0), 1);
   assert.equal(result.decisions.reduce((sum, d) => sum + d.requests, 0), 3);
   assert.equal(result.decisions[0].method, 'POST');
   assert.equal(engine.summary({ from: '2000-01-01T00:00:00.000Z', to: '2000-01-02T00:00:00.000Z' }).counts.inspected, 0);

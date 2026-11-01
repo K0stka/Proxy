@@ -137,9 +137,13 @@ export default function Security({ state, onLogout }) {
   const periodLabel = logPeriods.find(([value]) => value === period)[1];
   const weights = Array.from({ length: 36 }, (_, i) => 8 + Math.round((1 + Math.sin(i * 1.8)) * 8) + (i > 18 && i < 25 ? 85 - Math.abs(i - 21) * 17 : 0));
   const weightTotal = weights.reduce((sum, n) => sum + n, 0);
-  const counts = preview ? weights.map((n) => Math.floor(n * blocked / weightTotal)) : [...(data?.buckets ?? weights.map(() => 0))];
-  counts[counts.length - 1] += blocked - counts.reduce((sum, n) => sum + n, 0);
-  const chartPeak = Math.max(10, Math.ceil(Math.max(...counts) / 10) * 10);
+  const detectedOnly = preview ? Math.max(0, Math.round(1386 * factor) - blocked) : data?.counts.detectedOnly ?? 0;
+  const buckets = preview ? weights.map((n, i) => ({ blocked: Math.floor(n * blocked / weightTotal), detected: Math.floor(weights[(i + 5) % weights.length] * detectedOnly / weightTotal) })) : data?.buckets ?? [];
+  if (preview) {
+    buckets[buckets.length - 1].blocked += blocked - buckets.reduce((sum, b) => sum + b.blocked, 0);
+    buckets[buckets.length - 1].detected += detectedOnly - buckets.reduce((sum, b) => sum + b.detected, 0);
+  }
+  const chartPeak = Math.max(10, Math.ceil(Math.max(...buckets.map((b) => b.blocked + b.detected)) / 10) * 10);
   function change(key, value) { setPolicy((p) => ({ ...p, [key]: value })); }
   function openException(ip = '') { setAddress(ip); setNote(''); setFormError(''); setDialog({ kind: 'exception' }); }
   async function addException(e) {
@@ -180,13 +184,13 @@ export default function Security({ state, onLogout }) {
         <Metric label="Inspected requests" value={inspected.toLocaleString()} detail="HTTP traffic across protected services" icon={Activity} />
       </div>
       <div className="logs-chart-grid">
-        <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>Blocked requests</h2><Help label="About blocked requests">Counts requests stopped by WAF rules or an IP ban. A detected threat is not necessarily blocked.</Help></div>
-          <div className="logs-chart-reading"><strong>{blocked.toLocaleString()}</strong><span>{periodLabel}</span></div>
-          <svg viewBox="0 0 640 200" className="logs-traffic-chart security-chart" role="img" aria-label={`Blocked requests over the selected period; ${blocked.toLocaleString()} total`}>
+        <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>Blocked and detected requests</h2><Help label="About security decisions">Orange counts blocked requests. Teal counts threats detected in monitor-only mode and allowed through. Each request appears in one color.</Help></div>
+          <div className="logs-chart-reading"><strong>{blocked.toLocaleString()}</strong><span>blocked · {periodLabel}</span><span>{detectedOnly.toLocaleString()} detected only</span></div>
+          <svg viewBox="0 0 640 200" className="logs-traffic-chart security-chart" role="img" aria-label={`Security decisions over the selected period; ${blocked.toLocaleString()} blocked and ${detectedOnly.toLocaleString()} detected only`}>
             {[40, 95, 150].map((y, i) => <g key={y}><line x1="36" y1={y} x2="626" y2={y} className="logs-grid-line" /><text x="0" y={y + 4} className="logs-axis-label">{[chartPeak, chartPeak / 2, 0][i]}</text></g>)}
-            {counts.map((count, i) => { const height = count / chartPeak * 110; return <rect key={i} x={40 + i * 16.1} y={150 - height} height={height} width="9" rx="3" fill={i > 18 && i < 25 ? '#e7af55' : '#38b89a'}><title>{count} blocked requests</title></rect>; })}
+            {buckets.map(({ blocked, detected }, i) => { const blockedHeight = blocked / chartPeak * 110, detectedHeight = detected / chartPeak * 110, x = 40 + i * 16.1; return <g key={i}><rect x={x} y={150 - blockedHeight} height={blockedHeight} width="9" rx="3" fill="#e7af55"><title>{blocked} blocked requests</title></rect><rect x={x} y={150 - blockedHeight - detectedHeight} height={detectedHeight} width="9" rx="3" fill="#38b89a"><title>{detected} detected requests</title></rect></g>; })}
             <text x="36" y="181" className="logs-axis-label">{period === 'today' ? '00:00' : periodLabel}</text><text x="600" y="181" className="logs-axis-label">Now</text>
-          </svg>{preview && <span className="logs-caption">A scanning burst accounts for most blocked requests in this period.</span>}
+          </svg><div className="logs-chart-legend"><span><i className="legend-dot warning" /> Blocked</span><span><i className="legend-dot success" /> Detected only</span></div>
         </Paper>
         <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>What we stopped</h2><Help label="Detection sources">WAF inspects requests. Behavior identifies repeated abuse. Reputation uses known malicious IP decisions.</Help></div><div className="security-breakdown">{[['WAF rules', 64], ['Behavioral detection', 25], ['IP reputation', 11], ...(!preview && data.counts.sources.Availability ? [['Engine unavailable', 0]] : [])].map(([label, percent], index) => <div key={label}><div><span>{label}</span><strong>{blockedBySource[index].toLocaleString()}</strong></div><div className="security-bar"><span style={{ width: `${preview ? percent : blocked ? blockedBySource[index] / blocked * 100 : 0}%` }} /></div></div>)}</div></Paper>
       </div>

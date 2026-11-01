@@ -1,7 +1,5 @@
 [Unit]
 Description=Host access to the external proxy_logs volume
-Requires=docker.service
-After=docker.service
 Before=proxy-handoff.service
 
 [Mount]
