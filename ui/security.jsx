@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Badge, Group, Paper, Select, Skeleton, Stack, Switch, Table, TextInput, Textarea } from '@mantine/core';
+import { Alert, Badge, Group, Paper, Select, Skeleton, Stack, Switch, Table, TextInput, Textarea, Tooltip } from '@mantine/core';
 import { ShieldCheck, ShieldOff, ShieldAlert, Activity, RefreshCw, Plus, Trash2, ArrowUpRight } from 'lucide-react';
 import { Button } from './controls.jsx';
 import Modal from './dialog.jsx';
@@ -71,6 +71,19 @@ function Metric({ label, value, detail, icon: Icon }) {
   return <Paper withBorder className="logs-metric"><div className="logs-metric-label">{label}<Icon size={17} /></div><strong>{value}</strong><span>{detail}</span></Paper>;
 }
 
+function SecurityLoading() {
+  return <section className="monitoring logs-dashboard security-page" aria-label="Loading security" aria-busy="true">
+    <Paper withBorder className="security-health"><Skeleton width={48} height={48} radius="md" /><div style={{ flex: 1 }}><Skeleton width={180} height={20} mb="sm" /><Skeleton width="70%" height={14} /></div></Paper>
+    <Group className="security-toolbar" justify="space-between"><div className="filter-tabs">{[88, 62, 88, 132, 76].map((width, i) => <Skeleton key={i} width={width} height={40} radius="md" />)}</div><Skeleton width={170} height={40} radius="md" /></Group>
+    <div className="logs-metrics">{['Blocked requests', 'Detected threats', 'Active banned IPs', 'Inspected requests'].map((label) => <Paper key={label} withBorder className="logs-metric"><div className="logs-metric-label">{label}</div><Skeleton width="65%" height={38} /><Skeleton width="80%" height={12} /></Paper>)}</div>
+    <div className="logs-chart-grid">
+      <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>Blocked requests</h2></div><Skeleton height={200} radius="md" /></Paper>
+      <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>What we stopped</h2></div><div className="security-breakdown">{['WAF rules', 'Behavioral detection', 'IP reputation'].map((label) => <div key={label}><div><span>{label}</span><Skeleton width={40} height={14} /></div><Skeleton height={7} radius="md" /></div>)}</div></Paper>
+    </div>
+    <Paper withBorder className="logs-surface logs-events"><div className="logs-panel-heading"><h2>Recent decisions</h2></div><Table.ScrollContainer minWidth={850}><Table className="logs-table"><Table.Thead><Table.Tr>{['Source', 'Threat / service', 'Source of decision', 'Action', 'Blocked requests', 'Expires'].map((label) => <Table.Th key={label}>{label}</Table.Th>)}<Table.Th /></Table.Tr></Table.Thead><Table.Tbody>{[0, 1, 2].map((row) => <Table.Tr key={row}>{[0, 1, 2, 3, 4, 5, 6].map((cell) => <Table.Td key={cell}><Skeleton height={14} width={`${45 + (row * 19 + cell * 13) % 45}%`} /></Table.Td>)}</Table.Tr>)}</Table.Tbody></Table></Table.ScrollContainer></Paper>
+  </section>;
+}
+
 export default function Security({ state, onLogout }) {
   const preview = !!document.querySelector('meta[name="proxy-preview"]');
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
@@ -137,13 +150,14 @@ export default function Security({ state, onLogout }) {
   const periodLabel = logPeriods.find(([value]) => value === period)[1];
   const weights = Array.from({ length: 36 }, (_, i) => 8 + Math.round((1 + Math.sin(i * 1.8)) * 8) + (i > 18 && i < 25 ? 85 - Math.abs(i - 21) * 17 : 0));
   const weightTotal = weights.reduce((sum, n) => sum + n, 0);
-  const detectedOnly = preview ? Math.max(0, Math.round(1386 * factor) - blocked) : data?.counts.detectedOnly ?? 0;
-  const buckets = preview ? weights.map((n, i) => ({ blocked: Math.floor(n * blocked / weightTotal), detected: Math.floor(weights[(i + 5) % weights.length] * detectedOnly / weightTotal) })) : data?.buckets ?? [];
+  const buckets = preview ? weights.map((n) => ({ blocked: Math.floor(n * blocked / weightTotal), total: Math.floor(n * inspected / weightTotal) })) : data?.buckets ?? [];
   if (preview) {
     buckets[buckets.length - 1].blocked += blocked - buckets.reduce((sum, b) => sum + b.blocked, 0);
-    buckets[buckets.length - 1].detected += detectedOnly - buckets.reduce((sum, b) => sum + b.detected, 0);
+    buckets[buckets.length - 1].total += inspected - buckets.reduce((sum, b) => sum + b.total, 0);
   }
-  const chartPeak = Math.max(10, Math.ceil(Math.max(...buckets.map((b) => b.blocked + b.detected)) / 10) * 10);
+  const chartPeak = Math.max(10, Math.ceil(Math.max(...buckets.map((b) => b.total)) / 10) * 10);
+  const bucketStart = Date.parse(bounds.from), bucketStep = (Date.parse(bounds.to) - bucketStart) / 36;
+  const bucketTime = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   function change(key, value) { setPolicy((p) => ({ ...p, [key]: value })); }
   function openException(ip = '') { setAddress(ip); setNote(''); setFormError(''); setDialog({ kind: 'exception' }); }
   async function addException(e) {
@@ -164,7 +178,7 @@ export default function Security({ state, onLogout }) {
     setDecisions((items) => items.map((d) => d.ip === ip ? { ...d, action: 'Allowed' } : d));
     setDialog(null); report('Address allowed and existing block removed');
   }
-  if (!preview && !data) return error ? <Alert color="red">{error}</Alert> : <Stack gap="lg" aria-label="Loading security"><Skeleton height={34} width="30%" /><div className="logs-metrics">{[1, 2, 3, 4].map((n) => <Skeleton key={n} height={105} radius="md" />)}</div><Skeleton height={280} radius="md" /></Stack>;
+  if (!preview && !data) return error ? <Alert color="red">{error}</Alert> : <SecurityLoading />;
   return <section className="monitoring logs-dashboard security-page" aria-label="Security">
     {(error || (!preview && data.error)) && <Alert color="yellow">{error || data.error}</Alert>}
     <Paper withBorder className="security-health">
@@ -184,13 +198,12 @@ export default function Security({ state, onLogout }) {
         <Metric label="Inspected requests" value={inspected.toLocaleString()} detail="HTTP traffic across protected services" icon={Activity} />
       </div>
       <div className="logs-chart-grid">
-        <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>Blocked and detected requests</h2><Help label="About security decisions">Orange counts blocked requests. Teal counts threats detected in monitor-only mode and allowed through. Each request appears in one color.</Help></div>
-          <div className="logs-chart-reading"><strong>{blocked.toLocaleString()}</strong><span>blocked · {periodLabel}</span><span>{detectedOnly.toLocaleString()} detected only</span></div>
-          <svg viewBox="0 0 640 200" className="logs-traffic-chart security-chart" role="img" aria-label={`Security decisions over the selected period; ${blocked.toLocaleString()} blocked and ${detectedOnly.toLocaleString()} detected only`}>
+        <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>Blocked requests</h2><Help label="About blocked requests">Cyan shows all inspected HTTP requests. Orange shows the blocked portion of each time slot.</Help></div>
+          <svg viewBox="0 0 640 200" className="logs-traffic-chart security-chart" role="img" aria-label={`Blocked requests over the selected period; ${blocked.toLocaleString()} blocked of ${inspected.toLocaleString()} inspected requests`}>
             {[40, 95, 150].map((y, i) => <g key={y}><line x1="36" y1={y} x2="626" y2={y} className="logs-grid-line" /><text x="0" y={y + 4} className="logs-axis-label">{[chartPeak, chartPeak / 2, 0][i]}</text></g>)}
-            {buckets.map(({ blocked, detected }, i) => { const blockedHeight = blocked / chartPeak * 110, detectedHeight = detected / chartPeak * 110, x = 40 + i * 16.1; return <g key={i}><rect x={x} y={150 - blockedHeight} height={blockedHeight} width="9" rx="3" fill="#e7af55"><title>{blocked} blocked requests</title></rect><rect x={x} y={150 - blockedHeight - detectedHeight} height={detectedHeight} width="9" rx="3" fill="#38b89a"><title>{detected} detected requests</title></rect></g>; })}
+            {buckets.map(({ blocked, total }, i) => { const blockedHeight = blocked / chartPeak * 110, totalHeight = total / chartPeak * 110, x = 40 + i * 16.1; return <Tooltip key={i} withArrow multiline w={220} classNames={{ tooltip: 'security-chart-tooltip' }} events={{ hover: true, focus: true, touch: true }} label={<div className="security-chart-tooltip-content"><div className="security-chart-tooltip-time">{bucketTime.format(bucketStart + i * bucketStep)} – {bucketTime.format(bucketStart + (i + 1) * bucketStep)}</div><div><span>Blocked</span><strong>{blocked.toLocaleString()}</strong></div><div><span>Total inspected</span><strong>{total.toLocaleString()}</strong></div></div>}><g tabIndex={0} aria-label={`${blocked} blocked of ${total} inspected requests`}><rect x={x} y={150 - totalHeight} height={totalHeight} width="9" rx="3" fill="#38b89a" /><rect x={x} y={150 - blockedHeight} height={blockedHeight} width="9" rx="3" fill="#e7af55" /><rect x={x - 2} y={150 - Math.max(totalHeight, 16)} height={Math.max(totalHeight, 16)} width="13" fill="transparent" /></g></Tooltip>; })}
             <text x="36" y="181" className="logs-axis-label">{period === 'today' ? '00:00' : periodLabel}</text><text x="600" y="181" className="logs-axis-label">Now</text>
-          </svg><div className="logs-chart-legend"><span><i className="legend-dot warning" /> Blocked</span><span><i className="legend-dot success" /> Detected only</span></div>
+          </svg>
         </Paper>
         <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>What we stopped</h2><Help label="Detection sources">WAF inspects requests. Behavior identifies repeated abuse. Reputation uses known malicious IP decisions.</Help></div><div className="security-breakdown">{[['WAF rules', 64], ['Behavioral detection', 25], ['IP reputation', 11], ...(!preview && data.counts.sources.Availability ? [['Engine unavailable', 0]] : [])].map(([label, percent], index) => <div key={label}><div><span>{label}</span><strong>{blockedBySource[index].toLocaleString()}</strong></div><div className="security-bar"><span style={{ width: `${preview ? percent : blocked ? blockedBySource[index] / blocked * 100 : 0}%` }} /></div></div>)}</div></Paper>
       </div>

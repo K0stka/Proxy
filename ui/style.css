@@ -2004,6 +2004,11 @@ textarea):focus-visible {
 .security-toolbar-filters .logs-top-filters { margin-left: 0; flex-wrap: nowrap; }
 .security-toolbar-filters .logs-service-select { white-space: nowrap; }
 .security-chart { cursor: default; touch-action: auto; }
+.security-chart-tooltip { --tooltip-bg: var(--surface); --tooltip-color: var(--ink); border: 1px solid var(--line); box-shadow: 0 8px 24px #0003; padding: 10px 12px; }
+.security-chart-tooltip-content { display: grid; gap: 6px; font-size: 12px; }
+.security-chart-tooltip-time { font-weight: 600; line-height: 1.4; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.security-chart-tooltip-content > div:not(:first-child) { display: flex; justify-content: space-between; gap: 12px; }
+.security-chart-tooltip-content strong { font-variant-numeric: tabular-nums; }
 .security-breakdown { display: grid; gap: 24px; padding-block: 12px; }
 .security-breakdown > div > div:first-child { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 13px; }
 .security-breakdown strong { font-weight: 550; font-variant-numeric: tabular-nums; }

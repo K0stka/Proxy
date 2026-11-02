@@ -118,18 +118,19 @@ export class Security {
     const where = `FROM logs WHERE kind='traffic' AND time>=? AND time<? AND json_extract(data,'$.securityInspected')=1`;
     const rows = this.archive.db.prepare(`SELECT json_extract(data,'$.securityAction') AS action,
       json_extract(data,'$.securityEngine') AS engine, COUNT(*) AS count ${where} GROUP BY action,engine`).all(from, to);
-    const counts = { blocked: 0, detected: 0, detectedOnly: 0, inspected: 0, sources: { WAF: 0, Behavior: 0, Reputation: 0, Availability: 0 } };
+    const counts = { blocked: 0, detected: 0, inspected: 0, sources: { WAF: 0, Behavior: 0, Reputation: 0, Availability: 0 } };
     for (const row of rows) {
       counts.inspected += row.count;
       if (row.engine !== 'Availability' && ['Blocked', 'Detected'].includes(row.action)) counts.detected += row.count;
-      if (row.action === 'Detected') counts.detectedOnly += row.count;
       if (row.action === 'Blocked') { counts.blocked += row.count; counts.sources[row.engine] = row.count + (counts.sources[row.engine] ?? 0); }
     }
-    const buckets = Array.from({ length: 36 }, () => ({ blocked: 0, detected: 0 }));
+    const buckets = Array.from({ length: 36 }, () => ({ blocked: 0, total: 0 }));
     for (const row of this.archive.db.prepare(`SELECT CAST((julianday(time)-julianday(?))/(julianday(?)-julianday(?))*36 AS INTEGER) AS bucket,
-      json_extract(data,'$.securityAction') AS action, COUNT(*) AS count ${where}
-      AND json_extract(data,'$.securityAction') IN ('Blocked','Detected') GROUP BY bucket,action`).all(from, to, from, from, to))
-      buckets[Math.max(0, Math.min(35, row.bucket))][row.action.toLowerCase()] += row.count;
+      COUNT(*) AS total, SUM(json_extract(data,'$.securityAction')='Blocked') AS blocked ${where}
+      GROUP BY bucket`).all(from, to, from, from, to)) {
+      const bucket = buckets[Math.max(0, Math.min(35, row.bucket))];
+      bucket.total += row.total; bucket.blocked += row.blocked;
+    }
     const decisions = this.archive.db.prepare(`SELECT data, MAX(time) AS time,
       SUM(json_extract(data,'$.securityAction')='Blocked') AS requests ${where}
       AND json_extract(data,'$.securityAction') IN ('Blocked','Detected') GROUP BY json_extract(data,'$.source'), json_extract(data,'$.securityEngine'), json_extract(data,'$.securityReason') ORDER BY time DESC LIMIT 100`)

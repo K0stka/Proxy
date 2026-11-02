@@ -129,7 +129,7 @@ test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statist
   assert(measured.counts.sources.WAF >= 1);
   assert(measured.decisions.some((d) => d.engine === 'WAF'));
   assert.equal(measured.buckets.reduce((a, b) => a + b.blocked, 0), measured.counts.blocked);
-  assert(measured.buckets.some((b) => b.detected > 0));
+  assert.equal(measured.buckets.reduce((a, b) => a + b.total, 0), measured.counts.inspected);
   assert(measured.decisions.some((d) => d.ip === '198.51.100.24' && d.action === 'Ban removed'));
   const updateStarted = Date.now();
   await security.admin('/update', {});
