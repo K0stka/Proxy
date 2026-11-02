@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Group, Stack, PasswordInput, Switch, Text, TextInput } from '@mantine/core';
+import { Group, Stack, PasswordInput, Switch, TextInput } from '@mantine/core';
 import { Button } from './controls.jsx';
 import { api } from './api.js';
 import Help from './help.jsx';
-import { formatDateTime } from './date-time.js';
 import { useToast } from './toasts.jsx';
 import { subscribeUpdates } from './events.js';
 
@@ -16,7 +15,7 @@ export default function DiscordAlerts() {
     async function load(initial = false) {
       try {
         const next = await api('/notifications/discord');
-        if (active) { setStatus(next); if (initial) { setEnabled(next.enabled); setRecipientId(next.recipientId); } }
+        if (active) { setStatus(next); if (initial) { setEnabled(next.enabled); setRecipientId(next.recipientId); setToken(next.botToken); } }
         lastLoadError.current = '';
       } catch (e) {
         if (active && lastLoadError.current !== e.message) report(e.message, true);
@@ -32,10 +31,10 @@ export default function DiscordAlerts() {
     setBusy(true);
     try {
       const next = await api(`/notifications/discord${operation === 'test' ? '/test' : ''}`, {
-        method: operation === 'save' ? 'PUT' : operation === 'remove' ? 'DELETE' : 'POST',
+        method: operation === 'save' ? 'PUT' : 'POST',
         ...(operation === 'save' ? { body: { enabled, recipientId: recipientId.trim(), ...(token.trim() ? { botToken: token.trim() } : {}) } } : {}),
       });
-      setStatus(next); setEnabled(next.enabled); setRecipientId(next.recipientId); setToken('');
+      setStatus(next); setEnabled(next.enabled); setRecipientId(next.recipientId); setToken(next.botToken);
       report(next.message ?? 'Discord alert settings saved.');
     } catch (e) { report(e.message, true); } finally { setBusy(false); }
   }
@@ -43,16 +42,14 @@ export default function DiscordAlerts() {
     <Stack gap="lg">
       <Group justify="space-between"><h2>Discord DMs</h2><Help label="About Discord notifications">DMs are sent for recovery code use, new device enrollment, repeated failed admin sign-ins and CrowdSec outages. Repeated per-request security inspection warnings, recovery notices and other traffic alerts remain in Logs. Repeats are counted together, with at most one automatic DM every five minutes. Enabling starts with new alerts.</Help></Group>
       <Switch label="Enable Discord DMs" checked={enabled} disabled={!status || busy} onChange={(e) => setEnabled(e.currentTarget.checked)} />
-      <PasswordInput label={status?.configured ? 'Replace bot token' : 'Bot token'}
-        description={status?.configured ? 'Saved · leave blank to keep' : 'Discord Developer Portal → your application → Bot → Token. Saved webhook URLs must be replaced with a bot token.'}
+      <PasswordInput label="Bot token"
+        description="Discord Developer Portal → your application → Bot → Token."
         value={token} autoComplete="off" maxLength={512} disabled={!status || busy}
+        onFocus={(e) => { if (token === status?.botToken) e.currentTarget.select(); }}
         onChange={(e) => setToken(e.currentTarget.value)} />
       <TextInput label="Recipient user ID" description="Discord → Settings → Advanced → Developer Mode, then right-click your profile → Copy User ID. Share a server with the bot and allow direct messages."
         value={recipientId} maxLength={20} disabled={!status || busy} onChange={(e) => setRecipientId(e.currentTarget.value)} />
-      <Text size="sm" c="dimmed">No mentions. The first alert is sent on the next poll; subsequent alerts are collected into five-minute summaries.</Text>
-      <Text size="sm" c="dimmed">{status?.lastSuccess ? `Last delivered: ${formatDateTime(status.lastSuccess)}` : 'No notifications delivered yet.'}</Text>
       <Group justify="flex-end">
-        <Button className="secondary" disabled={busy || !status?.configured} onClick={() => action('remove')}>Remove bot</Button>
         <Button className="secondary" disabled={busy || !status?.configured} onClick={() => action('test')}>Send test DM</Button>
         <Button className="primary" type="submit" disabled={busy || !status}>Save changes</Button>
       </Group>

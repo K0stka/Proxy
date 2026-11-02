@@ -8,22 +8,10 @@ const snowflake = /^\d{17,20}$/;
 const text = (value, limit) => String(value).replace(/[\r\n\t]/g, ' ').replace(/([\\`*_~|<>\[\]])/g, '\\$1').slice(0, limit);
 const actionable = (event) => ['auth.recovery', 'auth.device.completed',
   'Repeated failed authentication operations', 'CrowdSec is unavailable'].includes(event.event);
-const alertNames = { 'auth.recovery': 'Recovery code used', 'auth.device.completed': 'New device added' };
+const alertNames = { 'auth.recovery': 'Recovery code used', 'auth.device.completed': 'New device added',
+  'CrowdSec is unavailable': 'CrowdSec health check failed' };
 const priority = (group) => group.severity === 'error' ? 4 : group.securityEngine === 'Availability' ||
   /unavailable|update failed|recovered/i.test(group.event) ? 3 : group.service === 'management' ? 2 : group.action === 'Detection only' ? 1 : 0;
-const explanations = {
-  'Traffic burst': 'High traffic can also be legitimate; this threshold alert does not itself block traffic.',
-  'Repeated server / upstream failures': 'Repeated server errors suggest a service or upstream health issue.',
-  'Repeated denied access': 'Repeated denied requests may include existing policy blocks.',
-  'Repeated exploit-path probes': 'Repeated requests to common discovery paths suggest scanning, not confirmed access.',
-  'Catch-all scanning': 'Repeated not-found responses on unmatched hosts suggest automated discovery.',
-  'Repeated missing resources': 'Repeated not-found responses can indicate discovery scans or broken links.',
-};
-function ruleLink(value) {
-  // Only link to the documentation destinations produced by the security adapter.
-  return typeof value === 'string' && value.length <= 300 && /^(?:https:\/\/app\.crowdsec\.net\/hub\/author\/[a-z0-9_-]+\/(?:appsec-rules|scenarios)\/[a-z0-9_-]+|https:\/\/docs\.crowdsec\.net\/docs\/appsec\/crs\/intro\/)$/.test(value)
-    ? `[Rule details](${value})` : null;
-}
 
 export const discordSettings = z.object({
   enabled: z.boolean(),
@@ -45,14 +33,18 @@ export class DiscordAlerts {
   }
   status() {
     const config = this.config();
-    return { enabled: config.enabled, configured: Boolean(config.botToken && config.recipientId), recipientId: config.recipientId,
+    return { enabled: config.enabled, configured: Boolean(config.botToken && config.recipientId),
+      botToken: '•'.repeat(config.botToken.length), recipientId: config.recipientId,
       ...this.store.get('discord-status', { lastSuccess: null, error: null, nextAttempt: null }) };
   }
   async save(raw) {
     if (this.busy) throw new Problem(409, 'A delivery is already in progress.');
     this.busy = true;
     try {
-      const input = parse(discordSettings, raw), old = this.config();
+      const old = this.config();
+      const input = parse(discordSettings, {
+        ...raw, ...(raw.botToken && raw.botToken === '•'.repeat(old.botToken.length) ? { botToken: undefined } : {}),
+      });
       const botToken = input.botToken ?? old.botToken, recipientId = input.recipientId ?? old.recipientId;
       if (input.enabled && !botToken) throw new Problem(400, 'Enter a Discord bot token before enabling DMs.');
       if ((!old.enabled && input.enabled) || botToken !== old.botToken || recipientId !== old.recipientId) {
@@ -121,32 +113,20 @@ export class DiscordAlerts {
     const total = groups.reduce((sum, group) => sum + group.count, overflow);
     const ordered = [...groups].sort((a, b) => priority(b) - priority(a));
     const shown = ordered.slice(0, 6), hidden = ordered.slice(6).reduce((sum, group) => sum + group.count, overflow);
-    const proxyUrl = this.origin ? new URL('/logs', this.origin).href : null;
-    return { content: `Proxy · ${total} alert${total === 1 ? '' : 's'}`,
-      embeds: [{ title: 'Proxy alert summary', color: groups.some((g) => g.severity !== 'info') || overflow ? 15105570 : 3066993,
-        ...(proxyUrl ? { url: proxyUrl } : {}),
-        description: [proxyUrl ? `[Open Proxy](${new URL('/', this.origin).href}) · [View Logs](${proxyUrl})` : null,
-          hidden ? `${hidden} additional alerts omitted from this summary.` : null].filter(Boolean).join('\n'),
-        fields: shown.map((group) => {
-          const service = this.routes().find((r) => r.id === group.service)?.name ??
-            ({ 'catch-all': 'Wildcard / unmatched traffic', management: 'Management' }[group.service] ?? 'Previous route');
-          const stamp = (value) => `<t:${Math.floor(Date.parse(value) / 1000)}:t>`;
-          const link = ruleLink(group.ruleUrl);
-          return { name: `${text(service, 130)} · ${text(group.severity, 15)} · ${group.count}×`,
-            value: [text(alertNames[group.event] ?? group.event, 200),
-              group.action ? `Recorded action: ${text(group.action, 40)}` : null,
-              group.securityEngine === 'Availability'
-                ? `Protection unavailable · ${group.securityAction === 'Blocked' ? 'sample request denied by fallback' : 'sample request allowed without full inspection'}`
-                : group.securityAction ? `Latest request: ${text(group.securityAction, 15)}${group.securityEngine ? ` · ${text(group.securityEngine, 15)}` : ''}`
-                  : !group.action && group.event !== 'CrowdSec recovered' ? 'Blocking action: not recorded' : null,
-              group.securityReason && group.securityReason !== group.event ? `Rule / reason: ${text(group.securityReason, 130)}` : null,
-              /^OWASP CRS/.test(group.event) ? 'Scores indicate matched attack patterns, not successful code execution.' : explanations[group.event],
-              `Seen: ${stamp(group.first)} – ${stamp(group.last)}`,
-              group.sources.length ? `Source samples: ${group.sources.map((s) => text(s, 50)).join(', ')}` : 'Scope: service-wide',
-              group.protocol ? `Latest protocol / status: ${text(group.protocol, 20)} / ${text(group.status ?? '—', 10)}` : null,
-            ].filter(Boolean).join('\n').slice(0, 750 - (link ? link.length + 1 : 0)) + (link ? `\n${link}` : '') };
-        }), timestamp: new Date(this.now()).toISOString(),
-      }] };
+    const describe = (group) => {
+      const service = this.routes().find((r) => r.id === group.service)?.name ??
+        ({ 'catch-all': 'Unmatched traffic', management: '' }[group.service] ?? 'Previous route');
+      return [text(alertNames[group.event] ?? group.event, 80) + (group.count > 1 ? ` ×${group.count}` : ''),
+        service ? text(service, 40) : null,
+        group.sources.length ? group.sources.map((source) => text(source, 40)).join(', ') : null].filter(Boolean).join(' · ');
+    };
+    const single = shown.length === 1 && !hidden;
+    const outage = single && shown[0].event === 'CrowdSec is unavailable';
+    const lines = [single ? `Proxy: ${describe(shown[0])}` : `Proxy: ${total} alerts`,
+      ...(single ? [] : shown.map((group) => `• ${describe(group)}`)),
+      hidden ? `+${hidden} more in Logs` : null,
+      this.origin ? `${outage ? 'Security' : 'Logs'}: ${new URL(outage ? '/security' : '/logs', this.origin).href}` : null];
+    return { content: lines.filter(Boolean).join('\n').slice(0, 2000) };
   }
   async tick() {
     if (this.busy || !this.config().enabled) return;
@@ -205,9 +185,7 @@ export class DiscordAlerts {
     if (this.busy) throw new Problem(409, 'A delivery is already in progress.');
     this.busy = true;
     try {
-      await this.send({ content: 'Proxy · Discord DMs are connected.', embeds: [{ title: 'Test notification', color: 3066993,
-        description: 'New alerts will arrive here as grouped summaries, at most once every 5 minutes. No mentions.',
-        timestamp: new Date(this.now()).toISOString() }] });
+      await this.send({ content: 'Proxy: Discord DMs connected. New alerts will arrive here.' });
       return { ...this.status(), message: 'Test DM sent.' };
     } finally { this.busy = false; }
   }

@@ -83,9 +83,16 @@ export class Security {
         engine = await this.enginePromise;
       } else engine = this.engineCache.value;
     }
-    catch { engine = { available: false, error: this.enabled ? 'CrowdSec is unavailable' : 'CrowdSec is not configured', decisions: [], alerts: [] }; }
+    catch {
+      let updating = false;
+      if (this.enabled) {
+        try { updating = (await this.admin('/update-status')).updating === true; } catch {}
+      }
+      engine = { available: false, error: this.enabled ? 'CrowdSec is unavailable' : 'CrowdSec is not configured',
+        updating, decisions: [], alerts: [] };
+    }
     const healthy = engine.available && !engine.error;
-    if (this.lastHealth !== healthy) {
+    if (!(engine.updating && !healthy) && this.lastHealth !== healthy) {
       if (!healthy || this.lastHealth !== null) this.monitor.add({ type: 'alert', service: 'management', severity: healthy ? 'info' : 'warning', event: healthy ? 'CrowdSec recovered' : engine.error });
       this.lastHealth = healthy;
     }

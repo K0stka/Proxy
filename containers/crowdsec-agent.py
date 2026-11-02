@@ -144,6 +144,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
+            if self.path == '/update-status':
+                return self.respond({'updating': lock.locked()})
             if self.path != '/status':
                 return self.respond({'error': 'Not found'}, 404)
             records = json.loads(cli('decisions', 'list', '--all', '--limit', '0', '--no-simu', '-o', 'json')) or []
@@ -158,7 +160,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                           'decisions': [{k: d.get(k) for k in ('id', 'value', 'scope', 'origin', 'scenario', 'duration', 'type')} for d in decisions[:5000]],
                           'alerts': [{k: a.get(k) for k in ('id', 'scenario', 'created_at', 'source', 'kind', 'remediation')} for a in alerts[:100]]})
         except Exception:
-            self.respond({'error': 'CrowdSec is unavailable'}, 503)
+            if self.path == '/status' and lock.locked():
+                self.respond({'available': False, 'error': 'CrowdSec is unavailable',
+                              'updating': True, 'decisions': [], 'alerts': []})
+            else:
+                self.respond({'error': 'CrowdSec is unavailable'}, 503)
 
     def do_POST(self):
         try:

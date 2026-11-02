@@ -937,9 +937,6 @@ textarea):focus-visible {
   border: 0;
   padding: 0;
 }
-.settings-section .mantine-Group-root:has(> .primary) {
-  justify-content: flex-start;
-}
 .settings-section .error-page-code {
   font-size: 28px;
 }

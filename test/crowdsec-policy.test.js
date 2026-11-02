@@ -61,3 +61,28 @@ test('overlapping edge generations import a CrowdSec alert once without changing
   assert.equal(archive.history().events.filter((e) => e.type === 'alert').length, 2);
   assert.equal(new Security({ archive }).lastAlert, 8);
 });
+
+test('planned CrowdSec updates stay quiet while an outage after the update still alerts', async (t) => {
+  const archive = new LogStore(':memory:'), monitor = new Monitor({ archive });
+  t.after(() => archive.close());
+  const engine = new Security({ archive, monitor, enabled: true,
+    policy: () => ({ security: defaultSecurityPolicy }) });
+  let mode = 'healthy';
+  engine.admin = async (path) => {
+    if (path === '/update-status') return { updating: mode === 'planned-timeout' };
+    if (mode === 'planned-timeout' || mode === 'unplanned') throw Error('status unavailable');
+    return { available: mode === 'healthy', updating: mode === 'planned',
+      error: mode === 'healthy' ? null : 'CrowdSec is unavailable', decisions: [], alerts: [] };
+  };
+  const events = () => { archive.flush(); return archive.history({ kind: 'alert' }).events.map((event) => event.event).reverse(); };
+  const check = async (next) => { mode = next; engine.engineCache = null; await engine.status(); };
+  await check('healthy');
+  await check('planned');
+  await check('healthy');
+  await check('planned-timeout');
+  assert.deepEqual(events(), []);
+  await check('unplanned');
+  assert.deepEqual(events(), ['CrowdSec is unavailable']);
+  await check('healthy');
+  assert.deepEqual(events(), ['CrowdSec is unavailable', 'CrowdSec recovered']);
+});
