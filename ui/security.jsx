@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Badge, Group, Paper, Select, Skeleton, Stack, Switch, Table, TextInput, Textarea, Tooltip } from '@mantine/core';
+import { Alert, Badge, Group, Paper, Select, Stack, Switch, Table, TextInput, Textarea, Tooltip } from '@mantine/core';
 import { ShieldCheck, ShieldOff, ShieldAlert, Activity, RefreshCw, Plus, Trash2, ArrowUpRight } from 'lucide-react';
 import { Button } from './controls.jsx';
 import Modal from './dialog.jsx';
@@ -7,7 +7,7 @@ import Help from './help.jsx';
 import { useToast } from './toasts.jsx';
 import { formatDateTime } from './date-time.js';
 import { logPeriod, logPeriods } from './log-period.js';
-import Monitoring, { ColumnFilter } from './monitoring.jsx';
+import Monitoring, { ColumnFilter, LogTableSkeleton } from './monitoring.jsx';
 import { decisionAction, decisionFilterValue, filterDecisions } from '../shared/security-filters.js';
 import { api } from './api.js';
 import { subscribeUpdates } from './events.js';
@@ -69,19 +69,6 @@ const seedDecisions = reasons.map(([reason, rule, path, engine, host], i) => ({ 
 
 function Metric({ label, value, detail, icon: Icon }) {
   return <Paper withBorder className="logs-metric"><div className="logs-metric-label">{label}<Icon size={17} /></div><strong>{value}</strong><span>{detail}</span></Paper>;
-}
-
-function SecurityLoading() {
-  return <section className="monitoring logs-dashboard security-page" aria-label="Loading security" aria-busy="true">
-    <Paper withBorder className="security-health"><Skeleton width={48} height={48} radius="md" /><div style={{ flex: 1 }}><Skeleton width={180} height={20} mb="sm" /><Skeleton width="70%" height={14} /></div></Paper>
-    <Group className="security-toolbar" justify="space-between"><div className="filter-tabs">{[88, 62, 88, 132, 76].map((width, i) => <Skeleton key={i} width={width} height={40} radius="md" />)}</div><Skeleton width={170} height={40} radius="md" /></Group>
-    <div className="logs-metrics">{['Blocked requests', 'Detected threats', 'Active banned IPs', 'Inspected requests'].map((label) => <Paper key={label} withBorder className="logs-metric"><div className="logs-metric-label">{label}</div><Skeleton width="65%" height={38} /><Skeleton width="80%" height={12} /></Paper>)}</div>
-    <div className="logs-chart-grid">
-      <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>Blocked requests</h2></div><Skeleton height={200} radius="md" /></Paper>
-      <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>What we stopped</h2></div><div className="security-breakdown">{['WAF rules', 'Behavioral detection', 'IP reputation'].map((label) => <div key={label}><div><span>{label}</span><Skeleton width={40} height={14} /></div><Skeleton height={7} radius="md" /></div>)}</div></Paper>
-    </div>
-    <Paper withBorder className="logs-surface logs-events"><div className="logs-panel-heading"><h2>Recent decisions</h2></div><Table.ScrollContainer minWidth={850}><Table className="logs-table"><Table.Thead><Table.Tr>{['Source', 'Threat / service', 'Source of decision', 'Action', 'Blocked requests', 'Expires'].map((label) => <Table.Th key={label}>{label}</Table.Th>)}<Table.Th /></Table.Tr></Table.Thead><Table.Tbody>{[0, 1, 2].map((row) => <Table.Tr key={row}>{[0, 1, 2, 3, 4, 5, 6].map((cell) => <Table.Td key={cell}><Skeleton height={14} width={`${45 + (row * 19 + cell * 13) % 45}%`} /></Table.Td>)}</Table.Tr>)}</Table.Tbody></Table></Table.ScrollContainer></Paper>
-  </section>;
 }
 
 export default function Security({ state, onLogout }) {
@@ -178,45 +165,46 @@ export default function Security({ state, onLogout }) {
     setDecisions((items) => items.map((d) => d.ip === ip ? { ...d, action: 'Allowed' } : d));
     setDialog(null); report('Address allowed and existing block removed');
   }
-  if (!preview && !data) return error ? <Alert color="red">{error}</Alert> : <SecurityLoading />;
-  return <section className="monitoring logs-dashboard security-page" aria-label="Security">
-    {(error || (!preview && data.error)) && <Alert color="yellow">{error || data.error}</Alert>}
+  const loading = !preview && !data;
+  if (loading && error) return <Alert color="red">{error}</Alert>;
+  return <section className="monitoring logs-dashboard security-page" aria-label="Security" aria-busy={loading}>
+    {(error || (!preview && data?.error)) && <Alert color="yellow">{error || data.error}</Alert>}
     <Paper withBorder className="security-health">
-      <span className="security-health-icon">{saved.mode === 'block' ? <ShieldCheck size={24} /> : <ShieldOff size={24} />}</span>
-      <div className="security-health-copy"><h2>{!preview && !data.available ? 'Protection unavailable' : saved.mode === 'block' ? 'Protection is active' : saved.mode === 'monitor' ? 'Monitoring only' : 'Protection is off'}</h2><p>{!preview && !data.available ? `Requests follow your configured ${saved.failure === 'allow' ? 'allow' : 'deny'} fallback while CrowdSec recovers.` : saved.mode === 'block' ? 'Malicious HTTP requests are blocked before reaching your services.' : saved.mode === 'monitor' ? 'Threats are recorded. Requests are allowed through.' : 'HTTP inspection and automatic blocking are paused.'}</p></div>
+      <span className="security-health-icon">{loading ? <Activity size={24} /> : saved.mode === 'block' ? <ShieldCheck size={24} /> : <ShieldOff size={24} />}</span>
+      <div className="security-health-copy">{loading ? <><h2>Loading security</h2><p>Waiting for protection status and activity.</p></> : <><h2>{!preview && !data.available ? 'Protection unavailable' : saved.mode === 'block' ? 'Protection is active' : saved.mode === 'monitor' ? 'Monitoring only' : 'Protection is off'}</h2><p>{!preview && !data.available ? `Requests follow your configured ${saved.failure === 'allow' ? 'allow' : 'deny'} fallback while CrowdSec recovers.` : saved.mode === 'block' ? 'Malicious HTTP requests are blocked before reaching your services.' : saved.mode === 'monitor' ? 'Threats are recorded. Requests are allowed through.' : 'HTTP inspection and automatic blocking are paused.'}</p></>}</div>
       <a className="security-guide" href="https://docs.crowdsec.net/docs/appsec/intro/" target="_blank" rel="noreferrer">CrowdSec guide <ArrowUpRight size={14} /></a>
     </Paper>
-    <Group justify="space-between" className="security-toolbar"><div className="filter-tabs" aria-label="Security views">{[['overview', 'Overview'], ['alerts', 'Alerts'], ['protection', 'Protection'], ['exceptions', 'Allowed addresses'], ['audit', 'Audit logs']].map(([value, label]) => <Button key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{label}</Button>)}</div>
+    <Group justify="space-between" className="security-toolbar"><div className="filter-tabs" aria-label="Security views">{[['overview', 'Overview'], ['alerts', 'Alerts'], ['protection', 'Protection'], ['exceptions', 'Allowed addresses'], ['audit', 'Audit logs']].map(([value, label]) => <Button key={value} aria-pressed={tab === value} disabled={loading} onClick={() => setTab(value)}>{label}</Button>)}</div>
       {tab === 'overview' && <Select aria-label="Security period" value={period} onChange={setPeriod} allowDeselect={false} data={logPeriods.map(([value, label]) => ({ value, label }))} />}
       {tab === 'alerts' || tab === 'audit' ? <div className="security-toolbar-filters" ref={setFilterTarget} /> : null}
     </Group>
     {tab === 'overview' && <>
       <div className="logs-metrics">
-        <Metric label="Blocked requests" value={blocked.toLocaleString()} detail={`${(inspected ? blocked / inspected * 100 : 0).toFixed(1)}% of inspected HTTP requests`} icon={ShieldCheck} />
-        <Metric label="Detected threats" value={(preview ? Math.round(1386 * factor) : data.counts.detected).toLocaleString()} detail="Includes blocked and monitor-only matches" icon={ShieldAlert} />
-        <Metric label="Active banned IPs" value={preview ? active.length : data.observedBans} detail="Seen this period" icon={ShieldOff} />
-        <Metric label="Inspected requests" value={inspected.toLocaleString()} detail="HTTP traffic across protected services" icon={Activity} />
+        <Metric label="Blocked requests" value={loading ? '—' : blocked.toLocaleString()} detail={loading ? 'Share of inspected HTTP requests' : `${(inspected ? blocked / inspected * 100 : 0).toFixed(1)}% of inspected HTTP requests`} icon={ShieldCheck} />
+        <Metric label="Detected threats" value={(preview ? Math.round(1386 * factor) : data?.counts.detected)?.toLocaleString() ?? '—'} detail="Includes blocked and monitor-only matches" icon={ShieldAlert} />
+        <Metric label="Active banned IPs" value={(preview ? active.length : data?.observedBans) ?? '—'} detail="Seen this period" icon={ShieldOff} />
+        <Metric label="Inspected requests" value={loading ? '—' : inspected.toLocaleString()} detail="HTTP traffic across protected services" icon={Activity} />
       </div>
       <div className="logs-chart-grid">
         <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>Blocked requests</h2><Help label="About blocked requests">Cyan shows all inspected HTTP requests. Orange shows the blocked portion of each time slot.</Help></div>
-          <svg viewBox="0 0 640 200" className="logs-traffic-chart security-chart" role="img" aria-label={`Blocked requests over the selected period; ${blocked.toLocaleString()} blocked of ${inspected.toLocaleString()} inspected requests`}>
-            {[40, 95, 150].map((y, i) => <g key={y}><line x1="36" y1={y} x2="626" y2={y} className="logs-grid-line" /><text x="0" y={y + 4} className="logs-axis-label">{[chartPeak, chartPeak / 2, 0][i]}</text></g>)}
+          <svg viewBox="0 0 640 200" className="logs-traffic-chart security-chart" role="img" aria-label={loading ? 'Loading blocked requests' : `Blocked requests over the selected period; ${blocked.toLocaleString()} blocked of ${inspected.toLocaleString()} inspected requests`}>
+            {[40, 95, 150].map((y, i) => <g key={y}><line x1="36" y1={y} x2="626" y2={y} className="logs-grid-line" />{!loading && <text x="0" y={y + 4} className="logs-axis-label">{[chartPeak, chartPeak / 2, 0][i]}</text>}</g>)}
             {buckets.map(({ blocked, total }, i) => { const blockedHeight = blocked / chartPeak * 110, totalHeight = total / chartPeak * 110, x = 40 + i * 16.1; return <Tooltip key={i} withArrow multiline w={220} classNames={{ tooltip: 'security-chart-tooltip' }} events={{ hover: true, focus: true, touch: true }} label={<div className="security-chart-tooltip-content"><div className="security-chart-tooltip-time">{bucketTime.format(bucketStart + i * bucketStep)} – {bucketTime.format(bucketStart + (i + 1) * bucketStep)}</div><div><span>Blocked</span><strong>{blocked.toLocaleString()}</strong></div><div><span>Total inspected</span><strong>{total.toLocaleString()}</strong></div></div>}><g tabIndex={0} aria-label={`${blocked} blocked of ${total} inspected requests`}><rect x={x} y={150 - totalHeight} height={totalHeight} width="9" rx="3" fill="#38b89a" /><rect x={x} y={150 - blockedHeight} height={blockedHeight} width="9" rx="3" fill="#e7af55" /><rect x={x - 2} y={150 - Math.max(totalHeight, 16)} height={Math.max(totalHeight, 16)} width="13" fill="transparent" /></g></Tooltip>; })}
             <text x="36" y="181" className="logs-axis-label">{period === 'today' ? '00:00' : periodLabel}</text><text x="600" y="181" className="logs-axis-label">Now</text>
           </svg>
         </Paper>
-        <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>What we stopped</h2><Help label="Detection sources">WAF inspects requests. Behavior identifies repeated abuse. Reputation uses known malicious IP decisions.</Help></div><div className="security-breakdown">{[['WAF rules', 64], ['Behavioral detection', 25], ['IP reputation', 11], ...(!preview && data.counts.sources.Availability ? [['Engine unavailable', 0]] : [])].map(([label, percent], index) => <div key={label}><div><span>{label}</span><strong>{blockedBySource[index].toLocaleString()}</strong></div><div className="security-bar"><span style={{ width: `${preview ? percent : blocked ? blockedBySource[index] / blocked * 100 : 0}%` }} /></div></div>)}</div></Paper>
+        <Paper withBorder className="logs-surface"><div className="logs-panel-heading"><h2>What we stopped</h2><Help label="Detection sources">WAF inspects requests. Behavior identifies repeated abuse. Reputation uses known malicious IP decisions.</Help></div><div className="security-breakdown">{[['WAF rules', 64], ['Behavioral detection', 25], ['IP reputation', 11], ...(!preview && data?.counts.sources.Availability ? [['Engine unavailable', 0]] : [])].map(([label, percent], index) => <div key={label}><div><span>{label}</span><strong>{loading ? '—' : blockedBySource[index].toLocaleString()}</strong></div><div className="security-bar"><span style={{ width: `${preview ? percent : blocked ? blockedBySource[index] / blocked * 100 : 0}%` }} /></div></div>)}</div></Paper>
       </div>
-      <Paper withBorder className="logs-surface logs-events"><div className="logs-panel-heading"><h2>Recent decisions</h2><Badge color="gray" variant="light">{visible.length} of {decisions.length} addresses</Badge>
+      <Paper withBorder className="logs-surface logs-events"><div className="logs-panel-heading"><h2>Recent decisions</h2><Badge color="gray" variant="light">{loading ? 'Loading decisions…' : `${visible.length} of ${decisions.length} addresses`}</Badge>
           {Object.keys(decisionFilters).length > 0 && <Button className="secondary logs-clear-filters" color="red" onClick={() => setDecisionFilters({})}>Clear filters</Button>}</div>
-        <Table.ScrollContainer minWidth={850}><Table className="logs-table" verticalSpacing="md"><Table.Thead><Table.Tr>{decisionColumns.map((column) => <Table.Th key={column[0]}><ColumnFilter column={column} options={[...new Set(decisions.map((d) => decisionFilterValue(d, column[0], preview)).filter(Boolean))]} filter={decisionFilters[column[0]]} onChange={(filter) => setDecisionFilters((old) => {
+        <Table.ScrollContainer minWidth={850}><Table className="logs-table" verticalSpacing="md"><Table.Thead><Table.Tr>{decisionColumns.map((column) => <Table.Th key={column[0]}>{loading ? column[1] : <ColumnFilter column={column} options={[...new Set(decisions.map((d) => decisionFilterValue(d, column[0], preview)).filter(Boolean))]} filter={decisionFilters[column[0]]} onChange={(filter) => setDecisionFilters((old) => {
           const next = { ...old }; if (filter) next[column[0]] = filter; else delete next[column[0]]; return next;
-        })} /></Table.Th>)}<Table.Th /></Table.Tr></Table.Thead><Table.Tbody>{visible.map((d) => <Table.Tr key={d.id}>
+        })} />}</Table.Th>)}<Table.Th /></Table.Tr></Table.Thead><Table.Tbody>{loading ? <LogTableSkeleton fields={[...decisionColumns.map(([field]) => field), 'details']} /> : visible.map((d) => <Table.Tr key={d.id}>
           <Table.Td><button className="logs-ip-filter" onClick={() => setDialog({ kind: 'detail', decision: d })}><code>{d.ip}</code></button><div className="logs-caption">{preview ? `${d.age} min ago` : formatDateTime(d.time)}</div></Table.Td>
           <Table.Td><strong>{d.reason}</strong><div className="logs-caption">{d.host}</div></Table.Td><Table.Td>{d.engine}</Table.Td><Table.Td><Badge color={d.banned ? 'red' : d.action === 'Blocked' ? 'orange' : d.action === 'Allowed' ? 'teal' : 'gray'} variant="light">{decisionAction(d)}</Badge></Table.Td><Table.Td>{d.requests}</Table.Td><Table.Td>{expiry(d)}</Table.Td><Table.Td><Button className="secondary small" onClick={() => setDialog({ kind: 'detail', decision: d })}>Details</Button></Table.Td>
-        </Table.Tr>)}{!visible.length && <Table.Tr><Table.Td colSpan={7}>No decisions match these filters.</Table.Td></Table.Tr>}</Table.Tbody></Table></Table.ScrollContainer>
+        </Table.Tr>)}{!loading && !visible.length && <Table.Tr><Table.Td colSpan={7}>No decisions match these filters.</Table.Td></Table.Tr>}</Table.Tbody></Table></Table.ScrollContainer>
       </Paper>
-      <Paper withBorder className="logs-surface security-updates"><div><h3>{!preview && data.error ? 'Rules need attention' : !preview && !data.updated ? 'Rules installed' : 'Rules are up to date'}</h3><p>Last successful update {preview ? formatDateTime(updated) : data.updated ? formatDateTime(data.updated) : 'Not yet checked'} · {saved.updates ? 'Automatic updates daily' : 'Automatic updates paused'}</p></div><Button className="secondary" disabled={busy || (!preview && data.updating)} onClick={() => perform(async () => { if (preview) setUpdated(Date.now()); else { await api('/security/update', { method: 'POST' }); await load(); } report('Rule update requested'); })}><RefreshCw size={15} />Check for updates</Button></Paper>
+      <Paper withBorder className="logs-surface security-updates"><div><h3>{loading ? 'Rule updates' : !preview && data.error ? 'Rules need attention' : !preview && !data.updated ? 'Rules installed' : 'Rules are up to date'}</h3><p>{loading ? 'Waiting for update status.' : `Last successful update ${preview ? formatDateTime(updated) : data.updated ? formatDateTime(data.updated) : 'Not yet checked'} · ${saved.updates ? 'Automatic updates daily' : 'Automatic updates paused'}`}</p></div><Button className="secondary" disabled={loading || busy || (!preview && data.updating)} onClick={() => perform(async () => { if (preview) setUpdated(Date.now()); else { await api('/security/update', { method: 'POST' }); await load(); } report('Rule update requested'); })}><RefreshCw size={15} />Check for updates</Button></Paper>
     </>}
     {tab === 'alerts' && filterTarget && <Monitoring key="alerts" state={state} onLogout={onLogout} view="alert" toolbarTarget={filterTarget} serviceFilter />}
     {tab === 'audit' && filterTarget && <Monitoring key="audit" state={state} onLogout={onLogout} audit toolbarTarget={filterTarget} serviceFilter />}

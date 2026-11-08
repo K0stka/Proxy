@@ -58,6 +58,12 @@ export function ColumnFilter({ column, filter, options = [], onChange }) {
   </Popover>;
 }
 
+export function LogTableSkeleton({ fields }) {
+  return Array.from({ length: 6 }, (_, i) => <Table.Tr key={i} aria-hidden="true">
+    {fields.map((field) => <Table.Td key={field}><Skeleton height={14} width={`${45 + (i * 17 + field.length * 11) % 45}%`} /></Table.Td>)}
+  </Table.Tr>);
+}
+
 export default function Monitoring({ state, onLogout, audit = false, view = null, toolbarTarget = null, serviceFilter = false }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false),
     [period, setPeriod] = useState('today'), [services, setServices] = useState(null),
@@ -166,7 +172,7 @@ export default function Monitoring({ state, onLogout, audit = false, view = null
               : field === 'status' ? <span className={`logs-status-code ${e.status >= 400 ? 'error' : ''}`}>{e.status ?? '—'}</span>
               : e[field] || '—'}
           </Table.Td>)}
-        </Table.Tr>)}{!data && Array.from({ length: 6 }, (_, i) => <Table.Tr key={`skeleton-${i}`} aria-hidden="true">{tableColumns.map(([field]) => <Table.Td key={field}><Skeleton height={14} width={`${45 + (i * 17 + field.length * 11) % 45}%`} /></Table.Td>)}</Table.Tr>)}{data?.events.length === 0 && <Table.Tr><Table.Td colSpan={tableColumns.length}>No matching {audit ? 'audit events' : kind === 'alert' ? 'alerts' : 'traffic logs'}.</Table.Td></Table.Tr>}</Table.Tbody>
+        </Table.Tr>)}{!data && <LogTableSkeleton fields={tableColumns.map(([field]) => field)} />}{data?.events.length === 0 && <Table.Tr><Table.Td colSpan={tableColumns.length}>No matching {audit ? 'audit events' : kind === 'alert' ? 'alerts' : 'traffic logs'}.</Table.Td></Table.Tr>}</Table.Tbody>
       </Table></Table.ScrollContainer>
       <Group justify="space-between"><span className="logs-caption">{data ? `${data.events.length} of ${totals.count.toLocaleString()} matching events` : 'Loading events…'}</span>
         <Group gap="xs" className="logs-pagination" aria-label="Event pages">
