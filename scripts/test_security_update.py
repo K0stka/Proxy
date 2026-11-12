@@ -12,6 +12,19 @@ spec.loader.exec_module(updater)
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_stage_reports_elapsed_time_and_failure_without_exception_payloads(self):
+        output = io.StringIO()
+        with patch('sys.stdout', output):
+            with updater.stage('Build edge'):
+                pass
+            with self.assertRaises(ValueError):
+                with updater.stage('Deploy'):
+                    raise ValueError('private payload')
+        self.assertIn('START Build edge', output.getvalue())
+        self.assertIn('DONE Build edge', output.getvalue())
+        self.assertIn('FAILED Deploy', output.getvalue())
+        self.assertNotIn('private payload', output.getvalue())
+
     def test_incomplete_candidate_archive_fails_before_docker_build(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

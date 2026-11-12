@@ -7,7 +7,8 @@ const defaultRecipient = '710044411035254864';
 const snowflake = /^\d{17,20}$/;
 const text = (value, limit) => String(value).replace(/[\r\n\t]/g, ' ').replace(/([\\`*_~|<>\[\]])/g, '\\$1').slice(0, limit);
 const actionable = (event) => ['auth.recovery', 'auth.device.completed',
-  'Repeated failed authentication operations', 'CrowdSec is unavailable'].includes(event.event);
+  'Repeated failed authentication operations', 'CrowdSec is unavailable',
+  'Edge is unavailable', 'Edge connection recovered'].includes(event.event);
 const alertNames = { 'auth.recovery': 'Recovery code used', 'auth.device.completed': 'New device added',
   'CrowdSec is unavailable': 'CrowdSec health check failed' };
 const priority = (group) => group.severity === 'error' ? 4 : group.securityEngine === 'Availability' ||
@@ -176,6 +177,20 @@ export class DiscordAlerts {
       if (edgeUnavailable && !this.status().error)
         this.store.set('discord-status', { ...this.statusFields(), error: edgeAlertsUnavailable });
     } finally { this.busy = false; }
+  }
+  async checkEdge() {
+    let available = false;
+    try { available = (await this.edge('/status', { timeout: edgeAlertsTimeout })).available === true; } catch {}
+    const previous = this.store.get('edge-availability', { failedSince: null, unavailable: false });
+    const state = available ? { failedSince: null, unavailable: false } : {
+      failedSince: previous.failedSince ?? this.now(),
+      unavailable: previous.unavailable || this.now() - (previous.failedSince ?? this.now()) >= 30000,
+    };
+    if (state.unavailable !== previous.unavailable)
+      this.archive.append({ type: 'alert', service: 'management',
+        event: state.unavailable ? 'Edge is unavailable' : 'Edge connection recovered',
+        severity: state.unavailable ? 'error' : 'info', time: new Date(this.now()).toISOString() });
+    if (JSON.stringify(state) !== JSON.stringify(previous)) this.store.set('edge-availability', state);
   }
   statusFields() {
     const { lastSuccess, nextAttempt } = this.status();

@@ -317,3 +317,39 @@ test('settings save holds the delivery lock while querying the edge', async (t) 
   await saving;
   assert.equal(f.discord.busy, false);
 });
+
+test('controller records sustained edge outages and recovery once, even with Discord disabled', async (t) => {
+  const f = fixture(t);
+  let available = false;
+  f.discord.edge = async () => { if (!available) throw new Error('socket missing'); return { available: true, events: [] }; };
+  await f.discord.checkEdge();
+  f.advance(20000);
+  await f.discord.checkEdge();
+  assert.equal(f.archive.alertsAfter(0).length, 0);
+  f.advance(10000);
+  await f.discord.checkEdge();
+  await new DiscordAlerts(f.discord).checkEdge();
+  assert.deepEqual(f.archive.alertsAfter(0).map((e) => e.event), ['Edge is unavailable']);
+  assert.equal(f.messages().length, 0);
+  // Existing enabled delivery must work without the edge socket, including after restart.
+  f.store.set('discord', { enabled: true, botToken, recipientId });
+  await f.discord.tick();
+  assert.match(f.messages()[0].content, /Edge is unavailable/);
+  available = true;
+  await f.discord.checkEdge();
+  await f.discord.checkEdge();
+  assert.deepEqual(f.archive.alertsAfter(0).map((e) => e.event), ['Edge is unavailable', 'Edge connection recovered']);
+  f.advance(300000);
+  await f.discord.tick();
+  assert.match(f.messages()[1].content, /Edge connection recovered/);
+});
+
+test('short edge interruptions do not produce outage alerts', async (t) => {
+  const f = fixture(t);
+  f.discord.edge = async () => { throw new Error('restarting'); };
+  await f.discord.checkEdge();
+  f.advance(20000);
+  f.discord.edge = async () => ({ available: true });
+  await f.discord.checkEdge();
+  assert.equal(f.archive.alertsAfter(0).length, 0);
+});

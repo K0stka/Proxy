@@ -20,18 +20,23 @@ class MaintenanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             def path(value):
                 return Path(directory) if value == '/var/log/proxy-updates' else Path(value)
-            def run(*args, **kwargs):
-                kwargs['stdout'].write(b'x' * 100000 + b'\nDeployment passed\n')
-                return subprocess.CompletedProcess(args[0], 0)
+            process = Mock()
+            process.__enter__ = Mock(return_value=process)
+            process.__exit__ = Mock(return_value=False)
+            process.stdout = io.BytesIO(b'PROXY_UPDATE START Build\n' + b'x' * 100000 + b'\nDeployment passed\n')
+            process.wait.return_value = 0
             output = io.StringIO()
-            with patch.object(maintenance, 'Path', side_effect=path), patch.object(maintenance.subprocess, 'run', side_effect=run), patch('sys.stdout', output):
+            with patch.object(maintenance, 'Path', side_effect=path), patch.object(maintenance.subprocess, 'Popen', return_value=process), patch('sys.stdout', output):
                 maintenance.update(Path(directory))
             self.assertLess(len(output.getvalue()), 17000)
             self.assertIn('Deployment passed', output.getvalue())
+            self.assertLess(output.getvalue().index('PROXY_UPDATE START Build'), output.getvalue().index('Update completed'))
             log = next(Path(directory).glob('update-*.log'))
             self.assertEqual(log.stat().st_mode & 0o777, 0o600)
             self.assertGreater(log.stat().st_size, 100000)
-            with patch.object(maintenance, 'Path', side_effect=path), patch.object(maintenance.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)), patch('sys.stdout', io.StringIO()):
+            process.stdout = io.BytesIO(b'PROXY_UPDATE FAILED Build\n')
+            process.wait.return_value = 1
+            with patch.object(maintenance, 'Path', side_effect=path), patch.object(maintenance.subprocess, 'Popen', return_value=process), patch('sys.stdout', io.StringIO()):
                 with self.assertRaises(subprocess.CalledProcessError): maintenance.update(Path(directory))
 
     def test_fixed_broker_command_uses_and_closes_a_real_unix_http_connection(self):

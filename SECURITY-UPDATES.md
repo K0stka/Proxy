@@ -50,7 +50,10 @@ These local snapshots are not a substitute for off-server encrypted backups.
 This updater targets the repository-backed `proxy` project using compose.paths.yaml
 and its protected .env. It does not overwrite Komodo's environment configuration.
 Use Update Proxy in Komodo for immediate updates. Its Actions stream the fixed
-host updater's bounded output excerpt and propagate failures. Complete root-only
+host updater's live, timestamped stages with elapsed times, followed by a bounded
+output excerpt, and propagate failures. Failed stages identify the operation;
+filesystem errors include the missing path, and health failures identify the probe.
+The broker connection is checked before building. Complete root-only
 logs are retained at /var/lib/proxylogs/host/updates/update-*.log (latest seven runs),
 avoiding Komodo's 16 MiB execution document limit. Ordinary registry polling does not
 rebuild these locally built images or run their tests. See

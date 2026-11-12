@@ -69,13 +69,21 @@ Komodo write credentials. Host script changes require administrator installation
 ordinary application updates do not silently replace privileged host programs.
 
 Detailed update output: /var/lib/proxylogs/host/updates/update-*.log (root-only, latest seven
-runs). Komodo receives the log path and at most the last 16 KB, so verbose Docker
+runs). Komodo receives live START/DONE/FAILED stages with timestamps and elapsed
+times (bounded to 24 KB), the exit code, the log path and at most the last 16 KB, so verbose Docker
 progress cannot overflow its execution document. The updater checks the fetched
 `main` revision against the last successful revision before inspecting containers
 or creating backups; when unchanged, it exits without building or deploying.
 Consequently, upstream base-image and OS package refreshes happen when a new
 repository revision is processed, rather than on no-change daily runs. Docker
 reuses unchanged layers between update runs.
+
+Generation mounts retain Docker volume names, including the controller's edge IPC
+volume. Never bind Docker's internal volume directories: Docker then cannot track
+consumers and may prune a live IPC volume. A controller checks edge connectivity
+every 10 seconds, records an outage after 30 seconds and records recovery once.
+These events persist in controller Logs and, when enabled, enter the Discord digest
+even while the edge is unreachable. Existing Discord rate limits still apply.
 
 Deployment audit: /var/lib/proxylogs/host/deployments.jsonl. Management audit:
 /var/lib/proxylogs/audit/events.jsonl. Traffic and administration archives:

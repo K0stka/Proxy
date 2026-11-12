@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Root-owned daily rebuild/test/deploy job. Never changes host firewall or SSH."""
 import argparse
+from contextlib import contextmanager
 import fcntl
 import hashlib
 import http.client
@@ -21,6 +22,21 @@ from urllib.parse import urlparse
 
 SERVICES = ('control', 'edge', 'files', 'certificates', 'crowdsec')
 TEMPLATE_PATH = Path('/var/lib/proxy-handoff/templates.json')
+
+
+@contextmanager
+def stage(name):
+    started = time.monotonic()
+    def report(status):
+        print('PROXY_UPDATE ' + time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()) +
+              ' ' + status + ' ' + name + f' ({time.monotonic() - started:.1f}s)', flush=True)
+    report('START')
+    try:
+        yield
+    except BaseException:
+        report('FAILED')
+        raise
+    report('DONE')
 
 
 def run(args, *, cwd=None, capture=False, **kwargs):
@@ -102,7 +118,7 @@ def security_mount(templates, fresh):
         {'Source': name, 'Destination': '/security-ipc', 'RW': False, 'Type': 'volume'}]
 
 
-def handoff(images):
+def handoff(images=None):
     import socket
     class Connection(http.client.HTTPConnection):
         def connect(self):
@@ -112,11 +128,13 @@ def handoff(images):
             self.sock.connect(str(Path(config['ipc']) / 'edge.sock'))
     connection = Connection('localhost', timeout=90)
     try:
-        connection.request('POST', '/deploy', json.dumps(images), {'Content-Type': 'application/json'})
+        connection.request('GET' if images is None else 'POST', '/status' if images is None else '/deploy',
+                           None if images is None else json.dumps(images), {'Content-Type': 'application/json'})
         response = connection.getresponse()
         response.read()
         if response.status != 200:
-            raise RuntimeError('Connection-preserving deployment failed')
+            raise RuntimeError(('Broker connection check' if images is None else 'Connection-preserving deployment') +
+                               ' failed: HTTP ' + str(response.status) + '; inspect journalctl -u proxy-handoff')
     finally:
         connection.close()
 
@@ -168,6 +186,7 @@ def health(previous, admin_host, isolation=True):
         return False
     for container in current:
         if not container['State']['Running'] or container['State'].get('Health', {}).get('Status', 'healthy') != 'healthy':
+            print('PROXY_UPDATE Health check: ' + container.get('Name', 'container') + ' is not running or healthy', flush=True)
             return False
     origin = dict(value.split('=', 1) for value in previous[0]['Config']['Env'])['PROXY_ORIGIN']
     connection = http.client.HTTPConnection('127.0.0.1', 3001, timeout=5)
@@ -175,6 +194,7 @@ def health(previous, admin_host, isolation=True):
         connection.request('GET', '/api/auth/status', headers={'Host': urlparse(origin).netloc})
         response = connection.getresponse()
         if response.status != 200 or not json.loads(response.read()).get('enrolled'):
+            print('PROXY_UPDATE Health check: private management login is unavailable or not enrolled', flush=True)
             return False
     finally:
         connection.close()
@@ -189,6 +209,7 @@ def health(previous, admin_host, isolation=True):
             except urllib.error.HTTPError as error:
                 status = error.code
             if status != expected:
+                print(f'PROXY_UPDATE Health check: {path} expected HTTP {expected}, received {status}', flush=True)
                 return False
     return True
 
@@ -204,12 +225,15 @@ def deploy(directory, previous, admin_host, rollback_file, check=health,
     selected_services = ['files', 'certificates', 'crowdsec'] if inventory_managed else []
     try:
         if managed:
-            run(compose(directory) + ['up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '180', 'crowdsec'])
+            with stage('Start CrowdSec and wait for health'):
+                run(compose(directory) + ['up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '180', 'crowdsec'])
             images = {service: run(['docker', 'image', 'inspect', 'proxy-' + service,
                                    '--format', '{{.Id}}'], capture=True).strip() for service in ['control', 'edge']}
-            handoff(images)
+            with stage('Activate edge and controller generations'):
+                handoff(images)
             switched = True
-        run(compose(directory) + ['up', '-d', '--no-build', '--pull', 'never', *selected_services])
+        with stage('Update supporting services'):
+            run(compose(directory) + ['up', '-d', '--no-build', '--pull', 'never', *selected_services])
         for _ in range(attempts):
             try:
                 if check(previous, admin_host):
@@ -219,6 +243,7 @@ def deploy(directory, previous, admin_host, rollback_file, check=health,
             wait(5)
         raise RuntimeError('Candidate health verification failed')
     except BaseException:
+        print('PROXY_UPDATE Rolling back deployment; restoring previous images and environment', flush=True)
         if rollback_templates is not None:
             temporary = TEMPLATE_PATH.with_suffix('.restore')
             shutil.copyfile(rollback_templates, temporary)
@@ -256,7 +281,8 @@ def main():
     repo = args.repo.resolve(strict=True)
     if run(['git', 'status', '--porcelain'], cwd=repo, capture=True).strip():
         raise RuntimeError('Deployment checkout has local changes; refusing to overwrite them')
-    run(['git', 'fetch', 'origin', 'main'], cwd=repo)
+    with stage('Fetch repository revision'):
+        run(['git', 'fetch', 'origin', 'main'], cwd=repo)
     run(['git', 'merge-base', '--is-ancestor', 'HEAD', 'origin/main'], cwd=repo)
     revision = run(['git', 'rev-parse', 'origin/main'], cwd=repo, capture=True).strip()
     last_success = args.state / 'last-success.json'
@@ -266,6 +292,10 @@ def main():
     if shutil.disk_usage(args.state).free < 5 * 1024 ** 3:
         raise RuntimeError('At least 5 GiB of free disk space is required')
     previous = containers()
+    if Path('/var/lib/proxy-handoff/state.json').exists():
+        with stage('Verify controller and edge broker connection before building'):
+            handoff()
+    print('PROXY_UPDATE Target revision: ' + revision, flush=True)
     configuration = json.loads(run(compose(repo) + ['config', '--format', 'json'], capture=True))
     # This updater supports this deployment's explicit host-storage overrides only.
     state_mount = next(m for m in configuration['services']['control']['volumes'] if m['target'] == '/state')
@@ -279,7 +309,8 @@ def main():
     template_backup = work / 'rollback.templates.json' if TEMPLATE_PATH.exists() else None
     if template_backup is not None:
         shutil.copyfile(TEMPLATE_PATH, template_backup)
-    preserve_images(previous, work)
+    with stage('Preserve rollback images'):
+        preserve_images(previous, work)
     rollback_file = work / 'rollback.compose.json'
     rollback_file.write_text(json.dumps({'services': {service: {'image': container['Image']} for service, container in zip(SERVICES, previous)}}))
     with sqlite3.connect(db_path.as_uri() + '?mode=ro', uri=True) as source:
@@ -297,13 +328,16 @@ def main():
         # No build/pull operation may change a running container before these tests pass.
         # Refresh OS package layers daily; reuse unchanged layers between updates.
         refresh = ['--build-arg', 'PROXY_SECURITY_REFRESH=' + time.strftime('%Y-%m-%d', time.gmtime())]
-        run(['docker', 'build', '--pull', *refresh, '-f', 'containers/check.Dockerfile', '-t', 'proxy-security-check', '.'], cwd=candidate)
+        with stage('Build validation image and run application tests'):
+            run(['docker', 'build', '--pull', *refresh, '-f', 'containers/check.Dockerfile', '-t', 'proxy-security-check', '.'], cwd=candidate)
         for service in SERVICES:
-            run(compose(candidate) + ['build', '--pull', *refresh, service], cwd=candidate)
-        run(['docker', 'run', '--rm', '--memory', '768m', '--cpus', '1',
-             '--mount', 'type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
-             '--env', 'PROXY_SKIP_BUILD=true', '--env', 'PROXY_TEST_SOURCE=' + str(candidate),
-             'proxy-security-check'])
+            with stage('Build ' + service + ' image'):
+                run(compose(candidate) + ['build', '--pull', *refresh, service], cwd=candidate)
+        with stage('Run isolated container and CrowdSec integration tests'):
+            run(['docker', 'run', '--rm', '--memory', '768m', '--cpus', '1',
+                 '--mount', 'type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
+                 '--env', 'PROXY_SKIP_BUILD=true', '--env', 'PROXY_TEST_SOURCE=' + str(candidate),
+                 'proxy-security-check'])
         if [c['Id'] for c in containers()] != [c['Id'] for c in previous] or environment_hash != hashlib.sha256((repo / '.env').read_bytes()).digest():
             raise RuntimeError('Deployment changed during validation; refusing concurrent deployment')
         if run(['git', 'status', '--porcelain'], cwd=repo, capture=True).strip():
@@ -329,7 +363,8 @@ def main():
             temporary.write_text(json.dumps(mapping))
             temporary.chmod(0o600)
             temporary.replace(mapping_path)
-        deploy(repo, previous, settings.get('adminHostname'), rollback_file, rollback_templates=template_backup)
+        with stage('Deploy and verify management, authentication and asset isolation'):
+            deploy(repo, previous, settings.get('adminHostname'), rollback_file, rollback_templates=template_backup)
     except BaseException:
         # Do not overwrite tags from a concurrent Komodo deployment. deploy() handles
         # its own rollback after it starts replacing running containers.
@@ -366,5 +401,9 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         detail = str(error) if isinstance(error, RuntimeError) else type(error).__name__
+        if isinstance(error, OSError):
+            detail += ': ' + str(error.strerror) + ' at ' + str(error.filename)
+        elif isinstance(error, subprocess.CalledProcessError):
+            detail += ': exit ' + str(error.returncode) + ' from ' + str(error.cmd[0])
         print('Proxy security update failed: ' + detail, file=sys.stderr, flush=True)
         sys.exit(1)

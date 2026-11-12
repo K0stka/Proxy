@@ -20,14 +20,26 @@ def update(log_root=None):
     descriptor, name = tempfile.mkstemp(prefix='update-', suffix='.log', dir=root)
     print('Detailed update log: ' + name, flush=True)
     with os.fdopen(descriptor, 'wb') as log:
-        result = subprocess.run(['/usr/local/lib/proxy-security-update.py'], stdout=log, stderr=subprocess.STDOUT)
+        with subprocess.Popen(['/usr/local/lib/proxy-security-update.py'], stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT) as process:
+            progress_bytes = 0
+            for line in iter(lambda: process.stdout.readline(4096), b''):
+                log.write(line)
+                log.flush()
+                if line.startswith((b'PROXY_UPDATE ', b'Proxy security update failed:')) and progress_bytes < 24000:
+                    print(line.decode(errors='replace').rstrip(), flush=True)
+                    progress_bytes += len(line)
+            code = process.wait()
+    print('Update ' + ('completed' if code == 0 else 'FAILED') + '; exit code ' + str(code), flush=True)
+    print('Final output (last 16 KB); full log: ' + name, flush=True)
     with open(name, 'rb') as log:
         log.seek(0, os.SEEK_END)
         log.seek(max(0, log.tell() - 16000))
         print(log.read().decode(errors='replace'), flush=True)
     for old in sorted(root.glob('update-*.log'), key=lambda p: p.stat().st_mtime, reverse=True)[7:]:
         old.unlink()
-    result.check_returncode()
+    if code:
+        raise subprocess.CalledProcessError(code, '/usr/local/lib/proxy-security-update.py')
 
 
 def broker(path):

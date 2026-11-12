@@ -103,6 +103,12 @@ def inspect(name):
     return docker('GET', '/containers/' + name + '/json')
 
 
+def mount_bind(mount):
+    # Docker must track volume consumers; binding its internal path permits pruning live IPC.
+    source = mount.get('Name', mount['Source']) if mount['Type'] == 'volume' else mount['Source']
+    return f"{source}:{mount['Destination']}:{'rw' if mount['RW'] else 'ro'}"
+
+
 def atomic(path, value, mode=0o600):
     temp = path.with_suffix('.new')
     with open(temp, 'w') as output:
@@ -333,7 +339,7 @@ class Broker:
         host['NetworkMode'] = 'host'
         host['CgroupParent'] = 'proxy-generations.slice'
         host.pop('PortBindings', None)
-        host['Binds'] = [f"{m['Source']}:{m['Destination']}:{'rw' if m['RW'] else 'ro'}"
+        host['Binds'] = [mount_bind(m)
                          for m in template['mounts'] if role != 'edge' or m['Destination'] not in ['/runtime', '/ipc']]
         if self.config.get('logVolume'):
             host['Binds'] = [mount for mount in host['Binds'] if mount.split(':')[1] not in ['/logs', '/audit']]
@@ -580,7 +586,7 @@ class Broker:
                 config['Labels'] = template['agentLabels']
                 host = copy.deepcopy(template['host'])
                 host['NetworkMode'] = 'host' if role == 'edge' else template['network']
-                host['Binds'] = [f"{m['Source']}:{m['Destination']}:{'rw' if m['RW'] else 'ro'}" for m in template['mounts']]
+                host['Binds'] = [mount_bind(m) for m in template['mounts']]
                 if role == 'control':
                     host['PortBindings'] = {'3001/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '0'}]}
                     config['ExposedPorts'] = {'3001/tcp': {}}

@@ -13,6 +13,15 @@ spec.loader.exec_module(handoff)
 
 
 class HandoffTests(unittest.TestCase):
+    def test_generation_mounts_keep_named_volumes_registered_with_docker(self):
+        self.assertEqual(handoff.mount_bind({'Type': 'volume', 'Name': 'proxy_edge_ipc',
+            'Source': '/var/lib/docker/volumes/proxy_edge_ipc/_data', 'Destination': '/ipc', 'RW': True}),
+            'proxy_edge_ipc:/ipc:rw')
+        self.assertEqual(handoff.mount_bind({'Type': 'volume', 'Source': 'proxy_security_ipc',
+            'Destination': '/security-ipc', 'RW': False}), 'proxy_security_ipc:/security-ipc:ro')
+        self.assertEqual(handoff.mount_bind({'Type': 'bind', 'Source': '/srv/state',
+            'Destination': '/state', 'RW': True}), '/srv/state:/state:rw')
+
     def test_controller_can_read_observability_but_other_peers_and_methods_cannot(self):
         handler = handoff.Handler.__new__(handoff.Handler)
         handler.connection = Mock()

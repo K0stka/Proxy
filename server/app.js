@@ -71,6 +71,7 @@ export function createApp({
   const discord = new DiscordAlerts({ store, archive, edge, routes: () => store.snapshot().routes, origin: policy.origin, request: notificationRequest });
   const notificationTimer = setInterval(() => activeController().then(async (active) => {
     if (!active) return;
+    await discord.checkEdge();
     const before = JSON.stringify(discord.status());
     await discord.tick();
     if (JSON.stringify(discord.status()) !== before) publishUpdate('notifications');
