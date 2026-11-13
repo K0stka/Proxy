@@ -28,6 +28,7 @@ exceptions = state.get('appsecExceptions', {})
 state['appsecExceptions'] = {
     'socketIo': exceptions.get('socketIo', True),
     'cs2AdminConfigPut': exceptions.get('cs2AdminConfigPut', True),
+    'immichMethods': exceptions.get('immichMethods', True),
 }
 key_file = ROOT / 'proxy-bouncer.key'
 if not key_file.exists():
@@ -58,6 +59,10 @@ def appsec_config():
       - RemoveInBandRuleByID(920420)''')
     if state['appsecExceptions'].get('cs2AdminConfigPut', True):
         rules.append('''   - filter: 'req.Host == "cs2.krychlic.com" && req.Method == "PUT" && req.URL.Path == "/api/skins/admin/config"'
+     apply:
+      - RemoveInBandRuleByID(911100)''')
+    if state['appsecExceptions'].get('immichMethods', True):
+        rules.append('''   - filter: 'req.Host == "immich.krychlic.com" && req.Method matches "^(PUT|PATCH|DELETE)$"'
      apply:
       - RemoveInBandRuleByID(911100)''')
     block = '\n'.join(rules)
@@ -180,7 +185,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif self.path == '/policy':
                 exceptions = body.get('appsecExceptions')
                 if (body.get('duration') not in ('1h', '4h', '24h') or not isinstance(body.get('updates'), bool)
-                    or not isinstance(exceptions, dict) or set(exceptions) != {'socketIo', 'cs2AdminConfigPut'}
+                    or not isinstance(exceptions, dict) or set(exceptions) != {'socketIo', 'cs2AdminConfigPut', 'immichMethods'}
                     or not all(isinstance(value, bool) for value in exceptions.values())):
                     return self.respond({'error': 'Invalid policy'}, 400)
                 if not lock.acquire(blocking=False):

@@ -68,6 +68,16 @@ test('real CrowdSec, NGINX and AppSec enforce policy and retain measured statist
   assert.equal((await requestWithHost('cs2.krychlic.com', '/api/skins/admin/other', '198.51.100.94', {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: '{}',
   })).status, 403, 'CS2 method exception must stay limited to the exact config path');
+  for (const method of ['PUT', 'PATCH', 'DELETE']) {
+    assert.equal((await requestWithHost('immich.krychlic.com', '/api/albums/test', '198.51.100.93', {
+      method, headers: { 'content-type': 'application/json' }, body: '{}',
+    })).status, 404, `Immich ${method} requests must pass CRS rule 911100`);
+    assert.equal((await requestWithHost('other.krychlic.com', '/api/albums/test', '198.51.100.92', {
+      method, headers: { 'content-type': 'application/json' }, body: '{}',
+    })).status, 403, `${method} requests on other hosts must still be blocked by CRS rule 911100`);
+  }
+  assert.equal((await requestWithHost('immich.krychlic.com', '/search?q=%27%20UNION%20SELECT%201%2C%20%40%40VERSION%20--%20', '198.51.100.91')).status, 403,
+    'Immich method exception must retain other CRS inspection');
   policy = { ...policy, security: { ...policy.security, mode: 'monitor' } };
   assert.equal((await request('/', '198.51.100.24')).status, 404, 'monitor-only does not enforce an IP ban');
   policy = { ...policy, security: { ...policy.security, mode: 'block', exceptions: [{ ip: '198.51.100.24', note: '' }] } };

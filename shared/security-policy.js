@@ -9,7 +9,8 @@ export const securityPolicySchema = z.object({
   appsecExceptions: z.object({
     socketIo: z.boolean().default(true),
     cs2AdminConfigPut: z.boolean().default(true),
-  }).strip().default({ socketIo: true, cs2AdminConfigPut: true }),
+    immichMethods: z.boolean().default(true),
+  }).strip().default({ socketIo: true, cs2AdminConfigPut: true, immichMethods: true }),
   failure: z.enum(['allow', 'deny']).default('allow'),
   routes: z.record(z.string().regex(/^(?:catch-all|management|[0-9a-f-]{36})$/), z.enum(['inherit', 'block', 'monitor', 'off']))
     .refine((value) => Object.keys(value).length <= 512, 'Too many service overrides').default({}),
